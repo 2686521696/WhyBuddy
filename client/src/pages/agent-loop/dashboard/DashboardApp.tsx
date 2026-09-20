@@ -5,16 +5,14 @@ import {
   DownloadOutlined,
   FileDoneOutlined,
   AppstoreOutlined,
+  ThunderboltOutlined,
   LeftOutlined,
   PlayCircleFilled,
-  BlockOutlined,
-  DeploymentUnitOutlined,
   DownOutlined,
   ReloadOutlined,
   RightOutlined,
   RobotOutlined,
   SettingOutlined,
-  SafetyCertificateOutlined,
   SnippetsOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -22,7 +20,7 @@ import {
 } from "@ant-design/icons";
 import { Graph, type GraphData } from "@antv/g6";
 import { AccountPanel } from "./AccountPanel";
-import { AuthProvider, useAuth } from "@/lib/use-auth";
+import { AuthProvider } from "@/lib/use-auth";
 import {
   Alert,
   Breadcrumb,
@@ -72,14 +70,15 @@ export type ViewKey =
   | "help"
   | "settings"
   | "settings-legacy"
+  | "dashboard"
   | "admin";
 
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
 /* 2026-08-25：技能库升级成「扩展中心」一页三层（用户裁决，
    参照豆包工作台）。view key 仍叫 skills——换 key 会让已有的深链和
    AccountPanel 里那个入口一起失效，而这次改的是页面内容不是导航语义。 */
-const LazySkillsLibraryPage = React.lazy(
-  () => import("@/pages/sliderule/CapabilityLibraryPage")
+const LazySkillStorePage = React.lazy(
+  () => import("@/pages/sliderule/SkillStorePage")
 );
 
 // 组件库：清单读自 experience_block_catalog.json，每个区块用真实渲染器现渲，
@@ -101,7 +100,7 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
 import SlideRulePage from "@/pages/SlideRule";
 import { ShellSidebarProvider, useShellSidebar } from "@/pages/sliderule/ShellSidebarContext";
 import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
-import { StaffConsolePage } from "@/pages/admin/StaffConsolePage";
+import { AccountDashboardPage } from "./UserDashboardPage";
 import { SidebarSessions } from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { AppsWorkbench } from "./AppsWorkbench";
@@ -1194,8 +1193,9 @@ export interface NavItem {
  *   选中态就是压一层黑，跟 2026-08-20 那次裁决一致。
  *
  * ⚠ 截图里每一项右边都有折叠箭头，**这里只给真的有下级的那一项**。
- *   给「设置」「管理台」挂一个展不开的箭头，就是那种"看着能点、点了没
+ *   给「设置」「Dashboard」挂一个展不开的箭头，就是那种"看着能点、点了没
  *   反应"的东西——这个仓刚因为它连着修了两轮（`/` 面板那次）。
+ *   2026-09-20：这两项已经不在侧栏，进账号折叠；假箭头纪律仍适用。
  *
  * ## ⚠ 「推演」这一项进出过两次，把两次的理由都记下来
  *
@@ -1214,48 +1214,43 @@ export interface NavItem {
  */
 export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
-    label: "创作资源",
+    /* 2026-09-19：组名不再写「创作资源」。组件库 / 扩展中心从主导航摘掉——
+       那是 HTML 工厂货架，装了也不进控制面。应用市场留下（能 Fork 的工程）。
+       书签仍走 /agent-loop/skills、/agent-loop/components，页顶标 legacy。 */
+    label: "",
     items: [
       { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
-      { key: "components", label: "组件库", icon: <BlockOutlined /> },
-      {
-        key: "skills",
-        label: "扩展中心",
-        /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
-           插头只说得清"连接器"那一样，另外两样看着不搭。 */
-        icon: <DeploymentUnitOutlined />,
-        // 这三条是页面上真实存在的三层（侧栏切 capabilityLayer，不再画页内二次菜单）
-        children: [
-          { id: "skills", label: "技能" },
-          { id: "connectors", label: "连接器" },
-          { id: "partners", label: "伙伴" },
-        ],
-      },
+      { key: "skills", label: "技能", icon: <ThunderboltOutlined /> },
     ],
-  },
-  {
-    label: "系统",
-    items: [{ key: "settings", label: "设置", icon: <SettingOutlined /> }],
   },
 ];
 
 const NAV_ITEM_TESTID: Partial<Record<ViewKey, string>> = {
   sliderule: "agent-nav-sliderule",
-  settings: "agent-nav-settings",
-  admin: "agent-nav-admin",
 };
 
 /** 书签仍可达、导航已摘掉的旧面。页顶标明不再维护，不 404。
  *  ⚠ 不要把 live `workbench`（应用市场 / AppsWorkbench）算进来——
  *  那一项还在 NAV_GROUPS 里。2026-08-27 第一版把 gallery 也盖了
- *  「legacy，不维护」，侧栏还在卖、点进去却说死了。 */
+ *  「legacy，不维护」，侧栏还在卖、点进去却说死了。
+ *  2026-09-19：skills / components 从主导航撤下，同样盖这条。 */
 export const LEGACY_UNMAINTAINED_VIEWS: readonly ViewKey[] = [
   "workbench-legacy",
   "settings-legacy",
+  "components",
 ];
 
 export function shouldShowLegacyUnmaintainedBanner(view: ViewKey): boolean {
   return (LEGACY_UNMAINTAINED_VIEWS as readonly string[]).includes(view);
+}
+
+function SidebarPanelIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </svg>
+  );
 }
 
 function AgentLoopSidebar({
@@ -1271,16 +1266,9 @@ function AgentLoopSidebar({
   capabilityLayer?: CapabilityLayer;
   onCapabilityLayer?: (layer: CapabilityLayer) => void;
 }) {
-  const isStaff = useAuth().user?.isSuperuser === true;
-  const navGroups = NAV_GROUPS.map(group => {
-    if (group.label !== "系统" || !isStaff) return group;
-    const adminItem: NavItem = {
-      key: "admin",
-      label: "管理台",
-      icon: <SafetyCertificateOutlined />,
-    };
-    return { ...group, items: [...group.items, adminItem] };
-  });
+  const shell = useShellSidebar();
+  const collapsed = shell?.collapsed ?? false;
+  const navGroups = NAV_GROUPS;
   /* 进扩展中心时默认展开三条子项。从 URL 直达 /agent-loop/skills 时
      openKey 若仍是 null，选中了「扩展中心」却看不见技能/连接器/伙伴——
      应用市场、组件库没有这一层，只有这里像少了半截菜单。 */
@@ -1296,27 +1284,42 @@ function AgentLoopSidebar({
       {/* 品牌区（可点击 → 推演视图）：面团 AI 横版标识（2026-08-03 用户裁决）。
           此前是「方标 + SlideRule.AI 单行字标」两件拼的。换成横版之后字标就在
           图里，不再单独排一行文字——否则「面团 AI」和「SlideRule.AI」会并排出现。 */}
-      <a
-        className="native-agent-brand"
-        data-testid="agent-brand"
-        href={getViewPath?.("sliderule")}
-        title="回到推演"
-        onClick={event => {
-          if (getViewPath?.("sliderule")) event.preventDefault();
-          onViewChange("sliderule");
-        }}
-      >
-        <img
-          className="native-agent-brand-logo"
-          // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
-          src={`${import.meta.env.BASE_URL}brand/miantuan-horizontal.png`}
-          alt="面团 AI"
-        />
-      </a>
+      <div className="native-agent-brand-row">
+        <a
+          className="native-agent-brand"
+          data-testid="agent-brand"
+          href={getViewPath?.("sliderule")}
+          title="回到推演"
+          onClick={event => {
+            if (getViewPath?.("sliderule")) event.preventDefault();
+            onViewChange("sliderule");
+          }}
+        >
+          <img
+            className="native-agent-brand-logo"
+            // BASE_URL 前缀：GitHub Pages 子路径部署（/<repo>/）下绝对路径会 404
+            src={`${import.meta.env.BASE_URL}brand/miantuan-horizontal.png`}
+            alt="面团 AI"
+          />
+        </a>
+        <button
+          type="button"
+          className="native-agent-sidebar-toggle"
+          data-testid="sidebar-collapse-toggle"
+          aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "展开侧栏" : "收起侧栏"}
+          onClick={() => shell?.toggle()}
+        >
+          <SidebarPanelIcon />
+        </button>
+      </div>
       <nav className="native-agent-nav" aria-label={BRAND_NAME_FULL}>
         {navGroups.filter(g => g.items.length > 0).map(group => (
           <div className="native-agent-nav-group" key={group.label}>
-            <div className="native-agent-nav-group-label">{group.label}</div>
+            {group.label ? (
+              <div className="native-agent-nav-group-label">{group.label}</div>
+            ) : null}
             {group.items.map(item => {
               const active = view === item.key;
               const expanded = openKey === item.key;
@@ -1325,6 +1328,7 @@ function AgentLoopSidebar({
                   <a
                     href={getViewPath?.(item.key)}
                     className={`native-agent-nav-item${active ? " native-agent-nav-item-active" : ""}`}
+                    title={item.label}
                     data-testid={NAV_ITEM_TESTID[item.key]}
                     onClick={event => {
                       if (getViewPath?.(item.key)) event.preventDefault();
@@ -1337,7 +1341,7 @@ function AgentLoopSidebar({
                     }}
                   >
                     {item.icon}
-                    <span>{item.label}</span>
+                    <span className="native-agent-rail-copy">{item.label}</span>
                     {item.children ? (
                       <button
                         type="button"
@@ -1395,6 +1399,7 @@ function AgentLoopSidebar({
             type="button"
             className="native-agent-session-new"
             data-testid="sidebar-demo-new-session"
+            title="新建会话"
             onClick={() => {
               try {
                 const doomed: string[] = [];
@@ -1416,7 +1421,7 @@ function AgentLoopSidebar({
             }}
           >
             <span className="native-agent-session-new-plus">+</span>
-            新建会话
+            <span className="native-agent-rail-copy">新建会话</span>
           </button>
           <div className="native-agent-sessions-label">最近</div>
           <div className="native-agent-sessions-list">
@@ -1431,27 +1436,12 @@ function AgentLoopSidebar({
           onOpenWorkbench={() => onViewChange("workbench")}
         />
       )}
-      {/* 2026-08-18：底栏照 Cursor 聊天侧栏，不是设置页列表。
-          帮助仍单独一行（账号菜单里不重复），但不再带右箭头、不再画成卡片。 */}
+      {/* 2026-09-20：底栏只留账号触发行。设置 / Dashboard / 帮助进折叠菜单
+          （对照 Cursor）。2026-08-18 那行帮助文档撤了——菜单接手，见 AccountPanel。 */}
       <div className="native-agent-footer">
-        <button
-          type="button"
-          className={`native-agent-help${view === "help" ? " native-agent-help-active" : ""}`}
-          data-testid="sidebar-help-docs"
-          onClick={() => onViewChange("help")}
-        >
-          <span className="native-agent-dock-slot" aria-hidden>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75">
-              <circle cx="12" cy="12" r="8.25" />
-              <path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1 1-1.1 1.8" />
-              <path d="M12 17h.01" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
-          </span>
-          <span>帮助文档</span>
-        </button>
-        {/* 2026-08-02：账号体系接上了。原来这里是写死的
-            「SlideRule 团队 · 企业版」占位（title 里写着"账号体系接入后可切换"）。*/}
-        <AccountPanel />
+        <AccountPanel
+          onOpenView={next => onViewChange(next)}
+        />
       </div>
     </aside>
   );
@@ -1473,16 +1463,16 @@ function AgentLoopTopbar({
       ? "面团 / 推演"
       : view === "settings"
         ? "面团 / 设置"
-        : view === "admin"
-          ? "面团 / 管理台"
+        : view === "dashboard" || view === "admin"
+          ? "面团 / Dashboard"
         : view === "settings-legacy"
           ? "面团 / 设置（legacy）"
           : view === "skills"
-            ? "面团 / 技能库"
+            ? "面团 / 技能"
             : view === "components"
               ? "面团 / 组件库"
             : view === "help"
-              ? "面团 / 帮助文档"
+              ? "面团 / 帮助"
               : view === "workbench-legacy"
               ? "面团 / 任务队列（legacy）"
               : "面团 / 应用市场";
@@ -1620,13 +1610,15 @@ function DashboardAppInner({
       view === "workbench"
         ? "应用市场"
         : view === "skills"
-          ? "技能库"
+          ? "技能"
           : view === "components"
             ? "组件库"
           : view === "settings"
             ? "设置"
-            : view === "admin"
-              ? "管理台"
+            : view === "dashboard" || view === "admin"
+              ? "Dashboard"
+            : view === "help"
+              ? "帮助"
             : view === "settings-legacy"
               ? "设置（legacy）"
               : "任务队列（legacy）";
@@ -2012,14 +2004,11 @@ function DashboardAppInner({
               <React.Suspense
                 fallback={
                   <div style={{ padding: 24, fontSize: 12, color: "#999" }}>
-                    扩展中心 加载中…
+                    技能商店加载中…
                   </div>
                 }
               >
-                <LazySkillsLibraryPage
-                  key={capabilityLayer}
-                  initialLayer={capabilityLayer}
-                />
+                <LazySkillStorePage />
               </React.Suspense>
             ) : view === "components" ? (
               <React.Suspense
@@ -2033,8 +2022,8 @@ function DashboardAppInner({
               </React.Suspense>
             ) : view === "settings" ? (
               <SettingsPage />
-            ) : view === "admin" ? (
-              <StaffConsolePage />
+            ) : view === "dashboard" || view === "admin" ? (
+              <AccountDashboardPage />
             ) : (
               settingsContent
             )}

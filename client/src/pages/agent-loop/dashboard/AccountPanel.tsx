@@ -44,6 +44,16 @@
  * 原来那版把「退出登录」做成常驻的小图标钉在行尾：既没有可发现性（没人知道
  * 那个图标是登出），又离"点错就掉线"只有一次误触的距离。
  *
+ * ## 2026-09-20：设置 / Dashboard / 帮助进这个折叠
+ *
+ * ⚠ 2026-08-18 把帮助钉在触发行上一整行（`.native-agent-help`），菜单里
+ * **故意不放**——「隔 40px 再重复一遍只是噪音」。2026-09-20 对照 Cursor：
+ * 这些系统页从侧栏摘掉，点头像进整页。底栏帮助行撤了，菜单必须接手，
+ * 否则帮助入口跟着消失，而判据还以为它在 dock 里。
+ *
+ * 跳转走壳子的 `onOpenView`（跟侧栏同一套 wouter），不许 `location.href`
+ * 整页刷新——那会把会话态闪掉一次。
+ *
  * ## 键盘与焦点
  *
  * Escape 关闭并把焦点还给触发行；点击面板外关闭。菜单项是真 <button>，
@@ -52,15 +62,22 @@
  */
 
 import {
+  DashboardOutlined,
   LoadingOutlined,
   LogoutOutlined,
-  ReadOutlined,
+  QuestionCircleOutlined,
   SettingOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import React from "react";
 
 import { useAuth } from "@/lib/use-auth";
+
+export type AccountMenuView = "dashboard" | "settings" | "help";
+
+export type AccountPanelProps = {
+  onOpenView?: (next: AccountMenuView) => void;
+};
 
 /** 头像里的字：邮箱首字母。取不到就回落到一个人形图标。 */
 function initialsOf(user: { displayName?: string | null; email: string }): string {
@@ -72,7 +89,7 @@ function initialsOf(user: { displayName?: string | null; email: string }): strin
   return source.slice(0, 1).toUpperCase();
 }
 
-export function AccountPanel() {
+export function AccountPanel({ onOpenView }: AccountPanelProps = {}) {
   const { user, ready, signOut } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -144,9 +161,9 @@ export function AccountPanel() {
     );
   }
 
-  const go = (href: string) => () => {
+  const openView = (next: AccountMenuView) => () => {
     setOpen(false);
-    window.location.href = href;
+    onOpenView?.(next);
   };
 
   return (
@@ -167,24 +184,31 @@ export function AccountPanel() {
               type="button"
               role="menuitem"
               className="native-agent-account-item"
-              onClick={go("/agent-loop/settings")}
+              data-testid="account-dashboard"
+              onClick={openView("dashboard")}
             >
-              <SettingOutlined />
-              <span>设置</span>
+              <DashboardOutlined />
+              <span>Dashboard</span>
             </button>
-            {/* 这里**不放**「帮助文档」：它就是紧挨着触发行上面那一整行
-                （.native-agent-help），隔 40px 再重复一遍只是噪音。Claude
-                的菜单里有 Get help，是因为它的侧栏里没有。照搬形制、不照搬
-                条目——菜单该放什么由你自己的导航决定。 */}
             <button
               type="button"
               role="menuitem"
               className="native-agent-account-item"
-              data-testid="account-skills"
-              onClick={go("/agent-loop/skills")}
+              data-testid="account-settings"
+              onClick={openView("settings")}
             >
-              <ReadOutlined />
-              <span>扩展中心</span>
+              <SettingOutlined />
+              <span>设置</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="native-agent-account-item"
+              data-testid="account-help"
+              onClick={openView("help")}
+            >
+              <QuestionCircleOutlined />
+              <span>帮助</span>
             </button>
           </div>
 

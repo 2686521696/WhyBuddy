@@ -354,6 +354,8 @@ describe("SidebarSessions 静态渲染", () => {
     expect(src).toContain("sidebar-session-more");
     expect(src).toContain("listApps");
     expect(src).toContain("SessionThumb");
+    expect(src).toContain("phase={s.phase}");
+    expect(src).toContain("goal={s.goal}");
     expect(src).toContain("SessionRowMeta");
     expect(src).toContain("sessionRowDevice(app)");
     expect(src).toContain("sessionRowVisibility(app)");
@@ -372,12 +374,14 @@ describe("SidebarSessions 静态渲染", () => {
     expect(list?.[1]).toMatch(/scrollbar-color:\s*rgba\(15,\s*23,\s*42,\s*0\.14\)/);
   });
 
-  it("行样式是小方图，图在格里 cover 占满", () => {
+  it("行图标槽 18px，不是 48px 灰底方块", () => {
     const css = readFileSync(new URL("../dashboard.css", import.meta.url), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "");
     const thumb = css.match(/\.native-agent-session-thumb\s*\{([^}]*)\}/);
-    expect(thumb?.[1]).toMatch(/width:\s*48px/);
-    expect(thumb?.[1]).toMatch(/height:\s*48px/);
+    expect(thumb?.[1]).toMatch(/width:\s*18px/);
+    expect(thumb?.[1]).toMatch(/height:\s*18px/);
+    expect(thumb?.[1]).toMatch(/background:\s*transparent/);
+    expect(thumb?.[1]).not.toMatch(/width:\s*48px/);
     expect(thumb?.[1]).not.toMatch(/aspect-ratio/);
     expect(css).toMatch(/object-fit:\s*cover/);
     const copy = css.match(/\.native-agent-session-copy\s*\{([^}]*)\}/);

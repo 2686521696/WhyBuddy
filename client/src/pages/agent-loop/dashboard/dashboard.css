@@ -42,20 +42,33 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 14px 12px 16px;
+  padding: 14px 12px 8px;
+  position: relative;
   width: 252px;
+  /* ⚠ 2026-09-20：导航 / 新建会话 / 缩略图 / 底栏头像必须共一条左轨。
+     真机量过：技能图标 left=24（后头样式版 padding:12 + 16px 格），
+     加号和缩略图 left=20（--session-pad:8）。用户截图两支红箭头指的
+     就是这条竖线。token 写在侧栏根上，三区一起读，不许再各写各的。 */
+  --rail-pad: 8px;
+  --rail-icon: 16px;
+  --rail-gap: 8px;
 }
 
-/* ⚠ 2026-08-18：折叠后宽为 0。顶栏左边会话栏键已撤，默认不再折叠；
-   不要在这里留一条半残侧栏——半残会把会话列表裁成不可用还占 48px。 */
+/* ⚠ 2026-09-20：收起是 ChatGPT 那种图标轨，不是 08-18 的宽 0。
+   钮在侧栏顶，折没会没有展开入口。56 与 SHELL_SIDEBAR_RAIL_PX 同数。 */
 .native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sidebar {
-  border-right: none;
-  flex-basis: 0;
-  opacity: 0;
-  overflow: hidden;
-  padding: 0;
-  pointer-events: none;
-  width: 0;
+  flex: 0 0 56px;
+  overflow: visible;
+  padding: 12px 8px 8px;
+  width: 56px;
+}
+
+.native-agent-brand-row {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  min-height: 56px;
 }
 
 /* 品牌区（可点击 → 推演视图）：面团 AI 横版标识（2026-08-03） */
@@ -64,13 +77,69 @@
   border-radius: 12px;
   cursor: pointer;
   display: flex;
+  flex: 1;
   gap: 9px;
   justify-content: flex-start;
-  margin: 0 0 12px;
+  margin: 0;
   min-height: 56px;
+  min-width: 0;
   padding: 0;
   text-decoration: none;
   transition: background 0.15s ease;
+}
+
+.native-agent-sidebar-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: 28px;
+}
+
+.native-agent-sidebar-toggle:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-brand-row {
+  justify-content: center;
+  margin-bottom: 8px;
+  min-height: 36px;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-brand {
+  display: none;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-nav-item > .native-agent-rail-copy,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-nav-caret,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-nav-subitem,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-rail-copy,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-user-meta,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-user-caret,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sessions > .native-agent-sessions-label,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sessions > .native-agent-sessions-list,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sessions > .native-agent-session-tools,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sessions > .native-agent-session-more {
+  display: none;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-nav-item,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-session-new,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-session-recents,
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-user {
+  gap: 0;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .native-agent-brand:hover {
@@ -143,9 +212,9 @@
   font: inherit;
   font-size: 13.5px;
   font-weight: 500;
-  gap: 10px;
+  gap: var(--rail-gap);
   height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--rail-pad);
   text-align: left;
   text-decoration: none;
   transition: background 0.12s ease, color 0.12s ease;
@@ -245,7 +314,7 @@
   font: inherit;
   font-size: 13px;
   height: 30px;
-  padding: 0 10px 0 36px;
+  padding: 0 var(--rail-pad) 0 calc(var(--rail-pad) + var(--rail-icon) + var(--rail-gap));
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
   width: 100%;
@@ -269,9 +338,9 @@
 
 /* --- 会话区：最近几条（2026-08-19 照 Stitch 行样式，多了走应用中心） --- */
 .native-agent-sessions {
-  --session-pad: 8px;
-  --session-gap: 6px;
-  --session-icon: 13px;
+  --session-pad: var(--rail-pad);
+  --session-gap: var(--rail-gap);
+  --session-icon: var(--rail-icon);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -428,6 +497,73 @@
   color: #94a3b8;
 }
 
+.native-agent-recents-wrap {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.native-agent-sessions-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.native-agent-session-recents {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  display: none;
+  flex-shrink: 0;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: 100%;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-session-recents {
+  display: inline-flex;
+}
+
+.native-agent-session-recents:hover,
+.native-agent-session-recents.is-open {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.native-agent-session-flyout {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 36px rgba(15, 23, 42, 0.14);
+  display: flex;
+  flex-direction: column;
+  left: calc(100% + 8px);
+  max-height: min(560px, calc(100vh - 96px));
+  min-width: 280px;
+  overflow: hidden;
+  padding: 10px 8px 8px;
+  position: absolute;
+  top: 0;
+  width: 280px;
+  z-index: 30;
+}
+
+.native-agent-session-flyout[hidden] {
+  display: none;
+}
+
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-recents-wrap {
+  flex: 0 0 auto;
+}
+
 .native-agent-session-group {
   display: flex;
   flex-direction: column;
@@ -438,6 +574,7 @@
 .native-agent-session-new-plus,
 .native-agent-session-search svg {
   display: block;
+  flex: 0 0 var(--session-icon);
   flex-shrink: 0;
   height: var(--session-icon);
   width: var(--session-icon);
@@ -486,6 +623,11 @@
   background: rgba(15, 23, 42, 0.24);
 }
 
+.native-agent-session-flyout > .native-agent-sessions-list {
+  margin-right: 0;
+  padding-right: 4px;
+}
+
 .native-agent-sessions-hint {
   color: #94a3b8;
   font-size: inherit;
@@ -532,15 +674,17 @@
   text-align: left;
 }
 
-/* 小方图 + 标题。图在格里 cover 占满，不要 contain 留边。 */
+/* Manus 任务行：18px 图标槽。有图 cover 同一格，没图走 lucide，不要 48px 灰底。 */
 .native-agent-session-thumb {
-  background: #e8eaed;
-  border-radius: 8px;
-  display: block;
+  align-items: center;
+  background: transparent;
+  border-radius: 4px;
+  display: flex;
   flex-shrink: 0;
-  height: 48px;
+  height: 18px;
+  justify-content: center;
   overflow: hidden;
-  width: 48px;
+  width: 18px;
 }
 
 .native-agent-session-thumb img {
@@ -551,14 +695,13 @@
   width: 100%;
 }
 
-.native-agent-session-thumb-letter {
+.native-agent-session-thumb-icon {
   align-items: center;
-  color: #9aa0a6;
+  color: #64748b;
   display: flex;
-  font-size: 15px;
-  font-weight: 600;
-  height: 100%;
+  height: 16px;
   justify-content: center;
+  width: 16px;
 }
 
 .native-agent-session-copy {
@@ -655,22 +798,23 @@
   font-weight: 700;
 }
 
-/* 底栏：跟会话行同一套水平网格，帮助图标和头像占同一列宽。
-   ⚠ 2026-08-19：上一版帮助 13px 图标、账号 22px 头像、padding 还各写各的，
-   左边对不齐；「已登录」第二行把触发行撑得又挤。对照 Cursor 聊天侧栏底栏：
-   同一 inset、同一槽宽、账号一行字。 */
+/* 底栏：跟会话行同一套水平网格。
+   ⚠ 2026-08-19：帮助 13px / 账号 22px、padding 各写各的，左边对不齐。
+   ⚠ 2026-09-20：帮助行撤了，10px+10px 的两行 dock 空当还在，单行账号
+   浮在「更多」底下——对照 Cursor 底栏：分隔线后 8px，行 inset 跟
+   --session-pad 一样，名字+档位两行自己长高，不许再钉死 36px。 */
 .native-agent-footer {
-  --dock-pad: 8px;
-  --dock-gap: 8px;
+  --dock-pad: var(--rail-pad);
+  --dock-gap: var(--rail-gap);
   --dock-slot: 20px;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   font-size: 13px;
-  gap: 4px;
-  margin-top: 10px;
-  padding: 10px 0 4px;
+  gap: 0;
+  margin-top: 8px;
+  padding: 8px 0 0;
 }
 
 .native-agent-help {
@@ -726,10 +870,10 @@
   display: flex;
   font: inherit;
   gap: var(--dock-gap);
-  height: 36px;
+  height: auto;
   margin: 0;
   min-height: 36px;
-  padding: 0 var(--dock-pad);
+  padding: 6px var(--dock-pad);
   text-align: left;
   transition: background 0.12s ease;
   width: 100%;
@@ -2569,15 +2713,21 @@
     display: block;
   }
 
-  .native-agent-sidebar {
+  .native-agent-sidebar,
+  .native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sidebar {
     border-bottom: 1px solid var(--sr-border-muted, #d1d9e0b3);
     border-right: 0;
     box-shadow: none;
+    flex: none;
     height: auto;
     min-height: auto;
     overflow: visible;
     padding: 14px 16px;
     width: 100%;
+  }
+
+  .native-agent-sidebar-toggle {
+    display: none;
   }
 
   .native-agent-brand {
@@ -2993,21 +3143,16 @@
   padding: 0 10px;
 }
 
-/* --- 样式版：底部工作区卡（对齐效果图） --------------- */
-
-.native-agent-nav-item {
-  border-radius: 6px;
-  font-size: 15px;
-  gap: 12px;
-  height: 44px;
-  padding: 0 12px;
-}
+/* ⚠ 2026-09-20：这里曾经又写一遍 .native-agent-nav-item { height:44px;
+   padding:0 12px; font-size:15px }，把上面 8-26 压过的 36 行高盖掉，
+   技能图标落到 24px、会话缩略图停在 20px。样式版工作区卡不许回头改侧栏导航。 */
 
 /* ── 账号弹出菜单（2026-08-07，形制参照 claude.ai 的账号菜单）──────────
    触发行原来只是一个静态 div 加一个裸的登出图标：既没有可发现性，又离
    "点错就掉线"只有一次误触。改成 触发行 + 上弹菜单，危险项单独分组。 */
 .native-agent-account {
   position: relative;
+  width: 100%;
 }
 
 /* 触发行沿用 .native-agent-user 的外观，只补按钮该有的那几条 */

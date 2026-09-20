@@ -2,8 +2,8 @@
  * 侧栏会话封面。
  *
  * ⚠ 2026-08-23 这份测试整体反转过：原来钉的是"有图贴图、没图**活渲染**"，
- *   现在钉"有图贴图、没图**首字母**"。活渲染那一档删了，理由与实测数据见
- *   session-thumb.tsx 的模块头注（它一个人占了那页首屏 2.42 MB 里的 1.4 MB）。
+ *   后来钉"有图贴图、没图**首字母**"。2026-09-20 首字母在真机上一排「做」，
+ *   没图改钉 lucide kind。活渲染那一档仍不许回来，理由见 session-thumb.tsx。
  *
  * 下面那条反向判据是本次的重点：**光有"贴图能贴上"是不够的**，把活渲染悄悄
  * 加回来它照样绿，而那 1.4 MB 就回来了，页面看起来还更"好看"——没人会报。
@@ -17,6 +17,8 @@ import { appPreviewUrl } from "../app-store-client";
 import {
   SessionThumb,
   indexAppsBySession,
+  sessionGoalTypeKind,
+  sessionRowIconKind,
   sessionRowTitle,
   sessionUsesSheet,
   shortSessionGoal,
@@ -116,18 +118,51 @@ describe("侧栏封面：只贴图", () => {
     expect(html).toContain("/api/sliderule/apps/app-1/preview?v=shot.42");
   });
 
-  it("没图 → 首字母块，**不是**现渲一个应用", () => {
+  it("没图按 Manus 类型换图标，不取标题首字", () => {
+    expect(sessionGoalTypeKind("做一个PC版的飞机大战射击游戏")).toBe("game");
+    expect(sessionGoalTypeKind("做一个番茄钟网页：25 分钟倒计时")).toBe("web");
+    expect(sessionGoalTypeKind("做一个待办事项系统")).toBe("list");
+    expect(sessionGoalTypeKind("制作一份幻灯片")).toBe("slides");
+    expect(sessionGoalTypeKind("创建设计稿")).toBe("design");
+    expect(sessionRowIconKind("failed", null, "做一个游戏")).toBe("alert");
+    expect(sessionRowIconKind("done", summary({ device: "phone" }))).toBe("phone");
+    expect(sessionRowIconKind("done", summary({ device: "desktop" }))).toBe("app");
+    expect(sessionRowIconKind("done", null)).toBe("file");
+
     const html = renderToStaticMarkup(
       React.createElement(SessionThumb, {
         sessionId: "s1",
-        title: "安康随访通",
+        title: "做一个番茄钟网页",
+        goal: "做一个番茄钟网页：25 分钟倒计时",
         app: summary({ has_preview: false }),
       })
     );
-    expect(html).toContain("native-agent-session-thumb-letter");
-    expect(html).toContain("安"); // 取标题首字
+    expect(html).toContain("sidebar-session-thumb-icon");
+    expect(html).toContain('data-icon="web"');
+    expect(html).not.toContain("native-agent-session-thumb-letter");
+    expect(html).not.toContain("做");
     expect(html).not.toContain("sidebar-session-thumb-sheet");
     expect(html).not.toContain("iframe");
+
+    const listHtml = renderToStaticMarkup(
+      React.createElement(SessionThumb, {
+        sessionId: "s2",
+        title: "做一个待办清单",
+        goal: "做一个待办清单",
+        app: null,
+      })
+    );
+    expect(listHtml).toContain('data-icon="list"');
+    expect(listHtml).not.toContain("做");
+  });
+
+  it("反向：不给番茄 / 坦克单独开一种，没类型词才回落文档", () => {
+    expect(sessionGoalTypeKind("番茄")).toBeNull();
+    expect(sessionGoalTypeKind("坦克")).toBeNull();
+    expect(sessionRowIconKind("done", null, "番茄")).toBe("file");
+    const src = sourceWithoutComments();
+    expect(src).not.toMatch(/番茄钟["']\s*:\s*["']timer/);
+    expect(src).not.toContain('"timer"');
   });
 
   it("**反向：侧栏不许再拉整包**（剥注释后源码里不该有这些）", () => {
@@ -135,6 +170,9 @@ describe("侧栏封面：只贴图", () => {
     // 页面甚至更好看，所以没人会报。只有这一条会红。
     const src = sourceWithoutComments();
     expect(src).toContain("appPreviewUrl"); // 先确认判据没打空：贴图那条还在
+    expect(src).toContain("sessionRowIconKind");
+    expect(src).toContain("sessionGoalTypeKind");
+    expect(src).not.toContain("native-agent-session-thumb-letter");
     expect(src).not.toContain("getApp"); // 整包：model_json + pages_json
     expect(src).not.toContain("/sessions/${"); // 完整会话状态，单条约 413 KB
     expect(src).not.toContain("HtmlAppSurface");

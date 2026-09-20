@@ -33,7 +33,7 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "components" | "help" | "settings" | "settings-legacy" | "admin";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "components" | "help" | "settings" | "settings-legacy" | "dashboard" | "admin";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
@@ -44,6 +44,7 @@ export type AgentLoopRouteState =
   | { kind: "help" }
   | { kind: "settings" }
   | { kind: "settings-legacy" }
+  | { kind: "dashboard" }
   | { kind: "admin" }
   | { kind: "detail"; runId: string };
 
@@ -101,6 +102,10 @@ export function getAgentLoopSettingsPath(): string {
   return "/agent-loop/settings";
 }
 
+export function getAgentLoopDashboardPath(): string {
+  return "/agent-loop/dashboard";
+}
+
 export function getAgentLoopAdminPath(): string {
   return getStaffConsolePath();
 }
@@ -143,6 +148,9 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/settings") {
     return { kind: "settings" };
   }
+  if (normalized === "/agent-loop/dashboard") {
+    return { kind: "dashboard" };
+  }
   if (
     normalized === "/agent-loop/admin" ||
     normalized.startsWith("/agent-loop/admin/")
@@ -171,6 +179,7 @@ export function resolveAgentLoopLiveEventRunId(
     route.kind === "settings" ||
     route.kind === "settings-legacy" ||
     route.kind === "admin" ||
+    route.kind === "dashboard" ||
     route.kind === "skills" ||
     route.kind === "components" ||
     route.kind === "help" ||
@@ -287,6 +296,8 @@ export default function AgentLoopPage() {
         ? currentSliderulePath()
         : next === "settings"
           ? getAgentLoopSettingsPath()
+          : next === "dashboard"
+            ? getAgentLoopDashboardPath()
           : next === "admin"
             ? (route.kind === "admin"
               ? (location.split(/[?#]/, 1)[0] || getAgentLoopAdminPath())
@@ -632,6 +643,8 @@ export default function AgentLoopPage() {
   const dashboardView: DashboardRouteView =
     route.kind === "settings"
       ? "settings"
+      : route.kind === "dashboard"
+        ? "dashboard"
       : route.kind === "admin"
         ? "admin"
       : route.kind === "settings-legacy"
@@ -671,6 +684,8 @@ export default function AgentLoopPage() {
               ? currentSliderulePath()
               : next === "settings"
                 ? getAgentLoopSettingsPath()
+                : next === "dashboard"
+                  ? getAgentLoopDashboardPath()
                 : next === "admin"
                   ? (route.kind === "admin"
                     ? (location.split(/[?#]/, 1)[0] || getAgentLoopAdminPath())

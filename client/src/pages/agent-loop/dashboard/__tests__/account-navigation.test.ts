@@ -29,75 +29,91 @@ function cssBlocks(src: string, selector: string): string[] {
 
 describe("侧栏账号导航", () => {
   /*
-   * ⚠ 这条判据 2026-08-26 重写过一次，因为它**靠字符串对不上碰巧通过**。
-   *
-   *   原来写的是 `dashboardSource 不含 '{ key: "skills", label: "技能库"'`，
-   *   题面是"把技能库从主导航移到账号菜单"。而 2026-08-25 用户要求把它放回
-   *   主导航（先叫「技能 · 连接器 · 伙伴」，08-26 改名「扩展中心」）——
-   *   条目**已经回到主导航了**，判据却因为 label 字面量变了而继续绿。
-   *   一条按错误理由通过的判据比没有更糟：它让人以为主导航还是干净的。
-   *
-   *   现在钉的是今天的事实：主导航有它、账号菜单也有一个快捷入口，
-   *   两处指向同一个 view；管理后台仍然不进账号菜单。
+   * ⚠ 2026-08-26 这条曾经钉「扩展中心在主导航 + 账号菜单」。
+   *   2026-09-19 工厂货架从主导航摘掉：装了也不进控制面。
+   *   正向：应用市场还在。反向：扩展中心 / 组件库 / 账号快捷入口不许回来。
    */
-  it("扩展中心在主导航里，账号菜单里也有快捷入口，两处指向同一个 view", () => {
-    expect(dashboardSource).toContain('key: "skills"');
-    expect(dashboardSource).toContain('label: "扩展中心"');
-    expect(accountPanelSource).toContain('data-testid="account-skills"');
-    expect(accountPanelSource).toContain('onClick={go("/agent-loop/skills")}');
+  it("主导航留应用市场和技能商店，扩展中心和组件库不进菜单", () => {
+    const nav = stripComments(dashboardSource);
+    const groups = nav.slice(
+      nav.indexOf("export const NAV_GROUPS"),
+      nav.indexOf("const NAV_ITEM_TESTID")
+    );
+    expect(groups).toContain('label: "应用市场"');
+    expect(groups).toContain('label: "技能"');
+    expect(groups).toContain('key: "skills"');
+    expect(groups).not.toContain('label: "扩展中心"');
+    expect(groups).not.toContain('label: "组件库"');
+    expect(groups).not.toContain('key: "components"');
+    expect(groups).not.toContain('label: "设置"');
+    expect(groups).not.toContain('label: "系统"');
+    expect(groups).not.toContain('label: "管理台"');
+    expect(groups).not.toContain('key: "settings"');
+    expect(groups).not.toContain('key: "admin"');
+    expect(accountPanelSource).not.toContain('data-testid="account-skills"');
+    expect(accountPanelSource).not.toContain(
+      'onClick={go("/agent-loop/skills")}'
+    );
   });
 
-  it("管理后台不进账号菜单", () => {
-    expect(accountPanelSource).not.toContain('data-testid="account-admin"');
-    expect(accountPanelSource).not.toContain('onClick={go("/admin")}');
+  it("Dashboard / 设置 / 帮助进账号菜单，不走旧 /admin 整页刷新", () => {
+    const panel = stripComments(accountPanelSource);
+    expect(panel).toContain('data-testid="account-dashboard"');
+    expect(panel).toContain(">Dashboard<");
+    expect(panel).toContain('data-testid="account-settings"');
+    expect(panel).toContain(">设置<");
+    expect(panel).toContain('data-testid="account-help"');
+    expect(panel).toContain(">帮助<");
+    expect(panel).toContain("onOpenView");
+    expect(panel).not.toContain("window.location.href = href");
+    expect(panel).not.toContain('data-testid="account-admin"');
+    expect(panel).not.toContain('onClick={go("/admin")}');
+    expect(panel).not.toContain('go("/agent-loop/settings")');
   });
 
-  it("扩展中心整行都能开合，不是只有箭头才能收", () => {
+  it("没有下级时不画假箭头；有下级时整行都能开合", () => {
     const src = stripComments(dashboardSource);
     const at = src.indexOf("if (item.children)");
     expect(at).toBeGreaterThan(-1);
     const around = src.slice(at, at + 220);
     expect(around).toContain("prev === item.key ? null : item.key");
     expect(around).not.toMatch(/if \(item\.children\) setOpenKey\(item\.key\)/);
-    expect(src).toContain("agent-nav-expand");
   });
 });
 
 describe("侧栏底栏 · Cursor 尺度", () => {
-  it("帮助和账号装在同一 dock，帮助行没有右箭头", () => {
+  it("底栏只留账号触发行，帮助不在 dock 里重复", () => {
     const start = dashboardSource.indexOf("native-agent-footer");
-    const end = dashboardSource.indexOf("<AccountPanel");
+    const end = dashboardSource.indexOf("</aside>");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const dock = dashboardSource.slice(start, end);
-    expect(dock).toContain("sidebar-help-docs");
-    expect(dock).toContain("帮助文档");
-    // 不该有：设置页列表那种行尾 ›。变异：把 RightOutlined 加回帮助行必红。
+    expect(dock).toContain("<AccountPanel");
+    expect(dock).not.toContain("sidebar-help-docs");
+    expect(stripComments(dock)).not.toContain("帮助文档");
     expect(dock).not.toContain("RightOutlined");
     expect(accountPanelSource).toContain('className="native-agent-user');
   });
 
-  it("账号行不是描边卡片，帮助行不是 44px 导航块", () => {
+  it("账号行不是描边卡片", () => {
     const user = cssBlocks(dashboardCss, ".native-agent-user");
     expect(user.length).toBeGreaterThan(0);
     expect(user.some(b => /border:\s*1px/.test(b))).toBe(false);
     expect(user.some(b => /border:\s*0/.test(b))).toBe(true);
 
-    const help = cssBlocks(dashboardCss, ".native-agent-help");
-    expect(help.some(b => /height:\s*44px/.test(b))).toBe(false);
-    expect(help.some(b => /height:\s*36px/.test(b))).toBe(true);
-    expect(help.some(b => /padding:\s*0 var\(--dock-pad\)/.test(b))).toBe(true);
-
-    const userPad = user.some(b => /padding:\s*0 var\(--dock-pad\)/.test(b));
-    expect(userPad).toBe(true);
+    const userCss = user.join(" ");
+    expect(userCss).toMatch(/padding:\s*6px var\(--dock-pad\)/);
+    expect(userCss).toMatch(/height:\s*auto/);
+    expect(userCss).not.toMatch(/(?<![a-z-])height:\s*36px/);
 
     const footer = cssBlocks(dashboardCss, ".native-agent-footer");
     expect(footer.some(b => /border-top/.test(b))).toBe(true);
     expect(footer.some(b => /--dock-slot:\s*20px/.test(b))).toBe(true);
+    expect(footer.some(b => /padding:\s*8px 0 0/.test(b))).toBe(true);
+    expect(footer.some(b => /padding:\s*10px 0 4px/.test(b))).toBe(false);
   });
 
-  it("帮助图标和头像占同一列，账号行不再写已登录", () => {
-    expect(dashboardSource).toContain('className="native-agent-dock-slot"');
+  it("头像占 dock 槽，账号行不再写已登录", () => {
     expect(accountPanelSource).toContain("native-agent-dock-slot");
     expect(stripComments(accountPanelSource)).not.toContain("已登录");
   });
@@ -113,5 +129,33 @@ describe("侧栏底栏 · Cursor 尺度", () => {
     const name = cssBlocks(dashboardCss, ".native-agent-user-name").join(" ");
     expect(name).not.toMatch(/#0f172a/);
     expect(name).toMatch(/#52525b/);
+  });
+});
+
+describe("侧栏图标左轨", () => {
+  /*
+   * ⚠ 2026-09-20 真机：技能图标 left=24，新建会话/缩略图 left=20。
+   * 后置「样式版」又写了一遍 nav-item { padding:0 12px; height:44px }，
+   * 把 8-26 压过的 36 行高盖掉。正向：三区读同一条 --rail-pad。
+   * 反向：不许再出现第二份 12/44 覆盖。
+   */
+  it("导航会话底栏读同一条 8px 左轨，后置样式版不许把导航改高", () => {
+    const sidebar = cssBlocks(dashboardCss, ".native-agent-sidebar").join(" ");
+    expect(sidebar).toMatch(/--rail-pad:\s*8px/);
+    expect(sidebar).toMatch(/--rail-icon:\s*16px/);
+
+    const nav = cssBlocks(dashboardCss, ".native-agent-nav-item");
+    expect(nav.length).toBe(1);
+    expect(nav[0]).toMatch(/padding:\s*0 var\(--rail-pad\)/);
+    expect(nav[0]).toMatch(/height:\s*36px/);
+    expect(nav[0]).not.toMatch(/height:\s*44px/);
+    expect(nav[0]).not.toMatch(/padding:\s*0 12px/);
+
+    const sessions = cssBlocks(dashboardCss, ".native-agent-sessions").join(" ");
+    expect(sessions).toMatch(/--session-pad:\s*var\(--rail-pad\)/);
+    expect(sessions).toMatch(/--session-icon:\s*var\(--rail-icon\)/);
+
+    const footer = cssBlocks(dashboardCss, ".native-agent-footer").join(" ");
+    expect(footer).toMatch(/--dock-pad:\s*var\(--rail-pad\)/);
   });
 });

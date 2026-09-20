@@ -1,8 +1,9 @@
 /**
- * 工作台侧栏「管理台」整页。对照设置中心两栏：
- * 一级在侧栏（超管才有），二级用：总览 / 用户 / 项目 / 运行 / 失败 / 审计。
+ * 超管全站台。入口在账号菜单 Dashboard，不在侧栏。
+ * 二级仍是：总览 / 用户 / 项目 / 运行 / 失败 / 审计。
  *
- * 不进账号菜单——account-navigation 禁止 AccountPanel 写 go("/admin")。
+ * 普通人进同一入口走 UserDashboardPage，不挂这页。
+ * 旧书签 /agent-loop/admin 仍解析到这套二级路径。
  */
 import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
@@ -94,7 +95,13 @@ export function getStaffConsolePath(section: StaffSection = "overview"): string 
 export function parseStaffSection(location: string): StaffSection {
   const raw = (location || "").split(/[?#]/, 1)[0] || "";
   const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
-  if (path === STAFF_CONSOLE_PATH || path === "/admin") return "overview";
+  if (
+    path === STAFF_CONSOLE_PATH ||
+    path === "/admin" ||
+    path === "/agent-loop/dashboard"
+  ) {
+    return "overview";
+  }
   const prefixes = [`${STAFF_CONSOLE_PATH}/`, "/admin/"];
   for (const prefix of prefixes) {
     if (path.startsWith(prefix)) {
@@ -148,7 +155,7 @@ export function StaffConsolePage() {
     <div
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)]"
       data-testid="sliderule-staff-console"
-      aria-label="管理台"
+      aria-label="Dashboard"
     >
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-[220px] shrink-0 flex-col border-r border-black/[0.06] px-3 py-3">

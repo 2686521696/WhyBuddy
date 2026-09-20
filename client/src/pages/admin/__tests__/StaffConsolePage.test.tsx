@@ -53,6 +53,7 @@ const user: AuthUser = {
 describe("parseStaffSection", () => {
   it("认工作台路径和旧 /admin 书签", () => {
     expect(parseStaffSection("/agent-loop/admin")).toBe("overview");
+    expect(parseStaffSection("/agent-loop/dashboard")).toBe("overview");
     expect(parseStaffSection("/agent-loop/admin/users")).toBe("users");
     expect(parseStaffSection("/agent-loop/admin/audit")).toBe("audit");
     expect(parseStaffSection("/admin")).toBe("overview");
@@ -117,7 +118,7 @@ describe("StaffConsolePage", () => {
 });
 
 describe("管理台入口不在设置里", () => {
-  it("设置页没有管理台分组，侧栏才挂超管闸", () => {
+  it("设置页没有管理台分组，全站台只在超管 Dashboard 里", () => {
     const settings = readFileSync(
       new URL("../../sliderule/SettingsDialog.tsx", import.meta.url),
       "utf8"
@@ -126,11 +127,20 @@ describe("管理台入口不在设置里", () => {
       new URL("../../agent-loop/dashboard/DashboardApp.tsx", import.meta.url),
       "utf8"
     );
+    const account = readFileSync(
+      new URL("../../agent-loop/dashboard/AccountPanel.tsx", import.meta.url),
+      "utf8"
+    );
+    const userDash = readFileSync(
+      new URL("../../agent-loop/dashboard/UserDashboardPage.tsx", import.meta.url),
+      "utf8"
+    );
     expect(settings).not.toContain("STAFF_NAV_ITEMS");
     expect(settings).not.toContain("AdminUsersPage");
-    expect(dashboard).toContain("管理台");
-    expect(dashboard).toContain("isSuperuser");
-    expect(dashboard).toContain("StaffConsolePage");
-    expect(dashboard).toContain("agent-nav-admin");
+    expect(dashboard).toContain("AccountDashboardPage");
+    expect(dashboard).not.toContain("agent-nav-admin");
+    expect(account).toContain("account-dashboard");
+    expect(userDash).toContain("isSuperuser");
+    expect(userDash).toContain("StaffConsolePage");
   });
 });

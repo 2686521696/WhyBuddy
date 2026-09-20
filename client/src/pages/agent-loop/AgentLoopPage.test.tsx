@@ -5,6 +5,7 @@ import * as api from "./dashboard/agentLoopApi";
 import AgentLoopPage, {
   createAgentLoopLiveEventHandlers,
   getAgentLoopAdminPath,
+  getAgentLoopDashboardPath,
   getAgentLoopRunPath,
   getAgentLoopSettingsPath,
   currentSliderulePath,
@@ -63,6 +64,7 @@ describe("AgentLoopPage", () => {
     expect(getAgentLoopSliderulePath()).toBe("/agent-loop/sliderule");
     expect(getAgentLoopWorkbenchPath()).toBe("/agent-loop/workbench");
     expect(getAgentLoopSettingsPath()).toBe("/agent-loop/settings");
+    expect(getAgentLoopDashboardPath()).toBe("/agent-loop/dashboard");
     expect(getAgentLoopAdminPath()).toBe("/agent-loop/admin");
     expect(getAgentLoopRunPath("2026-06-27T01-02-03-004Z")).toBe(
       "/agent-loop/runs/2026-06-27T01-02-03-004Z",
@@ -85,6 +87,7 @@ describe("AgentLoopPage", () => {
     expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({ kind: "skills" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
     expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({ kind: "settings-legacy" });
+    expect(parseAgentLoopLocation("/agent-loop/dashboard")).toEqual({ kind: "dashboard" });
     expect(parseAgentLoopLocation("/agent-loop/admin")).toEqual({ kind: "admin" });
     expect(parseAgentLoopLocation("/agent-loop/admin/users")).toEqual({ kind: "admin" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
@@ -140,6 +143,12 @@ describe("AgentLoopPage", () => {
     expect(
       resolveAgentLoopLiveEventRunId(
         { current: { backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
+        { kind: "dashboard" },
+      ),
+    ).toBeNull();
+    expect(
+      resolveAgentLoopLiveEventRunId(
+        { current: { backgroundRunId: "bridge-run" }, tasks: [], counts: {} },
         { kind: "workbench-legacy" },
       ),
     ).toBe("bridge-run");
@@ -150,6 +159,7 @@ describe("AgentLoopPage", () => {
     // 设置整页（SettingsPage）自管本地配置，不消费 AgentLoop settings payload
     expect(shouldRequestSettingsForView("settings")).toBe(false);
     expect(shouldRequestSettingsForView("admin")).toBe(false);
+    expect(shouldRequestSettingsForView("dashboard")).toBe(false);
     expect(shouldRequestSettingsForView("settings-legacy")).toBe(true);
   });
 
@@ -192,6 +202,17 @@ describe("AgentLoopPage", () => {
       />,
     );
     expect(legacyHtml).toContain("native-settings-content");
+
+    const dashboardHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="dashboard"
+        onViewChange={vi.fn()}
+      />,
+    );
+    expect(dashboardHtml).toContain('data-testid="user-dashboard-page"');
+    expect(dashboardHtml).not.toContain("管理台只对超管开放");
+    expect(dashboardHtml).not.toContain('data-testid="sliderule-staff-nav-users"');
   });
 
   it("⚠ 「推演」不再单列，但入口没消失：会话区顶上去了", () => {
@@ -212,7 +233,16 @@ describe("AgentLoopPage", () => {
     expect(navKeys).toContain("workbench");
     expect(navKeys).not.toContain("workbench-legacy");
     expect(navKeys).not.toContain("settings-legacy");
+    expect(navKeys).toContain("skills");
+    expect(navKeys).not.toContain("components");
+    expect(navKeys).not.toContain("settings");
+    expect(navKeys).not.toContain("admin");
+    expect(navKeys).not.toContain("dashboard");
+    expect(navKeys).not.toContain("help");
     expect(NAV_GROUPS[0]?.items[0]?.key).toBe("workbench");
+    expect(NAV_GROUPS.flatMap(g => g.items).some(i => i.children?.length)).toBe(
+      false
+    );
 
     const html = renderToStaticMarkup(
       <DashboardApp
@@ -238,8 +268,10 @@ describe("AgentLoopPage", () => {
     // 正向：品牌 logo 仍然指向推演（它不是唯一入口，但不许一起掉）
     expect(stripped).toContain('href="/agent-loop/sliderule"');
 
-    // 有下级的扩展中心仍有真箭头——别把那次裁决一并拆掉
-    expect(stripped).toContain('data-testid="agent-nav-expand"');
+    // 2026-09-19：扩展中心从主导航摘掉，不再有下级箭头
+    expect(stripped).not.toContain('data-testid="agent-nav-expand"');
+    expect(stripped).not.toContain("扩展中心");
+    expect(stripped).not.toContain("组件库");
   });
 
   it("keeps bookmarkable legacy AgentLoop views and marks them unmaintained", () => {
@@ -249,8 +281,13 @@ describe("AgentLoopPage", () => {
     expect(shouldShowLegacyUnmaintainedBanner("sliderule")).toBe(false);
     expect(shouldShowLegacyUnmaintainedBanner("settings")).toBe(false);
     expect(shouldShowLegacyUnmaintainedBanner("skills")).toBe(false);
+    expect(shouldShowLegacyUnmaintainedBanner("components")).toBe(true);
 
-    for (const view of ["workbench-legacy", "settings-legacy"] as const) {
+    for (const view of [
+      "workbench-legacy",
+      "settings-legacy",
+      "components",
+    ] as const) {
       const html = renderToStaticMarkup(
         <DashboardApp
           payload={{ tasks: [], counts: {} }}
@@ -271,6 +308,15 @@ describe("AgentLoopPage", () => {
     );
     expect(liveGalleryHtml).not.toContain('data-testid="legacy-unmaintained-banner"');
     expect(liveGalleryHtml).not.toContain("legacy，不维护");
+
+    const skillsHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="skills"
+        onViewChange={vi.fn()}
+      />,
+    );
+    expect(skillsHtml).not.toContain('data-testid="legacy-unmaintained-banner"');
 
     const productHtml = renderToStaticMarkup(
       <DashboardApp
@@ -295,6 +341,7 @@ describe("AgentLoopPage", () => {
 
     expect(html).toContain("native-agent-shell");
     expect(html).toContain('data-sidebar-collapsed="false"');
+    expect(html).toContain('data-testid="sidebar-collapse-toggle"');
     expect(html).toContain("native-workbench-content");
     expect(html).toContain("native-sliderule-content");
     expect(html).toContain("native-sliderule-shell");
@@ -963,10 +1010,11 @@ it("agentloop setting shell 112 renders standalone route without duplicate sideb
   // no 224px sidebar footprint in static structure
   expect(html).not.toContain("width:224");
 
-  // settings entry remains reachable via local top action/segmented control (appears in header)
   // workbench/detail reachable (initial is workbench content)
   expect(html).toContain("应用市场");
-  expect(html).toContain("设置");
+  expect(html).toContain("技能");
+  expect(html).not.toContain('data-testid="agent-nav-settings"');
+  expect(html).not.toContain("管理台");
 
   // full route width: content area not constrained by internal sidebar layout
   // (no sidebar present implies content uses available width)
@@ -1540,7 +1588,7 @@ it("agentloop setting center visual shell matches SlideRule reference", () => {
 
   expect(html).toContain("应用市场");
   expect(html).toContain("设置");
-  expect(html).toContain("帮助文档");
+  expect(html).not.toContain('data-testid="sidebar-help-docs"');
   expect(html).toContain("AgentLoop 设置中心");
   expect(html).toContain("CLI 基础配置");
   expect(html).toContain("设置导入 / 导出");

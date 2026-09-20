@@ -220,6 +220,7 @@ function Router() {
       <Route path={`${AGENT_LOOP_PATH}/help`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings/legacy`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/dashboard`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/admin/:section`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/admin`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />

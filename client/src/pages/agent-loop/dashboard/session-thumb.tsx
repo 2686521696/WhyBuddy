@@ -1,5 +1,5 @@
 /**
- * 侧栏会话封面——**只贴图，没图画首字母**。
+ * 侧栏会话封面——**有图贴图，没图画 lucide**。不按话题猜图标。
  *
  * ## 2026-08-23：活渲染那一档删了
  *
@@ -24,10 +24,27 @@
  * 有图的 20 个），所以侧栏会明显变空。要让它重新有画面，正确的做法是让那些
  * 应用真的有图（见 studio-landing-shot 的收口采集），而不是每次进页面现渲一遍。
  *
+ * 2026-09-20：首字母块在真机上一排都是「做」。对照 Manus 任务行改画
+ * lucide，格子 18px。第一版只看 phase / 是否绑了应用——真机十行都没绑
+ * 上 listApps 那 36 条，全落成同一颗文档。用户指出 Manus 是**按类型**
+ * 换图标（首页那排：幻灯片 / 设计 / 网站 / 游戏）。所以没图时先从意图
+ * 认这几类，再回落到绑定应用 / 文档。不给「番茄 / 坦克」单独开一种。
+ *
  * ⚠ 别把活渲染加回来。真要恢复画面，先加一个**只回落地页那一段**的瘦接口
  *   （`GET /sessions/{id}/landing-page`），别再拉整个会话状态。
  */
 import React from "react";
+import {
+  AlertCircle,
+  AppWindow,
+  FileText,
+  Gamepad2,
+  Globe,
+  ListTodo,
+  Palette,
+  Presentation,
+  Smartphone,
+} from "lucide-react";
 
 import {
   appPreviewUrl,
@@ -84,15 +101,78 @@ export function sessionRowTitle(
   );
 }
 
+export type SessionRowIconKind =
+  | "alert"
+  | "game"
+  | "web"
+  | "slides"
+  | "design"
+  | "list"
+  | "phone"
+  | "app"
+  | "file";
+
 /**
- * 没图时的方格。
- *
- * 用首字母块而不是应用中心那个 antd Empty：那个组件自带 image + description，
- * 在 40px 的方格里只会糊成一团。同一个"没有图"的语义，两处按各自尺寸表达。
+ * Manus 首页那几类：游戏 / 网站 / 幻灯 / 设计，外加我们列表里常见的待办。
+ * 只认类型词，不认具体产品名——「番茄钟网页」是 web，不是一颗番茄。
  */
-function LetterThumb({ title }: { title: string }) {
+export function sessionGoalTypeKind(text: string): SessionRowIconKind | null {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const t = raw.toLowerCase();
+  if (/游戏|game|射击/.test(t)) return "game";
+  if (/幻灯|ppt|slides?|演示稿/.test(t)) return "slides";
+  if (/海报|视觉设计|创建设计/.test(t) || /(^|[^a-z])design([^a-z]|$)/.test(t)) {
+    return "design";
+  }
+  if (/待办|清单|todo|checklist/.test(t)) return "list";
+  if (/网页|网站|website|\bweb\b|落地页/.test(t)) return "web";
+  if (/saas|系统|后台|服务台/.test(t)) return "app";
+  return null;
+}
+
+/**
+ * 侧栏行图标。failed 压过类型——失败行要一眼能扫到。
+ * 有类型词走 Manus 那几类；没有才看绑定应用 / device。
+ */
+export function sessionRowIconKind(
+  phase?: string | null,
+  app?: AppStoreSummary | null,
+  goal?: string | null
+): SessionRowIconKind {
+  if (String(phase || "").trim() === "failed") return "alert";
+  const typed = sessionGoalTypeKind(
+    [goal, app?.product_name, app?.goal].filter(Boolean).join(" ")
+  );
+  if (typed) return typed;
+  if (app?.id) {
+    return String(app.device || "").trim() === "phone" ? "phone" : "app";
+  }
+  return "file";
+}
+
+const SESSION_ROW_ICONS = {
+  alert: AlertCircle,
+  game: Gamepad2,
+  web: Globe,
+  slides: Presentation,
+  design: Palette,
+  list: ListTodo,
+  phone: Smartphone,
+  app: AppWindow,
+  file: FileText,
+} as const;
+
+function SessionRowIcon({ kind }: { kind: SessionRowIconKind }) {
+  const Icon = SESSION_ROW_ICONS[kind];
   return (
-    <span className="native-agent-session-thumb-letter">{title.slice(0, 1)}</span>
+    <span
+      className="native-agent-session-thumb-icon"
+      data-testid="sidebar-session-thumb-icon"
+      data-icon={kind}
+    >
+      <Icon size={16} strokeWidth={1.75} />
+    </span>
   );
 }
 
@@ -100,15 +180,20 @@ export function SessionThumb({
   sessionId,
   title,
   app,
+  phase,
+  goal,
 }: {
   sessionId: string;
   title: string;
   app?: AppStoreSummary | null;
+  phase?: string | null;
+  goal?: string | null;
 }) {
   const [sheetFailed, setSheetFailed] = React.useState(false);
   React.useEffect(() => setSheetFailed(false), [sessionId, app?.id, app?.preview_tag]);
 
   const sheet = sessionUsesSheet(app) && !sheetFailed;
+  const kind = sessionRowIconKind(phase, app, goal || title);
   return (
     <span className="native-agent-session-thumb" aria-hidden>
       {sheet ? (
@@ -116,11 +201,11 @@ export function SessionThumb({
           src={appPreviewUrl(app!.id, app!.preview_tag)}
           alt=""
           data-testid="sidebar-session-thumb-sheet"
-          // 图拉不到（记录刚被删、网络抖）→ 回落同一个首字母块，不留空白方格。
+          // 图拉不到（记录刚被删、网络抖）→ 回落同槽图标，不留空白、不回首字母。
           onError={() => setSheetFailed(true)}
         />
       ) : (
-        <LetterThumb title={title} />
+        <SessionRowIcon kind={kind} />
       )}
     </span>
   );

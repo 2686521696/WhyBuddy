@@ -28,6 +28,7 @@ import {
   indexAppsBySession,
   sessionRowTitle,
 } from "./session-thumb";
+import { useShellSidebar } from "@/pages/sliderule/ShellSidebarContext";
 import { fetchSessionsList, invalidateSessionsList } from "./sessions-list-client";
 
 export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
@@ -493,6 +494,10 @@ export function SidebarSessions({
   const [activeId, setActiveId] = React.useState<string>(() => readActiveSessionId());
   // 两步删除确认：第一次点垃圾桶进入待确认（变红），再点才真删；点别处/超时复位
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
+  const shell = useShellSidebar();
+  const rail = shell?.collapsed ?? false;
+  const [recentsOpen, setRecentsOpen] = React.useState(false);
+  const recentsRef = React.useRef<HTMLDivElement | null>(null);
 
   const refresh = React.useCallback(() => {
     // 与应用中心共享同一次请求（见 sessions-list-client 的说明）：两边在同一
@@ -542,9 +547,30 @@ export function SidebarSessions({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuOpen]);
 
+  React.useEffect(() => {
+    if (!rail) setRecentsOpen(false);
+  }, [rail]);
+
+  React.useEffect(() => {
+    if (!recentsOpen) return;
+    const onDown = (ev: MouseEvent) => {
+      if (!recentsRef.current?.contains(ev.target as Node)) setRecentsOpen(false);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setRecentsOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [recentsOpen]);
+
   const pick = (id: string) => {
     if (id !== activeId) activateSession(id);
     setActiveId(id);
+    setRecentsOpen(false);
     onOpenSliderule?.();
   };
 
@@ -616,7 +642,13 @@ export function SidebarSessions({
           className="native-agent-session-item"
           onClick={() => pick(s.sessionId)}
         >
-          <SessionThumb sessionId={s.sessionId} title={title} app={app} />
+          <SessionThumb
+            sessionId={s.sessionId}
+            title={title}
+            app={app}
+            phase={s.phase}
+            goal={s.goal}
+          />
           <span className="native-agent-session-copy">
             <span className="native-agent-session-title">{title}</span>
             <SessionRowMeta
@@ -654,6 +686,7 @@ export function SidebarSessions({
         type="button"
         className="native-agent-session-new"
         data-testid="sidebar-session-new"
+        title="新建会话"
         disabled={creatingSession}
         onClick={() => {
           // 只复用**当前**这条空会话。扫列表里别的空壳 = 2026-08-27
@@ -685,8 +718,32 @@ export function SidebarSessions({
         <svg className="native-agent-session-new-plus" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
           <path d="M12 5v14M5 12h14" />
         </svg>
-        新建会话
+        <span className="native-agent-rail-copy">新建会话</span>
       </button>
+
+      <div className="native-agent-recents-wrap" ref={recentsRef}>
+        {rail ? (
+          <button
+            type="button"
+            className={`native-agent-session-recents${recentsOpen ? " is-open" : ""}`}
+            data-testid="sidebar-session-recents"
+            aria-label="最近会话"
+            aria-expanded={recentsOpen}
+            title="最近会话"
+            onClick={() => setRecentsOpen(open => !open)}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+              <path d="M4 7h16M4 12h16M4 17h10" />
+            </svg>
+          </button>
+        ) : null}
+
+      <div
+        className={rail ? "native-agent-session-flyout" : "native-agent-sessions-body"}
+        data-testid="sidebar-session-flyout"
+        hidden={rail && !recentsOpen}
+      >
+        {rail ? <div className="native-agent-sessions-label">最近会话</div> : null}
 
       <div className="native-agent-session-tools" ref={menuRef}>
         <label className="native-agent-session-search">
@@ -777,6 +834,8 @@ export function SidebarSessions({
           更多
         </a>
       )}
+      </div>
+      </div>
     </div>
   );
 }
