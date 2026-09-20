@@ -6,6 +6,8 @@ compatibility is separately smoke-tested when a dedicated test DB is available.
 """
 
 import json
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
@@ -142,6 +144,26 @@ def test_expired_worker_cannot_publish_or_renew_after_takeover(store, monkeypatc
     third = store.acquire_lease(project.projectId, owner_id="alice", lease_owner="third")
     assert third.generation == new.generation + 1
     assert third.sandboxId == "sandbox-a"
+
+
+def test_append_event_wakes_in_process_waiters(store):
+    """通电：写下一条就叫醒 SSE，不许靠浏览器空转 afterSeq。"""
+    project = create(store)
+    op = operation(store, project)
+    woke = []
+
+    def wait():
+        woke.append(store.wait_for_events(op.operationId, 1.5))
+
+    worker = threading.Thread(target=wait)
+    worker.start()
+    deadline = time.time() + 1
+    while time.time() < deadline and op.operationId not in module._EVENT_WAITERS:
+        time.sleep(0.01)
+    store.append_event(op.operationId, owner_id="alice", event_type="runtime.console",
+                       payload={"data": "n"})
+    worker.join(timeout=2)
+    assert woke == [True]
 
 
 def test_operations_and_events_recover_and_idempotency_detects_changed_input(store):
@@ -671,3 +693,43 @@ def test_runtime_scan_passes_completed_pages_and_busy_projects_to_find_expired_w
     clock[0] += 11
     assert [(op.operationId, owner) for op, owner in store.list_runnable_operations(limit=1)] == [(expired.operationId, "alice")]
     assert busy.operationId != expired.operationId
+
+
+_TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+    b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def test_preview_snapshot_is_not_a_verification_receipt(store):
+    project = create(store)
+    assert store.read_preview_snapshot(project.projectId, owner_id="alice") is None
+    store.put_preview_snapshot(
+        project.projectId,
+        owner_id="alice",
+        png=_TINY_PNG,
+        revision=project.currentRevision,
+        source="browser_view",
+    )
+    assert store.read_preview_snapshot(project.projectId, owner_id="alice") == _TINY_PNG
+    with pytest.raises(ProjectNotFound):
+        store.read_preview_snapshot(project.projectId, owner_id="bob")
+    with pytest.raises(ValueError, match="preview_snapshot_invalid"):
+        store.put_preview_snapshot(
+            project.projectId, owner_id="alice", png=b"not-png",
+            revision=project.currentRevision, source="browser_view",
+        )
+    with pytest.raises(ValueError, match="preview_snapshot_source_invalid"):
+        store.put_preview_snapshot(
+            project.projectId, owner_id="alice", png=_TINY_PNG,
+            revision=project.currentRevision, source="project_verify",
+        )
+    store.put_preview_snapshot(
+        project.projectId,
+        owner_id="alice",
+        png=_TINY_PNG,
+        revision="rev-2",
+        source="browser_interact",
+    )
+    assert store.read_preview_snapshot(project.projectId, owner_id="alice") == _TINY_PNG

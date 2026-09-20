@@ -37,3 +37,39 @@ def test_missing_playwright_is_unavailable_not_a_fake_click(monkeypatch):
     monkeypatch.setattr("services.project_browser_interact.local_playwright_available", lambda: False)
     with pytest.raises(ValueError, match="project_browser_driver_unavailable"):
         run_browser_action("https://app.preview.example.com/", {"op": "snapshot"})
+
+
+def test_playwright_shot_stays_off_the_model_observation(monkeypatch):
+    import base64
+    import json
+    from types import SimpleNamespace
+
+    png = b"\x89PNG\r\n\x1a\n" + b"shot"
+    monkeypatch.setattr(
+        "services.project_browser_interact.local_playwright_available", lambda: True
+    )
+
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "ok": True,
+                "op": "snapshot",
+                "url": "https://app.preview.example.com/",
+                "title": "Game",
+                "snapshot": [],
+                "evaluated": None,
+                "screenshot": base64.b64encode(png).decode("ascii"),
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "services.project_browser_interact.subprocess.run", fake_run
+    )
+    result = run_browser_action(
+        "https://app.preview.example.com/", {"op": "snapshot"}
+    )
+    assert result["screenshotPng"] == png
+    assert "screenshot" not in result
+    assert result["title"] == "Game"

@@ -6,11 +6,14 @@ the explicit cancel endpoint persists intent even while the worker is offline.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from typing import Literal
 from contextlib import contextmanager
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from config.settings import settings
@@ -254,6 +257,70 @@ def list_project_operation_events(operation_id: str, viewer: CurrentUser,
             "nextSeq": selected[-1].seq if selected else afterSeq, "hasMore": len(events) > limit}
 
 
+#: 浏览器只挂这一根 SSE。有字节就推，没有就等 notify，不再 200ms 空打 afterSeq。
+_STREAM_WAIT_SECONDS = 0.25
+_STREAM_HEARTBEAT_SECONDS = 15.0
+_STREAM_TERMINAL = frozenset({"completed", "failed", "cancelled"})
+
+
+async def _operation_event_sse(store, operation_id: str, owner_id: str, after_seq: int):
+    """先补齐游标后面的事件，再等下一条。终态且追平才 settled。"""
+    cursor = after_seq
+    last_beat = time.monotonic()
+    while True:
+        events = await asyncio.to_thread(
+            store.list_events, operation_id, owner_id=owner_id, after_seq=cursor, limit=200)
+        if events:
+            for event in events:
+                cursor = event.seq
+                yield (
+                    f"id: {event.seq}\n"
+                    f"data: {json.dumps(_event_response(event), ensure_ascii=False)}\n\n"
+                )
+            last_beat = time.monotonic()
+            continue
+        operation = await asyncio.to_thread(store.get_operation, operation_id, owner_id=owner_id)
+        if operation.status in _STREAM_TERMINAL:
+            yield (
+                "data: " + json.dumps({
+                    "type": "runtime.settled",
+                    "operationId": operation_id,
+                    "status": operation.status,
+                    "lastSeq": cursor,
+                }, ensure_ascii=False) + "\n\n"
+            )
+            return
+        now = time.monotonic()
+        if now - last_beat >= _STREAM_HEARTBEAT_SECONDS:
+            yield ": keepalive\n\n"
+            last_beat = now
+        await asyncio.to_thread(store.wait_for_events, operation_id, _STREAM_WAIT_SECONDS)
+
+
+@router.get("/project-operations/{operation_id}/events/stream")
+async def stream_project_operation_events(
+        operation_id: str, request: Request, viewer: CurrentUser,
+        afterSeq: int = Query(default=0, ge=0)):
+    """PTY / 日志的发布订阅。浏览器 EventSource，只在事件到时才有帧。"""
+    with _store_errors():
+        store = get_project_store()
+        store.get_operation(operation_id, owner_id=str(viewer.id))
+        _read_gate(viewer)
+    header = (request.headers.get("last-event-id") or "").strip()
+    cursor = afterSeq
+    if header.isdigit():
+        cursor = max(cursor, int(header))
+    return StreamingResponse(
+        _operation_event_sse(store, operation_id, str(viewer.id), cursor),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.post("/project-operations/{operation_id}/touch", response_model=ProjectOperationSnapshot)
 def touch_project_operation(operation_id: str, viewer: CurrentUser):
     owner_id = str(viewer.id)
@@ -354,3 +421,25 @@ def read_project_verification_artifact(verification_id: str, artifact_id: str, r
             verification_id, artifact_id, owner_id=owner_id)
         return Response(content=data, media_type="image/png", headers={"Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff", "Content-Disposition": 'inline; filename="page-check.png"'})
+
+
+@router.get("/projects/{project_id}/preview-snapshot")
+def read_project_preview_snapshot(project_id: str, viewer: CurrentUser):
+    """Latest browser/preview PNG. 404 if none. Never a verification receipt."""
+    with _store_errors():
+        store, owner_id = get_project_store(), str(viewer.id)
+        project = store.get_project(project_id, owner_id=owner_id)
+        load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
+        _read_gate(viewer)
+        data = store.read_preview_snapshot(project_id, owner_id=owner_id)
+        if data is None:
+            raise ProjectNotFound("preview_snapshot_not_found")
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": 'inline; filename="preview-snapshot.png"',
+            },
+        )

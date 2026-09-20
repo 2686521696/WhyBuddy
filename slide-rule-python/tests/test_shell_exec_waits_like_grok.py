@@ -96,3 +96,89 @@ def test_default_foreground_block_matches_grok():
     assert SHELL_EXEC_FOREGROUND_BLOCK_SECONDS >= 120, (
         "前台默认不够 grok 的 120 秒，19 秒的 build 还要再烧一轮模型去 poll"
     )
+
+
+def test_dispatch_pushes_operation_id_before_the_command_finishes():
+    """界面订 PTY 靠 operationId。等 exit 再补 id = 进行中白纸。
+
+    模型仍要等到终态（上面三条钉着 execute 默认 wait=True）。
+    分发处对前台 shell 必须 wait=False，enqueue 立刻推 id。
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    from control_turn_support import new_sid, seed_approved_session as seed_session
+    from services import rehearsal_control as rc
+
+    sid = new_sid("shell-live-id")
+    state = seed_session(sid, goal={"text": "跑测试", "status": "clear"})
+    seen_wait = []
+
+    class FakeTools:
+        owner_id = "test-user"
+
+        def execute(self, name, args, session, *, wait=True):
+            seen_wait.append(wait)
+            return {
+                "ok": True,
+                "operationId": "op-live",
+                "status": "running",
+                "commandFinished": False,
+            }
+
+        class store:
+            @staticmethod
+            def get_operation(oid, owner_id=None):
+                return SimpleNamespace(status="running")
+
+    token = rc._PROJECT_TOOLS.set(FakeTools())
+    started = time.monotonic()
+    try:
+        events = asyncio.run(_collect_until_operation_id(rc, state))
+    finally:
+        rc._PROJECT_TOOLS.reset(token)
+    assert time.monotonic() - started < 1.0, "补 id 不许等命令结束"
+    assert seen_wait == [False], seen_wait
+    starts = [e for e in events if e.get("type") == "control_tool_start"]
+    assert any(e.get("operationId") == "op-live" for e in starts), starts
+
+
+async def _collect_until_operation_id(rc, state):
+    events = []
+    agen = rc._dispatch_tool(
+        "shell_exec",
+        {"command": "npm test"},
+        state,
+        "跑测试",
+        [],
+        [],
+        "desktop",
+        None,
+        "跑测试",
+    )
+    try:
+        async for event in agen:
+            events.append(event)
+            if event.get("type") == "control_tool_start" and event.get("operationId"):
+                break
+    finally:
+        await agen.aclose()
+    return events
+
+
+def test_dispatch_source_really_skips_the_foreground_block():
+    from pathlib import Path
+
+    from control_turn_support import strip_python
+
+    src = strip_python(
+        Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
+    )
+    project = src[src.find("if name in PROJECT_TOOL_NAMES") :]
+    execute = src[
+        src.find("def _execute_project_tool") : src.find(
+            "def _project_tool_wait_seconds"
+        )
+    ]
+    assert "_execute_project_tool" in project, "分发处必须走先 enqueue 再堵"
+    assert "wait" in execute and "False" in execute, execute

@@ -47,6 +47,7 @@ from services.project_tool_contracts import (
     PROJECT_READ_MAX_CHARS,
     PROJECT_READ_MAX_RESULT_CHARS,
     ReadArguments,
+    explicit_read_window,
     project_tool_definitions,
 )
 from services.rehearsal_control import (
@@ -58,7 +59,9 @@ from services.rehearsal_control import (
 TEMPLATE = pathlib.Path(__file__).resolve().parents[2] / "project-templates" / "react-vite-tasks"
 
 #: 锁文件/生成物不算"正常源文件"：它们本来就该走 project_search，不该整份读。
+#: node_modules 是本机装过模板依赖后留下的二进制，收集阶段当 utf-8 读会炸。
 _NOT_ORDINARY_SOURCE = {"package-lock.json"}
+_SKIP_DIR_PARTS = {"node_modules", ".git", "dist", "build"}
 
 
 def _ordinary_sources() -> dict[str, str]:
@@ -66,10 +69,16 @@ def _ordinary_sources() -> dict[str, str]:
     for path in sorted(TEMPLATE.rglob("*")):
         if not path.is_file():
             continue
+        parts = path.relative_to(TEMPLATE).parts
+        if any(part in _SKIP_DIR_PARTS for part in parts):
+            continue
         rel = path.relative_to(TEMPLATE).as_posix()
         if rel in _NOT_ORDINARY_SOURCE:
             continue
-        out[rel] = path.read_text(encoding="utf-8")
+        try:
+            out[rel] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
     return out
 
 
@@ -79,6 +88,33 @@ def test_模板真的在_不然下面几条量的是空气():
     assert TEMPLATE.is_dir(), TEMPLATE
     assert len(sources) >= 8, sorted(sources)
     assert max(len(t) for t in sources.values()) > 5000, "模板里没有胖文件，测不到东西"
+
+
+def test_默认读只回路径():
+    """无窗 project_read 只回路径+摘要。把默认改回整文件灌入必须红。
+
+    走产线 `_read` + `bound_tool_result`，不重抄指针信封。database.mjs
+    超过摘要上限，全文若再进 content，本条立刻红。
+    """
+    from services.project_tools import ProjectTools
+
+    text = (TEMPLATE / "database.mjs").read_text(encoding="utf-8")
+    assert len(text) > 800
+    pointer = ProjectTools._read(
+        None,
+        {"database.mjs": text},
+        type("Rev", (), {"revision": "r1"})(),
+        ReadArguments(path="database.mjs"),
+    )
+    fed = json.loads(bound_tool_result(
+        {"ok": True, "tool": "project_read", **pointer},
+        "project_read",
+    ))
+    assert fed["content"] == ""
+    assert fed["path"] == "database.mjs"
+    assert fed.get("excerpt")
+    assert text not in json.dumps(fed, ensure_ascii=False)
+    assert explicit_read_window(ReadArguments(path="database.mjs")) is False
 
 
 # ── 端到端：模型实际拿到手的是多少字 ──────────────────────────────────────
@@ -108,8 +144,8 @@ def _delivered(text: str) -> int:
 
 
 @pytest.mark.parametrize("rel", sorted(_ordinary_sources()))
-def test_每个正常源文件都能一次读完(rel: str):
-    """核心正向判据：真模板的真文件，一次 project_read 就该读完。
+def test_显式读窗仍能一次吞下正常源文件(rel: str):
+    """显式 offset/limit 仍走 8000 三道夹。默认无窗是指针，见 test_默认读只回路径。
 
     ⚠ 变异咬这条：把 PROJECT_READ_MAX_CHARS 改回 2000（或者只改它、
       不改信封/回喂那两道）→ database.mjs / server.mjs / main.tsx /
@@ -193,13 +229,12 @@ def test_描述里的数字是渲染出来的_不是手打的():
     assert str(PROJECT_READ_MAX_CHARS) not in search
 
 
-def test_不传limit就是整份读完():
-    """抄 grok `input.limit.unwrap_or(usize::MAX).min(max_lines)`。
-
-    默认值要等于上限，否则"不传 limit"会拿到一个比上限还小的窗口，
-    而模型多数时候就是不传。
-    """
+def test_不传limit的schema默认仍是读窗上限():
+    """显式要窗时 limit 默认仍是 8000。不传字段则走指针，不是整份灌入。"""
     assert ReadArguments(path="x").limit == PROJECT_READ_MAX_CHARS
+    from services.project_tool_contracts import explicit_read_window
+    assert explicit_read_window(ReadArguments(path="x")) is False
+    assert explicit_read_window(ReadArguments(path="x", offset=0)) is True
 
 
 # ── 真机那一趟：同一批文件，改造前后要几轮 ────────────────────────────────

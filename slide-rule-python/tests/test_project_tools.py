@@ -59,6 +59,15 @@ def execute(setup, name, args=None, state=None):
     return setup.tools.execute(name, args or {}, state or setup.state)
 
 
+def read_body(setup, path="src/App.tsx", tool="project_read"):
+    """显式读窗才回正文。默认 file_read 只回路径+摘要。"""
+    if tool == "file_read":
+        return execute(setup, tool, {"file": path, "start_line": 0, "end_line": 100000})
+    if tool == "read_file":
+        return execute(setup, tool, {"path": path, "offset": 0, "limit": 100000})
+    return execute(setup, tool, {"path": path, "offset": 0, "limit": 8000})
+
+
 def create(setup):
     result = execute(setup, "project_create", {"approvalRef": setup.approval})
     assert result["ok"], result
@@ -148,7 +157,7 @@ def test_create_read_patch_and_session_pointer_use_real_persistence(setup):
     listed = execute(setup, "project_list")
     assert listed["revision"] == project["revision"]
     assert {f["path"] for f in listed["files"]} == set(setup.files)
-    read = execute(setup, "project_read", {"path": "src/App.tsx"})
+    read = read_body(setup, "src/App.tsx")
     assert read["content"] == setup.files["src/App.tsx"]
     assert read["sha256"] == content_hash(read["content"])
     changed = change(setup, project)
@@ -156,8 +165,10 @@ def test_create_read_patch_and_session_pointer_use_real_persistence(setup):
     assert changed["verification"] == "not_run"
     saved = setup.sessions.load(setup.state.sessionId).payload
     assert saved["runtimeKind"] == "project" and saved["projectRevision"] == changed["revision"]
-    assert execute(setup, "project_read", {"path": "src/App.tsx"})["content"] == "Updated task\n"
-    assert execute(setup, "project_read", {"path": "src/App.tsx", "revision": project["revision"]})["content"] == read["content"]
+    assert read_body(setup, "src/App.tsx")["content"] == "Updated task\n"
+    assert execute(setup, "project_read", {
+        "path": "src/App.tsx", "revision": project["revision"], "offset": 0, "limit": 8000,
+    })["content"] == read["content"]
     assert not setup.provider_calls
 
 

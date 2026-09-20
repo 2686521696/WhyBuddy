@@ -461,7 +461,7 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
             if step == 3:
                 assert result["verification"]["status"] == "failed"
                 assert {"id": "counter_increment", "status": "failed", "expected": "1", "actual": "2"} in result["verification"]["assertions"]
-                return llm_tool("project_read", {"path": "src/main.tsx"}, "read-failure")
+                return llm_tool("project_read", {"path": "src/main.tsx", "offset": 0, "limit": 8000}, "read-failure")
             if step == 4:
                 assert "BROKEN_COUNTER" in result["content"]
                 return llm_tool("project_patch", {"approvalRef": env.ref, "expectedRevision": result["revision"],

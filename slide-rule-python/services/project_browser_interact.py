@@ -13,6 +13,7 @@ project_browser_driver_unavailable，不许假装点到了。
 
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
@@ -91,6 +92,10 @@ const origin = new URL(url).origin;
     snapshot.push({ index: i, tag, name });
   }
   const title = await page.title();
+  let screenshot = null;
+  try {
+    screenshot = (await page.screenshot({ type: "png" })).toString("base64");
+  } catch (_) {}
   process.stdout.write(JSON.stringify({
     ok: true,
     op,
@@ -98,6 +103,7 @@ const origin = new URL(url).origin;
     title,
     snapshot,
     evaluated: action.evaluated === undefined ? null : action.evaluated,
+    screenshot,
   }));
   await browser.close();
 })().catch((err) => {
@@ -151,7 +157,7 @@ def run_browser_action(preview_url: str, action: dict, *, timeout_s: int = 30) -
         raise ValueError("project_browser_action_failed") from exc
     if not isinstance(body, dict) or body.get("ok") is not True:
         raise ValueError(str(body.get("error") or "project_browser_action_failed")[:240])
-    return {
+    result = {
         "op": body.get("op"),
         "url": body.get("url"),
         "title": body.get("title"),
@@ -159,3 +165,10 @@ def run_browser_action(preview_url: str, action: dict, *, timeout_s: int = 30) -
         "evaluated": body.get("evaluated"),
         "interactive": True,
     }
+    raw = body.get("screenshot")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            result["screenshotPng"] = base64.b64decode(raw, validate=False)
+        except Exception:
+            pass
+    return result

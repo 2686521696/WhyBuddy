@@ -127,6 +127,30 @@ def test_deploy_expose_and_browser_navigate_start_the_private_preview(setup):
     assert page["ok"] and page["presented"] == "project" and page["path"] == "src/App.tsx"
 
 
+def test_browser_view_keeps_a_preview_shot_not_a_verification(setup):
+    """飞机大战那趟 browser_view 看了三次也不落图。字节不许回给模型。"""
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+        b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    created = create(setup)
+    setup.supervisor.preview_page = lambda project: {
+        "url": "https://rt-1.preview.example.com/", "revision": "rev",
+    }
+    setup.supervisor.browser_interactor = lambda action, page: {
+        "op": action["op"], "url": page["url"], "screenshotPng": png,
+    }
+    viewed = execute(setup, "browser_view")
+    assert viewed["ok"] is True
+    assert viewed.get("previewSnapshot") is True
+    assert "screenshotPng" not in viewed
+    assert "screenshot" not in viewed
+    project_id = created["projectId"]
+    assert setup.store.read_preview_snapshot(project_id, owner_id="alice") == png
+    assert viewed.get("verification") is None
+
+
 def test_model_sees_the_leaked_pack_not_the_old_aliases(setup):
     from models.v5_state import V5SessionState
     from services import rehearsal_control as control

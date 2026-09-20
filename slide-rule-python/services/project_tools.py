@@ -8,6 +8,7 @@ whose sandbox or dispatch references still need reconciliation.
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 import uuid
@@ -28,13 +29,20 @@ from services.project_store import ProjectConflict, ProjectNotFound, ProjectStor
 from services.project_source_operations import ProjectSourceOperations
 from services.project_browser_interact import local_playwright_available, run_browser_action
 from services.project_tool_contracts import (
-    BROWSER_INTERACT_TOOLS, LEAKED_UNAVAILABLE, PROJECT_ARGUMENTS, PROJECT_KERNEL_WRITE_TOOLS,
+    BROWSER_INTERACT_TOOLS, FILE_READ_EXCERPT_CHARS, FILE_READ_EXCERPT_LINES,
+    LEAKED_UNAVAILABLE, PROJECT_ARGUMENTS, PROJECT_KERNEL_WRITE_TOOLS,
     PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS, PatchArguments,
-    classify_shell_command, compile_browser_action, leaked_browser_url_allowed,
+    classify_shell_command, compile_browser_action, explicit_read_window,
+    leaked_browser_url_allowed,
     leaked_shell_exec_dir_allowed,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS,
 )
-from services.scope_authority import plan_execution_authorized
+from services.deliverable_kind import (
+    OFFICE_START_NOT_APPLICABLE, OFFICE_VERIFY_NOT_APPLICABLE,
+    is_office_artifact_path, is_office_file_plan,
+)
+from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
+from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
 
@@ -113,6 +121,70 @@ def operation_snapshot(snapshot):
     return result
 
 
+def _pointer_file(path, text, revision):
+    """无窗读：路径 + 文件头，不把全文灌进 messages。"""
+    lines = text.splitlines(keepends=True)
+    excerpt = "".join(lines[:FILE_READ_EXCERPT_LINES])
+    if len(excerpt) > FILE_READ_EXCERPT_CHARS:
+        excerpt = excerpt[:FILE_READ_EXCERPT_CHARS]
+    return {
+        "revision": revision.revision,
+        "path": path,
+        "sha256": content_hash(text),
+        "totalChars": len(text),
+        "lineCount": len(lines),
+        "excerpt": excerpt,
+        "content": "",
+        "nextOffset": 0,
+        "truncated": len(text) > 0,
+        "hint": (
+            "这是路径和摘要，不是全文。"
+            "要原文带 offset/limit 或 start_line/end_line；搜内容用 file_find_in_content。"
+        ),
+    }
+
+
+def _command_log_excerpt(store, operation_id, owner_id) -> str:
+    """操作日志末尾。bash 写出的文本不进源码树，file_read 找不到。"""
+    op_id = str(operation_id or "").strip()
+    if not op_id or store is None:
+        return ""
+    events = store.list_events(op_id, owner_id=owner_id, after_seq=0, limit=100)
+    parts: list[str] = []
+    for event in events:
+        payload = event.payload if getattr(event, "payload", None) else {}
+        if not isinstance(payload, dict):
+            continue
+        if event.type == "runtime.log":
+            parts.append(str(payload.get("text") or ""))
+        elif event.type == "runtime.console":
+            parts.append(str(payload.get("data") or payload.get("text") or ""))
+    text = "".join(parts)
+    if len(text) > FILE_READ_EXCERPT_CHARS:
+        return text[-FILE_READ_EXCERPT_CHARS:]
+    return text
+
+
+def _command_pointer(result, excerpt=""):
+    """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
+
+    ⚠ 2026-09-20 真机：excerpt 写成 errorCode，模型只看见
+      project_command_failed，去 file_read run.log 又是 project_file_not_found。
+      摘要必须是日志尾，再取带同一个 operationId。
+    """
+    if not isinstance(result, dict):
+        return result
+    out = {
+        **result,
+        "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
+        "hint": "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。",
+    }
+    out.pop("stdout", None)
+    out.pop("stderr", None)
+    out.pop("logPath", None)
+    return out
+
+
 def _wait_backoff(elapsed: float) -> float:
     """等待循环每次重查之间睡多久。
 
@@ -169,7 +241,7 @@ class ProjectTools:
                 "previewConfigured": preview_ready, "browserConfigured": browser_ready,
                 "blockers": list(dict.fromkeys(blockers))}
 
-    def execute(self, name, args, state) -> dict:
+    def execute(self, name, args, state, *, wait: bool = True) -> dict:
         guard_control_run()
         try:
             if name not in PROJECT_ARGUMENTS:
@@ -218,15 +290,21 @@ class ProjectTools:
                     raise ValueError("project_sudo_forbidden")
                 raise ValueError(LEAKED_UNAVAILABLE[name])
             if name in BROWSER_INTERACT_TOOLS:
-                return {"ok": True, **self._browser_interact(project, name, parsed)}
+                result = self._browser_interact(project, name, parsed)
+                self._keep_preview_snapshot(project, result, source="browser_interact")
+                return {"ok": True, **result}
             if name == "shell_write_to_process":
                 return {"ok": True, **self._shell_stdin(project, parsed)}
             if name in {"shell_exec", "bash", "deploy_expose_port", "deploy_apply_deployment",
                         "browser_navigate", "browser_restart"}:
-                return {"ok": True, **self._kernel_runtime(project, name, parsed, authority)}
+                return {"ok": True, **self._kernel_runtime(
+                    project, name, parsed, authority, wait=wait)}
             if name in {"shell_view", "shell_wait", "shell_kill_process", "browser_view",
                         "browser_console_view", "make_manus_page"}:
-                return {"ok": True, **self._leaked_observe(project, name, parsed)}
+                result = self._leaked_observe(project, name, parsed)
+                if name == "browser_view":
+                    self._keep_preview_snapshot(project, result, source="browser_view")
+                return {"ok": True, **result}
             if name in PROJECT_KERNEL_WRITE_TOOLS:
                 return {"ok": True, **self._kernel_edit(project, name, parsed, authority)}
             if name == "project_revisions":
@@ -243,6 +321,8 @@ class ProjectTools:
                     "downloadPath": f"/api/sliderule/projects/{project.projectId}/export?revision={revision.revision}",
                     "businessDataIncluded": False, "deployed": False}
             if name == "project_verify":
+                if is_office_file_plan(latest_control_plan(authority)):
+                    raise ValueError(OFFICE_VERIFY_NOT_APPLICABLE)
                 guard_control_run()
                 if self.supervisor is None:
                     raise ProjectStoreUnavailable("project_worker_unavailable")
@@ -255,6 +335,8 @@ class ProjectTools:
                     acceptance_requirements=approved_acceptance_requirements(authority))
                 return {"ok": True, **self._snapshot(operation.operationId)}
             if name in {"project_start", "project_exec"}:
+                if name == "project_start" and is_office_file_plan(latest_control_plan(authority)):
+                    raise ValueError(OFFICE_START_NOT_APPLICABLE)
                 guard_control_run()
                 if self.supervisor is None:
                     raise ProjectStoreUnavailable("project_worker_unavailable")
@@ -288,7 +370,7 @@ class ProjectTools:
                 revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
                 files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
                 if name in {"file_read", "read_file"}:
-                    return {"ok": True, **self._file_read(files, revision, parsed)}
+                    return {"ok": True, **self._file_read(files, revision, parsed, project)}
                 if name == "file_find_in_content":
                     return {"ok": True, **self._file_find_in_content(files, revision, parsed)}
                 if name == "grep":
@@ -296,8 +378,8 @@ class ProjectTools:
                 if name == "list_dir":
                     return {"ok": True, **self._github_list_dir(files, revision, parsed)}
                 if name == "glob":
-                    return {"ok": True, **self._github_glob(files, revision, parsed)}
-                return {"ok": True, **self._file_find_by_name(files, revision, parsed)}
+                    return {"ok": True, **self._github_glob(files, revision, parsed, project)}
+                return {"ok": True, **self._file_find_by_name(files, revision, parsed, project)}
             revision = self.store.get_revision(project.projectId, parsed.revision, owner_id=self.owner_id)
             if name == "project_list":
                 return {"ok": True, **self._list(revision, parsed)}
@@ -317,6 +399,32 @@ class ProjectTools:
         return {"projectId": project.projectId, "revision": revision.revision,
             "templateVersion": revision.templateVersion, "fileCount": len(revision.manifest.files),
             "sourceBytes": revision.manifest.totalBytes, "runtimeKind": "project"}
+
+    def _keep_preview_snapshot(self, project, result, *, source: str) -> None:
+        """Persist a browser PNG for the result card. Fail-open. Not verification."""
+        data = result.pop("screenshotPng", None)
+        raw = result.pop("screenshot", None)
+        if data is None and isinstance(raw, str) and raw.strip():
+            try:
+                data = base64.b64decode(raw)
+            except Exception:
+                data = None
+        elif data is None and isinstance(raw, (bytes, bytearray)):
+            data = bytes(raw)
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            return
+        try:
+            self.store.put_preview_snapshot(
+                project.projectId,
+                owner_id=self.owner_id,
+                png=bytes(data),
+                revision=str(result.get("revision") or getattr(project, "currentRevision", "") or ""),
+                source=source,
+            )
+            result["previewSnapshot"] = True
+        except Exception:
+            # 缩略图是增强项：落库失败不许拖垮 browser_view。
+            pass
 
     def _snapshot(self, operation_id):
         source = self.store.snapshot_operation(operation_id, owner_id=self.owner_id)
@@ -384,7 +492,7 @@ class ProjectTools:
             raise ProjectNotFound("project_operation_not_found")
         return operation
 
-    def _kernel_runtime(self, project, name, parsed, authority):
+    def _kernel_runtime(self, project, name, parsed, authority, *, wait=True):
         if getattr(parsed, "sudo", False):
             raise ValueError("project_sudo_forbidden")
         if self.supervisor is None:
@@ -409,12 +517,18 @@ class ProjectTools:
                 operation = self.supervisor.submit_command(
                     project.projectId, **params, command="shell", script=script)
             operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
-            if not getattr(parsed, "is_background", False):
-                wait = getattr(parsed, "timeout", None)
-                if wait is None:
-                    wait = SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
-                operation = self._poll_operation(operation, wait)
-            return self._snapshot(operation.operationId)
+            # wait=False：分发处先把 operationId 推给界面订 PTY，再自己堵。
+            # 这里再等，id 要等命令结束才出去，终端进行中是白纸。
+            if wait and not getattr(parsed, "is_background", False):
+                block = getattr(parsed, "timeout", None)
+                if block is None:
+                    block = SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
+                operation = self._poll_operation(operation, block)
+            snap = self._snapshot(operation.operationId)
+            return _command_pointer(
+                snap,
+                _command_log_excerpt(self.store, operation.operationId, self.owner_id),
+            )
         if name in {"deploy_expose_port", "deploy_apply_deployment"}:
             port = getattr(parsed, "port", None) or 5173
             operation = self.supervisor.submit(project.projectId, **params, port=port)
@@ -546,6 +660,23 @@ class ProjectTools:
         files = self.store.read_files(project.projectId, current.revision, owner_id=self.owner_id)
         if name in {"file_write", "project_write", "write_file"}:
             path = workspace_file_path(getattr(parsed, "file", None) or parsed.path, files)
+            if is_office_artifact_path(path):
+                data = decode_office_write(
+                    parsed.content,
+                    encoding=getattr(parsed, "contentEncoding", None),
+                )
+                meta = ProjectOfficeArtifactStore(self.store).put(
+                    project.projectId, owner_id=self.owner_id, path=path, data=data)
+                return {
+                    "projectId": project.projectId,
+                    "revision": current.revision,
+                    "path": meta["path"],
+                    "sha256": meta["sha256"],
+                    "sizeBytes": meta["sizeBytes"],
+                    "downloadable": True,
+                    "artifactId": meta["artifactId"],
+                    "changedFiles": [meta["path"]],
+                }
             content = parsed.content
             if getattr(parsed, "leading_newline", False):
                 content = "\n" + content
@@ -635,12 +766,25 @@ class ProjectTools:
         result["truncated"] = result["nextCursor"] < len(entries)
         return result
 
-    def _file_read(self, files, revision, args):
+    def _file_read(self, files, revision, args, project=None):
         if getattr(args, "sudo", False):
             raise ValueError("project_sudo_forbidden")
         path = workspace_file_path(getattr(args, "file", None) or args.path, files)
+        if project is not None and is_office_artifact_path(path):
+            meta = ProjectOfficeArtifactStore(self.store).find_by_path(
+                project.projectId, path, owner_id=self.owner_id)
+            if meta is None:
+                raise ProjectNotFound("project_file_not_found")
+            return {
+                "revision": revision.revision, "path": meta["path"],
+                "sha256": meta["sha256"], "sizeBytes": meta["sizeBytes"],
+                "downloadable": True, "artifactId": meta["artifactId"],
+                "content": "", "truncated": False,
+            }
         if path not in files:
             raise ProjectNotFound("project_file_not_found")
+        if not explicit_read_window(args):
+            return _pointer_file(path, files[path], revision)
         lines = files[path].splitlines(keepends=True)
         if getattr(args, "start_line", None) is not None:
             start = args.start_line
@@ -690,23 +834,42 @@ class ProjectTools:
         found = file_name_matches(sorted(files), args.path, "*")
         return {"revision": revision.revision, "files": found, "truncated": False}
 
-    def _github_glob(self, files, revision, args):
+    def _github_glob(self, files, revision, args, project=None):
         if args.sudo:
             raise ValueError("project_sudo_forbidden")
-        found = file_name_matches(sorted(files), args.path or ".", args.pattern)
+        names = self._names_with_artifacts(files, project)
+        found = file_name_matches(names, args.path or ".", args.pattern)
         return {"revision": revision.revision, "files": found, "truncated": False}
 
-    def _file_find_by_name(self, files, revision, args):
+    def _file_find_by_name(self, files, revision, args, project=None):
         if args.sudo:
             raise ValueError("project_sudo_forbidden")
-        found = file_name_matches(sorted(files), args.path, args.glob)
+        names = self._names_with_artifacts(files, project)
+        found = file_name_matches(names, args.path, args.glob)
         return {"revision": revision.revision, "files": found, "truncated": False}
+
+    def _names_with_artifacts(self, files, project):
+        names = list(files)
+        if project is None:
+            return sorted(names)
+        try:
+            extras = ProjectOfficeArtifactStore(self.store).list(
+                project.projectId, owner_id=self.owner_id)
+        except Exception:
+            extras = []
+        for item in extras:
+            path = item.get("path")
+            if isinstance(path, str) and path not in names:
+                names.append(path)
+        return sorted(names)
 
     def _read(self, files, revision, args):
         path = source_path(args.path)
         if path not in files:
             raise ProjectNotFound("project_file_not_found")
         text = files[path]
+        if not explicit_read_window(args):
+            return _pointer_file(path, text, revision)
         if args.offset > len(text):
             raise ValueError("invalid_project_offset")
         result = {"revision": revision.revision, "path": path, "sha256": content_hash(text),

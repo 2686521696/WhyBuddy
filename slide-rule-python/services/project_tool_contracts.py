@@ -81,6 +81,18 @@ PROJECT_READ_MAX_CHARS = 8000
 #: 那几个字段（revision / path / sha256 / offset / nextOffset / totalChars）。
 PROJECT_READ_MAX_RESULT_CHARS = 10_000
 
+#: 无窗 file_read / project_read 只回路径 + 文件头。要原文必须显式带
+#: offset / limit / start_line / end_line。抄 Manus filesystem-as-context：
+#: 磁盘是权威，messages 里不灌全文。
+FILE_READ_EXCERPT_LINES = 40
+FILE_READ_EXCERPT_CHARS = 800
+
+
+def explicit_read_window(args: object) -> bool:
+    """模型有没有点名读窗。默认字段不算——pydantic 会填 offset=0 / limit=8000。"""
+    provided = getattr(args, "model_fields_set", set())
+    return bool(provided & {"start_line", "end_line", "offset", "limit"})
+
 
 class ReadArguments(RevisionArguments):
     path: str = Field(min_length=1, max_length=240)
@@ -187,8 +199,9 @@ class RestoreArguments(WriteArguments):
 class KernelWriteArguments(ToolArguments):
     #: 日常整文件写。批准引用和当前版本由服务端从会话绑，模型不许自己填。
     path: str = Field(min_length=1, max_length=240)
-    content: str = Field(max_length=512 * 1024)
+    content: str = Field(max_length=12 * 1024 * 1024)
     append: bool = False
+    contentEncoding: str | None = Field(default=None, max_length=16)
 
 
 class KernelStrReplaceArguments(ToolArguments):
@@ -206,11 +219,12 @@ class FileReadArguments(ToolArguments):
 
 class FileWriteArguments(ToolArguments):
     file: str = Field(min_length=1, max_length=240)
-    content: str = Field(max_length=512 * 1024)
+    content: str = Field(max_length=12 * 1024 * 1024)
     append: bool = False
     leading_newline: bool = False
     trailing_newline: bool = False
     sudo: bool = False
+    contentEncoding: str | None = Field(default=None, max_length=16)
 
 
 class FileStrReplaceArguments(ToolArguments):
@@ -332,8 +346,9 @@ class GithubReadArguments(ToolArguments):
 
 class GithubWriteArguments(ToolArguments):
     path: str = Field(min_length=1, max_length=240)
-    content: str = Field(max_length=512 * 1024)
+    content: str = Field(max_length=12 * 1024 * 1024)
     sudo: bool = False
+    contentEncoding: str | None = Field(default=None, max_length=16)
 
 
 class GithubReplaceArguments(ToolArguments):
@@ -572,9 +587,9 @@ PROJECT_ALIAS_TOOLS = frozenset({
 })
 
 _DESCRIPTIONS = {
-    "project_create": "Create or recover this session's React/TypeScript/Vite project using the current approved plan. Select templateId=react-vite-tasks for a task application with real Node API, SQLite data, independent application login and writer/reader roles; react-vite is only a minimal counter. Existing projects retain their source. Returns saved revision, not delivery.",
+    "project_create": "Create or recover this session's React/TypeScript/Vite project using the current approved plan. templateId=react-vite-tasks is only for a task-management web app (login, SQLite, writer/reader roles). Office files (.pptx/.docx/.xlsx) are not a task app — do not pick react-vite-tasks for those. react-vite is a minimal computer. Existing projects retain their source. Returns saved revision, not delivery.",
     "project_list": "List immutable project files with SHA256 and source revision. Continue with nextCursor and the returned revision while truncated.",
-    "project_read": "Read a saved source file. Omitting limit returns up to {max_read_chars} characters, which covers an ordinary source file in one call; do not page through a file in {max_read_chars}-character steps when one call suffices. Use returned SHA256 for patch preconditions. Only when truncated is true, continue with nextOffset and the same revision; for a very large file (a lockfile, generated output) use project_search instead of reading it end to end.",
+    "project_read": "Read a saved source file. Default (no offset/limit) returns path, sha256, size and a short excerpt — not the full text. Ask for a window with offset/limit (max {max_read_chars} characters) when you need the body; search with project_search. Use returned SHA256 for patch preconditions. Only when truncated is true, continue with nextOffset and the same revision.",
     "project_search": "Search saved source for literal text, with bounded line excerpts. Use nextCursor and the same revision to continue; this is not regex or shell execution.",
     "project_revisions": "List committed source history for this project, newest first. Continue with nextCursor. History never includes losing or uncommitted source writes.",
     "project_restore": "Restore a committed historical source tree as a new revision under the current approved plan. Does not rewind history, copy old verification, or restore business data. Live source-only changes queue runtime.patch; dependency/startup changes require stopping and confirmed cleanup first. Poll operationId before declaring completion.",
@@ -582,8 +597,8 @@ _DESCRIPTIONS = {
     "project_patch": "Apply exact file replacements/deletions to this session project using expectedRevision and per-file expectedSha256 (null only for new files). A ready runtime queues source/assets to its existing worker and returns operationId: poll project_status until completed with synchronized=true before using the returned new revision. Dependencies/startup configuration require a stopped, reconciled runtime. Submission is not completion; old verification is not proof for new source. Prefer file_write or file_str_replace for an ordinary single-file edit.",
     "project_write": "Alias of file_write with path/content. Prefer file_write.",
     "project_str_replace": "Alias of file_str_replace with path/oldStr/newStr. Prefer file_str_replace.",
-    "file_read": "Read one saved source file. file is a project-relative path (absolute sandbox prefixes are stripped). Optional start_line/end_line are 0-based and exclusive at the end. sudo=true is rejected. Do not send approvalRef or hashes.",
-    "file_write": "Overwrite or append one saved source file. Pass file, content, and optional append/leading_newline/trailing_newline. sudo=true is rejected. Do not send approvalRef, revision, or SHA256 — the server binds the current approved plan. Prefer file_str_replace for a unique in-file edit. Multi-file CAS or deletion still uses project_patch.",
+    "file_read": "Read one saved source file. file is a project-relative path (absolute sandbox prefixes are stripped). Default (no start_line/end_line) returns path, sha256, size and a short excerpt — not the full text. Pass start_line/end_line (0-based, exclusive end) for a window. sudo=true is rejected. Do not send approvalRef or hashes.",
+    "file_write": "Overwrite or append one saved source file. Pass file, content, and optional append/leading_newline/trailing_newline. sudo=true is rejected. Do not send approvalRef, revision, or SHA256 — the server binds the current approved plan. Prefer file_str_replace for a unique in-file edit. Multi-file CAS or deletion still uses project_patch. Office files (.pptx/.docx/.xlsx) are not text source: write them with contentEncoding=base64 (ZIP bytes) or generate them in bash so the host can collect them. A UTF-8 string at an office path is rejected.",
     "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
@@ -607,10 +622,10 @@ _DESCRIPTIONS = {
     "deploy_expose_port": "Start the managed private preview on port. This is not a public deployment.",
     "deploy_apply_deployment": "Start the private preview (same kernel as deploy_expose_port). This is not a public CDN. deployed is always false; previewPrivate is true.",
     "make_manus_page": "Present the current session project as the artifact page. Optional file names an existing source path; this does not generate a third-party template.",
-    "read_file": "Read one saved source file. path is project-relative. Optional offset/limit are 0-based line counts. Same store as file_read. sudo=true is rejected.",
+    "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
-    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished; is_background=true returns running, not completion. sudo is rejected.",
+    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). is_background=true returns running, not completion. sudo is rejected.",
     "grep": "Search saved source with a regular expression across the tree. Optional path is a file or directory prefix; optional glob limits names. This is not shell execution.",
     "list_dir": "List saved source paths under path. path may be '.' for the whole tree.",
     "glob": "Find saved source paths whose name or relative path matches pattern. Optional path limits the directory prefix.",

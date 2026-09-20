@@ -9,6 +9,7 @@ requests cannot share a transaction). No fallback to memory or temporary files.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -33,6 +34,47 @@ _PATCH_OUTCOME_RESERVE_BYTES = 4 * 1024
 MAX_EVENT_BYTES = 32 * 1024
 MAX_OPERATION_EVENTS = 2000
 _TERMINAL_OPERATIONS = {"completed", "failed", "cancelled"}
+#: 进程内订阅。worker 写下一条 runtime.console 就叫醒 SSE，浏览器不再
+#: 200ms 空打 `/events?afterSeq=`。跨进程写库时 wait 超时再读，fail-open。
+_EVENT_WAITERS: dict[str, list[threading.Event]] = {}
+_EVENT_WAITERS_LOCK = threading.Lock()
+
+
+def notify_operation_waiters(operation_id: str) -> None:
+    """有新事件或终态。叫醒所有等这条 operation 的 SSE。"""
+    key = str(operation_id or "").strip()
+    if not key:
+        return
+    with _EVENT_WAITERS_LOCK:
+        waiters = list(_EVENT_WAITERS.get(key) or ())
+    for waiter in waiters:
+        waiter.set()
+
+
+def wait_for_operation_events(operation_id: str, timeout: float) -> bool:
+    """等到下一条事件，或超时。超时不是失败——调用方再读库。"""
+    key = str(operation_id or "").strip()
+    if not key:
+        return False
+    waiter = threading.Event()
+    with _EVENT_WAITERS_LOCK:
+        _EVENT_WAITERS.setdefault(key, []).append(waiter)
+    try:
+        return waiter.wait(max(0.0, float(timeout)))
+    finally:
+        with _EVENT_WAITERS_LOCK:
+            bucket = _EVENT_WAITERS.get(key)
+            if bucket is None:
+                pass
+            else:
+                try:
+                    bucket.remove(waiter)
+                except ValueError:
+                    pass
+                if not bucket:
+                    _EVENT_WAITERS.pop(key, None)
+
+
 _OPERATION_TRANSITIONS = {
     "queued": {"running", "cancelling", "cancelled", "failed", "interrupted"},
     "running": {"completed", "failed", "cancelling", "waiting_user", "interrupted"},
@@ -93,7 +135,12 @@ _DDL = (
     "create table if not exists wb_project_event (operation_id varchar(80) not null, seq integer not null, event_id varchar(240) not null, payload text not null, primary key(operation_id, seq), unique(operation_id, event_id))",
     "create index if not exists wb_project_revision_project on wb_project_revision(project_id)",
     "create index if not exists wb_project_operation_project on wb_project_operation(project_id)",
+    "create table if not exists wb_project_preview_snapshot (project_id varchar(80) primary key, revision varchar(80) not null, source varchar(40) not null, sha256 varchar(64) not null, size_bytes integer not null, content text not null, captured_at varchar(64) not null)",
 )
+
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+MAX_PREVIEW_SNAPSHOT_BYTES = 2 * 1024 * 1024
+_PREVIEW_SNAPSHOT_SOURCES = {"browser_view", "browser_interact"}
 
 
 class ProjectStore:
@@ -902,6 +949,8 @@ class ProjectStore:
         rows = self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params)
         if not rows:
             raise ProjectConflict("operation_state_or_lease_conflict")
+        if status in _TERMINAL_OPERATIONS:
+            notify_operation_waiters(operation_id)
         return updated
 
     def advance_runtime_revision(self, parent_operation_id: str, patch_operation_id: str, *, owner_id: str,
@@ -970,6 +1019,7 @@ class ProjectStore:
             fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
             saved = self._q("insert into wb_project_event(operation_id,seq,event_id,payload) select $1,$2,$3,$4 where " + fence + " on conflict do nothing returning seq", params)
             if saved:
+                notify_operation_waiters(operation_id)
                 return event
             # A concurrent append retries at the new cursor. A stale lease fails
             # immediately, before any event can be published by an old worker.
@@ -986,6 +1036,71 @@ class ProjectStore:
             raise ValueError("invalid_event_cursor")
         rows = self._q("select payload from wb_project_event where operation_id=$1 and seq>$2 order by seq limit $3", [operation_id, after_seq, limit])
         return [RuntimeEvent.model_validate_json(row["payload"]) for row in rows]
+
+    def wait_for_events(self, operation_id: str, timeout: float) -> bool:
+        return wait_for_operation_events(operation_id, timeout)
+
+    def put_preview_snapshot(
+        self,
+        project_id: str,
+        *,
+        owner_id: str,
+        png: bytes,
+        revision: str,
+        source: str,
+    ) -> None:
+        """Latest browser/preview PNG. Not a verification receipt.
+
+        ⚠ 2026-09-19 飞机大战：结果卡只认 project_verify。那趟一次都没调
+          verify，browser_view 看了三次也不落图，完成卡空白。这是第二份
+          诚实来源——模型看过页面时拍的，不许写成验收通过。
+        """
+        self.get_project(project_id, owner_id=owner_id)
+        src = str(source or "").strip()
+        if src not in _PREVIEW_SNAPSHOT_SOURCES:
+            raise ValueError("preview_snapshot_source_invalid")
+        if not isinstance(png, (bytes, bytearray)):
+            raise ValueError("preview_snapshot_invalid")
+        data = bytes(png)
+        if not data.startswith(_PNG_MAGIC) or not (8 < len(data) <= MAX_PREVIEW_SNAPSHOT_BYTES):
+            raise ValueError("preview_snapshot_invalid")
+        digest = hashlib.sha256(data).hexdigest()
+        content = base64.b64encode(data).decode("ascii")
+        captured = datetime.now(timezone.utc).isoformat()
+        rev = str(revision or "").strip() or "unknown"
+        present = self._q(
+            "select project_id from wb_project_preview_snapshot where project_id=$1",
+            [project_id],
+        )
+        if present:
+            self._q(
+                "update wb_project_preview_snapshot set revision=$1,source=$2,sha256=$3,"
+                "size_bytes=$4,content=$5,captured_at=$6 where project_id=$7",
+                [rev, src, digest, len(data), content, captured, project_id],
+            )
+            return
+        self._q(
+            "insert into wb_project_preview_snapshot"
+            "(project_id,revision,source,sha256,size_bytes,content,captured_at) "
+            "values($1,$2,$3,$4,$5,$6,$7)",
+            [project_id, rev, src, digest, len(data), content, captured],
+        )
+
+    def read_preview_snapshot(self, project_id: str, *, owner_id: str) -> bytes | None:
+        self.get_project(project_id, owner_id=owner_id)
+        rows = self._q(
+            "select content,size_bytes from wb_project_preview_snapshot where project_id=$1",
+            [project_id],
+        )
+        if not rows:
+            return None
+        try:
+            data = base64.b64decode(rows[0]["content"], validate=True)
+        except Exception as exc:
+            raise ProjectStoreUnavailable("preview_snapshot_corrupt") from exc
+        if len(data) != int(rows[0]["size_bytes"] or 0) or not data.startswith(_PNG_MAGIC):
+            raise ProjectStoreUnavailable("preview_snapshot_corrupt")
+        return data
 
 
 _cached_store: ProjectStore | None = None

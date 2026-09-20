@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from models.project_runtime import PreviewDescriptor, RuntimeInstance
 from services.project_acceptance import template_verification_capabilities
 from services.project_store import ProjectConflict, ProjectStore
+from services.skill_hydrate import hydrate_owner_into
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
 
@@ -112,6 +113,9 @@ class ProjectRuntimeService:
                 heartbeat.handle = handle
                 self.provider.write_files(handle, {**files,
                     REVISION_FILE: json.dumps({"revision": revision.revision})})
+                # 沙盒是一次性的：按账号安装表再开箱一遍。单独写，
+                # 不许跟工程 8MiB 源码清单挤一次 write_files。
+                hydrate_owner_into(self.provider.write_files, handle, owner_id)
                 heartbeat.renew(mounted_revision=revision.revision)
                 installed = self.provider.run(handle, "npm ci --ignore-scripts", timeout_seconds=600)
                 if installed.exit_code != 0:

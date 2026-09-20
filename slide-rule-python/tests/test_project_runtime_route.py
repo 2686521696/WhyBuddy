@@ -357,6 +357,33 @@ def test_event_cursor_is_bounded(setup, operation, params):
     assert setup.client.get(f"/project-operations/{operation}/events", params=params).status_code == 422
 
 
+def test_event_stream_replays_then_settles(setup, operation):
+    """通电：SSE 把已有 PTY 字节推出去，终态后 settled，不是空转 afterSeq。"""
+    lease = _running(setup, operation)
+    setup.store.flush_operation_event(operation, owner_id="u1", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner)
+    setup.store.append_event(operation, owner_id="u1", event_type="runtime.console",
+        event_id="pty-live:0", payload={"data": "npm test\n", "nextOffset": 9, "truncated": False},
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    current = setup.store.get_operation(operation, owner_id="u1")
+    setup.store._q(
+        "update wb_project_operation set payload=$1 where id=$2",
+        [current.model_copy(update={"status": "completed"}).model_dump_json(), operation],
+    )
+    with setup.client.stream("GET", f"/project-operations/{operation}/events/stream") as response:
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers.get("content-type", "")
+        body = "".join(response.iter_text())
+    assert "npm test" in body
+    assert "runtime.settled" in body
+    assert "runtime.console" in body
+
+
+def test_event_stream_rejects_cross_owner(setup, operation):
+    setup.viewer["id"] = "mallory"
+    assert setup.client.get(f"/project-operations/{operation}/events/stream").status_code == 404
+
+
 @pytest.mark.parametrize("key", [None, "", " " * 3, "x" * 257])
 def test_start_requires_bounded_client_idempotency_key(setup, monkeypatch, key):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
@@ -395,3 +422,32 @@ def test_dropped_start_response_keeps_persisted_operation_for_idempotent_retry(s
     retry = setup.client.post(setup.url, json=setup.body)
     assert retry.status_code == 202 and retry.json()["operation"]["operationId"] == operation.operationId
     assert not setup.called
+
+
+_TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+    b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def test_preview_snapshot_route_is_not_verification(setup):
+    pid = setup.project.projectId
+    empty = setup.client.get(f"/projects/{pid}/preview-snapshot")
+    assert empty.status_code == 404
+    verify = setup.client.get(f"/projects/{pid}/verification")
+    assert verify.status_code == 200
+    assert verify.json()["snapshot"] is None
+    setup.store.put_preview_snapshot(
+        pid,
+        owner_id="u1",
+        png=_TINY_PNG,
+        revision=setup.project.currentRevision,
+        source="browser_view",
+    )
+    shot = setup.client.get(f"/projects/{pid}/preview-snapshot")
+    assert shot.status_code == 200
+    assert shot.headers["content-type"].startswith("image/png")
+    assert shot.content == _TINY_PNG
+    still = setup.client.get(f"/projects/{pid}/verification")
+    assert still.json()["snapshot"] is None
