@@ -23,7 +23,7 @@ import os
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
-from sliderule_llm.config import default_max_tokens
+from sliderule_llm.config import default_max_tokens, wider_output_budget
 
 from .enrich_timing import stage as _enrich_stage
 
@@ -1015,7 +1015,7 @@ def _structured_llm_json_fn(messages: list) -> Optional[Dict[str, Any]]:
 def _parallel_json_call(
     messages: list[dict[str, str]],
     required_keys: tuple[str, ...],
-    max_tokens: int,
+    max_tokens: int | None,
 ) -> Optional[Dict[str, Any]]:
     """Structured, non-streaming worker call used by the bounded model DAG.
 
@@ -1023,7 +1023,7 @@ def _parallel_json_call(
     valid preview stream. Progress is exposed through the per-node timing/SSE
     stages instead; the final assembled model still follows the existing stream.
     """
-    effective_max_tokens = max(max_tokens, default_max_tokens())
+    effective_max_tokens = wider_output_budget(max_tokens, default_max_tokens())
     try:
         from sliderule_llm.structured import (
             StructuredLlmError,

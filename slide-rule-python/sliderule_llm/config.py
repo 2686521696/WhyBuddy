@@ -85,8 +85,15 @@ def _positive_int(v: str | None, default: int) -> int:
 #: 真机 PEJBRSVSD1、MFQJ4JECA5 的 spec / 画页全灭；本趟 P0CJH3JV3P 的
 #: structure / evidence / risk / spec-first 又全 400。不是题目坏了。
 #: 上限是开区间右端减一，不是再加一个分路旋钮。
+#:
+#: ⚠ 2026-09-19：按要求输出预算不设限。坦克大战 `sr-20260919072444-11CSR1RSM6`
+#:   黄条带着 `max_tokens=65535`，那发只吐了 14 个 token——这个数字没挡住空答，
+#:   但每一发控制面请求都被写成有闸。默认改为**不带这个字段**；有人要闸时
+#:   才写正数 `LLM_MAX_TOKENS`。65535 只留给「写了数字」时的开区间钳，
+#:   不再当默认配额。
 WIRE_MAX_OUTPUT_TOKENS = 65535
 DEFAULT_MAX_TOKENS = WIRE_MAX_OUTPUT_TOKENS
+_UNLIMITED_TOKEN_MARKERS = {"", "unlimited", "none", "0"}
 
 
 def clamp_max_tokens(n: int) -> int:
@@ -100,16 +107,43 @@ def clamp_max_tokens(n: int) -> int:
     return min(raw, WIRE_MAX_OUTPUT_TOKENS)
 
 
-def default_max_tokens() -> int:
-    """所有 LLM 调用的输出上限。`LLM_MAX_TOKENS` 可覆盖，全链路唯一旋钮。
+def default_max_tokens() -> int | None:
+    """所有 LLM 调用的输出上限。`None` = 不设限，请求里不带 `max_tokens`。
 
-    **每次读环境变量**，不做模块级常量：测试与评测脚本要能改完立刻生效。
-    写坏了（空/非数字/非正数）退回默认值而不是抛——配错一个数就让整场推演
-    挂掉，比用默认值糟得多。
+    `LLM_MAX_TOKENS` 是全链路唯一旋钮：**每次读环境变量**，不做模块级常量。
+    不设 / 空 / `0` / `unlimited` / `none` → `None`。写了正数才 clamp。
+    写坏了（非数字）也当不设限，不偷偷压回 65535——配错一个数就整场挂，
+    比省略字段糟得多。
     """
-    return clamp_max_tokens(
-        _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
-    )
+    raw = os.environ.get("LLM_MAX_TOKENS")
+    if raw is None or str(raw).strip().lower() in _UNLIMITED_TOKEN_MARKERS:
+        return None
+    parsed = _positive_int(raw, 0)
+    if parsed <= 0:
+        return None
+    return clamp_max_tokens(parsed)
+
+
+def resolve_wire_max_tokens(explicit: int | None = None) -> int | None:
+    """出网口用的输出上限。`None` = 请求不带这个字段。
+
+    显式正数优先（单测 / 评测控成本）。否则走 `default_max_tokens()`。
+    """
+    if explicit is not None:
+        return clamp_max_tokens(explicit)
+    return default_max_tokens()
+
+
+def wider_output_budget(*values: int | None) -> int | None:
+    """取更宽的输出上限。`None`（不设限）比任何数字都宽。"""
+    if any(value is None for value in values):
+        return None
+    return max(values)
+
+
+def format_max_tokens(max_tokens: int | None) -> str:
+    """错误消息里的预算词。不设限就说 unlimited，不许写成 default。"""
+    return "unlimited" if max_tokens is None else str(max_tokens)
 
 
 #: 推理档位没有分路旋钮——**一律走 .env 的 `LLM_REASONING_EFFORT`**（2026-08-13）。

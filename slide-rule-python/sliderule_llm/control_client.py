@@ -30,10 +30,9 @@ from .client import (
     _empty_content_hint,
 )
 from .config import (
-    clamp_max_tokens,
-    default_max_tokens,
     ensure_llm_proxy_bypass,
     get_llm_config,
+    resolve_wire_max_tokens,
 )
 from .gateway_circuit import (  # 叶子（顶层只有标准库），无循环，顶层 import 让这条边留在架构闸上
     note_failure,
@@ -129,16 +128,17 @@ def _control_chat_payload(
     messages: list[dict[str, Any]],
     model: str,
     temperature: float,
-    max_tokens: int,
+    max_tokens: int | None,
     tools: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": max_tokens,
         "stream": False,
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if tools:
         payload["tools"] = copy.deepcopy(tools)
         for tool in payload["tools"]:
@@ -382,8 +382,10 @@ async def _call_control_llm_once(
     #   正文一个字不剩——整条工程链就此停住，而且报的是"空正文"不是"超预算"，
     #   看着像网关坏了。
     #
-    #   clamp_max_tokens 仍兜着上游开区间（65535 含 / 65536 不含，写大了不会再 400）。
-    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
+    #   2026-09-19：按要求默认不设输出上限。不再 `or default_max_tokens()`
+    #   把 65535 写进每一发——真机坦克大战黄条带着那个数，那发只吐了 14 token。
+    #   显式传入仍 clamp（单测 / 评测 / 有人要闸）。不传则省略字段。
+    max_tokens = resolve_wire_max_tokens(max_tokens)
     messages = _normalize_messages(messages)
     model_name = (
         model

@@ -48,6 +48,8 @@ from sliderule_llm.config import (
     WIRE_MAX_OUTPUT_TOKENS,
     clamp_max_tokens,
     default_max_tokens,
+    resolve_wire_max_tokens,
+    wider_output_budget,
 )
 
 _PY_ROOT = Path(__file__).resolve().parent.parent
@@ -105,9 +107,12 @@ class Test全链路只有一个旋钮:
             "（签名，让下游兜底）。理由见本文件头——这个病已经犯过三次。"
         )
 
-    def test_默认值贴着上游开区间(self):
-        """2026-08-19 ouyi-5-preview：65536 是右开端，原样发出去 HTTP 400。"""
-        assert default_max_tokens() == DEFAULT_MAX_TOKENS == WIRE_MAX_OUTPUT_TOKENS == 65535
+    def test_默认不设限(self, monkeypatch):
+        """2026-09-19：不设环境变量就是不带 max_tokens，不是偷偷写成 65535。"""
+        monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+        assert default_max_tokens() is None
+        assert resolve_wire_max_tokens(None) is None
+        assert WIRE_MAX_OUTPUT_TOKENS == DEFAULT_MAX_TOKENS == 65535
 
     def test_65536会被钳住(self, monkeypatch):
         monkeypatch.setenv("LLM_MAX_TOKENS", "65536")
@@ -115,13 +120,14 @@ class Test全链路只有一个旋钮:
         assert clamp_max_tokens(65536) == 65535
 
     def test_发出去之前也钳(self):
-        """只改 default 不够：显式传入 65536 仍会 400。钳必须在 client 出网口。
+        """只改 default 不够：显式传入 65536 仍会 400。钳必须在出网口。
 
         剥注释再匹配：标识符写在 docstring 里、调用删掉，判据会假绿。
         """
         import re
 
         import sliderule_llm.client as client
+        import sliderule_llm.config as config
 
         def _code(fn):
             src = re.sub(r'""".*?"""', "", inspect.getsource(fn), flags=re.S)
@@ -129,19 +135,25 @@ class Test全链路只有一个旋钮:
 
         once = _code(client._call_llm_once)
         stream = _code(client._call_llm_once_streaming)
-        assert "clamp_max_tokens" in once
-        assert "clamp_max_tokens" in stream
+        assert "resolve_wire_max_tokens" in once
+        assert "resolve_wire_max_tokens" in stream
+        assert "clamp_max_tokens" in _code(config.resolve_wire_max_tokens)
 
     def test_环境变量能覆盖(self, monkeypatch):
         monkeypatch.setenv("LLM_MAX_TOKENS", "32000")
         assert default_max_tokens() == 32000
 
-    @pytest.mark.parametrize("bad", ["", "   ", "32k", "abc", "0", "-1"])
-    def test_写坏了退回默认_不许崩(self, monkeypatch, bad):
-        # 这类开关最怕"配错一个字符就整场炸"——推演挂掉比用默认值糟得多。
+    @pytest.mark.parametrize("bad", ["", "   ", "32k", "abc", "0", "-1", "unlimited", "none"])
+    def test_写坏了或不设限标记都不崩(self, monkeypatch, bad):
+        # 这类开关最怕"配错一个字符就整场炸"——推演挂掉比省略字段糟得多。
         # 空串是 compose 的 ${VAR:-default} 传进来的常见形态，别让它变成 0。
         monkeypatch.setenv("LLM_MAX_TOKENS", bad)
-        assert default_max_tokens() == DEFAULT_MAX_TOKENS
+        assert default_max_tokens() is None
+
+    def test_不设限比任何数字都宽(self):
+        assert wider_output_budget(2000, None) is None
+        assert wider_output_budget(None, 65535) is None
+        assert wider_output_budget(2000, 8000) == 8000
 
     def test_现读环境变量_不做模块级常量(self, monkeypatch):
         """评测脚本改完环境变量要立刻生效，不能等重启进程。"""
@@ -224,6 +236,23 @@ class Test预算不写死在签名里:
 
         caps.execute_capability({"capabilityId": "risk.analyze", "goal": "某目标"}, caller=fake_caller)
         assert seen.get("max_tokens") == 4321
+
+    def test_不设环境变量能力调用也不传上限(self, monkeypatch):
+        monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+        seen = {}
+
+        def fake_caller(messages, **kwargs):
+            seen.update(kwargs)
+
+            class R:
+                content = "内容"
+                model = "m"
+                usage = None
+
+            return R()
+
+        caps.execute_capability({"capabilityId": "risk.analyze", "goal": "某目标"}, caller=fake_caller)
+        assert seen.get("max_tokens") is None
 
 
 class Test空内容报错必须说清为什么:

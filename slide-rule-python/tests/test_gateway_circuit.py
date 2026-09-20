@@ -128,6 +128,22 @@ class Test状态机:
         assert retries_allowed()
 
 
+LIVE_524_EXHAUSTED = (
+    'gateway timeout (524): {"error":{"message":"All available accounts exhausted"'
+    ',"type":"server_error"}}'
+)
+
+
+class Test账号池空:
+    def test_524_accounts_exhausted_opens_circuit(self):
+        err = LlmError(LIVE_524_EXHAUSTED, status=524, transient=True)
+        assert is_gateway_handshake(err)
+        note_failure(err)
+        note_failure(err)
+        assert is_open()
+        assert reject_reason()
+
+
 class Test接线_重试:
     """纪律一：必须走 call_llm_with_retry，只测状态机假绿。"""
 
@@ -154,6 +170,22 @@ class Test接线_重试:
             call_llm_with_retry([{"role": "user", "content": "x"}], max_attempts=3, backoff_ms=0)
         assert hits["n"] == 0, "熔断开着还打 HTTP——物业 R6 那种连打"
         assert "525" in str(second.value), "话术丢了 525，上层会当成别的错打回 GEN5"
+
+    def test_524_accounts_exhausted_must_not_retry_like_429(self, monkeypatch):
+        """反：把 524 账号池空当 429 连打 3 次必须红。"""
+        import asyncio
+        from sliderule_llm.control_client import call_control_llm
+
+        hits = {"n": 0}
+
+        async def boom(*a, **k):
+            hits["n"] += 1
+            raise LlmError(LIVE_524_EXHAUSTED, status=524, transient=True)
+
+        monkeypatch.setattr("sliderule_llm.control_client._call_control_llm_once", boom)
+        with pytest.raises(LlmError):
+            asyncio.run(call_control_llm([{"role": "user", "content": "x"}]))
+        assert hits["n"] <= 2, f"把 524 当 429 连打了 {hits['n']} 次"
 
     def test_503仍打满重试(self, monkeypatch):
         """反向：熔断不能误伤原来的 503 退避。"""

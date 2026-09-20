@@ -23,10 +23,11 @@ import httpx
 from .config import (
     FallbackLlmConfig,
     LlmConfig,
-    clamp_max_tokens,
     default_max_tokens,
+    format_max_tokens,
     get_fallback_llm_config,
     get_llm_config,
+    resolve_wire_max_tokens,
 )
 
 ContentPart = dict[str, Any]
@@ -336,9 +337,10 @@ def _chat_payload(messages, model, temperature, max_tokens, reasoning, stream) -
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": max_tokens,
         "stream": stream,
     }
+    if max_tokens is not None:
+        p["max_tokens"] = max_tokens
     if reasoning and reasoning.strip().lower() != "none":
         p["reasoning_effort"] = reasoning
     return p
@@ -354,10 +356,11 @@ def _responses_payload(messages, model, temperature, max_tokens, reasoning, stre
     p: dict[str, Any] = {
         "model": model,
         "input": input_items,
-        "max_output_tokens": max_tokens,
         "stream": stream,
         "store": False,
     }
+    if max_tokens is not None:
+        p["max_output_tokens"] = max_tokens
     if instructions:
         p["instructions"] = instructions
     if reasoning and reasoning.strip().lower() != "none":
@@ -368,7 +371,7 @@ def _responses_payload(messages, model, temperature, max_tokens, reasoning, stre
 # ── response extraction (chat + responses shapes) ─────────────────────────────
 
 def _empty_content_hint(
-    finish: str | None, max_tokens: int, usage: dict | None,
+    finish: str | None, max_tokens: int | None, usage: dict | None,
     *, include_length_advice: bool = True,
 ) -> str:
     """空内容报错时，把**为什么空**一起说出来（2026-08-11）。
@@ -387,7 +390,7 @@ def _empty_content_hint(
 
     所以这里只做一件事：把 finish_reason 和当时的预算写进消息。
     """
-    bits = [f"finish_reason={finish or 'unknown'}", f"max_tokens={max_tokens}"]
+    bits = [f"finish_reason={finish or 'unknown'}", f"max_tokens={format_max_tokens(max_tokens)}"]
     if isinstance(usage, dict):
         for key in ("completion_tokens", "reasoning_tokens", "total_tokens"):
             if usage.get(key) is not None:
@@ -724,8 +727,8 @@ def _call_llm_once(
         raise LlmError("LLM not configured (no api_key)", transient=False)
     # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
     # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
-    # clamp：欧亿 Gemini 口径 65536 不含，显式传入 65536 也得在出网口卡住。
-    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
+    # 2026-09-19：默认不设限，请求不带 max_tokens。显式数字仍 clamp。
+    max_tokens = resolve_wire_max_tokens(max_tokens)
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(
@@ -799,8 +802,8 @@ def _call_llm_once_streaming(
         raise LlmError("LLM not configured (no api_key)", transient=False)
     # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
     # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
-    # clamp：欧亿 Gemini 口径 65536 不含，显式传入 65536 也得在出网口卡住。
-    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
+    # 2026-09-19：默认不设限，请求不带 max_tokens。显式数字仍 clamp。
+    max_tokens = resolve_wire_max_tokens(max_tokens)
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(
@@ -1285,7 +1288,7 @@ def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any
     max_attempts = int(kwargs.pop("max_attempts", 3))
     # 报**生效的那个数**，不是 "default"：截断消息里写 "default" 等于没写，
     # 读的人还得回头去猜到底是多少（跟 _empty_content_hint 同一条教训）。
-    max_tokens = kwargs.get("max_tokens") or default_max_tokens()
+    max_tokens = resolve_wire_max_tokens(kwargs.get("max_tokens"))
     result = call_llm_with_retry(messages, max_attempts=max_attempts, **kwargs)
     raw = _strip_fences(result.content)
     if not raw.startswith("{"):
@@ -1297,7 +1300,7 @@ def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any
     except json.JSONDecodeError as e:
         if result.finish_reason == "length":
             raise LlmError(
-                f"LLM JSON response was truncated by the max token limit ({max_tokens}). "
+                f"LLM JSON response was truncated by the max token limit ({format_max_tokens(max_tokens)}). "
                 "Raise LLM_MAX_TOKENS or reduce the requested JSON size.",
                 transient=False,
             ) from e

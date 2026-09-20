@@ -15,18 +15,27 @@ gemini-3.7-flash 两趟都死在同一处，报的是"空正文"不是"超预算
 "全链路唯一旋钮"，.env.example 也记着「挂掉的是它俩都管不着的**第三处写死
 预算**」。第三处就是那一行。
 
-⚠ 判据打在**真正发出去的那个数**上（§1），不是断言常量等于几——
+⚠ 判据打在**真正发出去的那个字段**上（§1），不是断言常量等于几——
   只断言常量证明不了它被传下去了（§3：名单里有名字 ≠ 埋点在）。
+
+2026-09-19：按要求默认不设限。不传 `max_tokens` 时请求里不许再出现这个键。
 """
-import os
+import asyncio
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 from sliderule_llm.config import clamp_max_tokens, default_max_tokens
+from sliderule_llm.control_client import call_control_llm
+from test_control_provider_termination import install_response
 
 SOURCE = Path(__file__).resolve().parents[1] / "sliderule_llm" / "control_client.py"
+OK = {
+    "choices": [{"message": {"content": "Ready"}, "finish_reason": "stop"}],
+    "usage": {"prompt_tokens": 8, "completion_tokens": 1, "total_tokens": 9},
+}
 
 
 def _code_without_comments() -> str:
@@ -47,11 +56,28 @@ def test_环境变量设多少控制面就用多少(monkeypatch, value, expected
     assert default_max_tokens() == expected
 
 
-def test_默认不再被压到2048(monkeypatch):
-    """正向：不设环境变量时也该拿到全局默认，而不是那个写死的 2048。"""
+def test_默认不设输出上限(monkeypatch):
+    """正向：不设环境变量就是不设限，不是偷偷写成 65535，更不是 2048。"""
     monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
-    assert default_max_tokens() == 65535
-    assert default_max_tokens() > 2048
+    assert default_max_tokens() is None
+
+
+def test_默认控制面请求不带max_tokens(monkeypatch):
+    """活路径：不传、不设环境变量，发出去的 JSON 里没有这个键（§1 / §3）。"""
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    requests = install_response(monkeypatch, OK)
+    asyncio.run(call_control_llm([{"role": "user", "content": "Continue"}]))
+    payload = json.loads(requests[0].content)
+    assert "max_tokens" not in payload
+
+
+def test_环境变量写了才出现在控制面请求里(monkeypatch):
+    """反向配一条：要闸的时候这个字段必须真的发出去，不是只改了函数返回值。"""
+    monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+    requests = install_response(monkeypatch, OK)
+    asyncio.run(call_control_llm([{"role": "user", "content": "Continue"}]))
+    payload = json.loads(requests[0].content)
+    assert payload["max_tokens"] == 8192
 
 
 def test_控制面源码里不许再有写死的输出上限():
@@ -64,8 +90,10 @@ def test_控制面源码里不许再有写死的输出上限():
     assert "2048" not in code, "control_client 里又出现写死的 2048"
     assert not re.search(r"min\(\s*default_max_tokens\(\)\s*,", code), \
         "又给 default_max_tokens() 套了 min()，环境变量会再次失效"
-    # 正向配一条：它确实是靠 default_max_tokens() 取值的（§3 正反成对）。
-    assert re.search(r"max_tokens\s*=\s*clamp_max_tokens\(\s*max_tokens\s+or\s+default_max_tokens\(\)\s*\)", code)
+    assert "or default_max_tokens()" not in code, (
+        "又用 or default 把不设限折成一个数字，请求会重新带上 max_tokens"
+    )
+    assert "resolve_wire_max_tokens" in code
 
 
 def test_剥注释这一步本身有效():
