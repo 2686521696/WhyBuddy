@@ -266,7 +266,12 @@ describe("工程档对话：先开口再列动作，不把六步钟叠上去", (
       />
     );
     const speechAt = html.indexOf('data-testid="sliderule-model-speech"');
-    const listAt = html.indexOf('data-testid="project-task-checklist"');
+    // ⚠ 2026-09-20：d8e4ccd8 把清单换成了 SessionStory 的时间线，并在那个 <ol>
+    //   上留了 data-checklist="project-task-checklist" 当延续标记，但没改这条判据，
+    //   于是 listAt 恒为 -1、main 带着这条红进来。判据要盯**真正渲染出来的那个**（§5）。
+    //   ProjectTaskChecklist 组件本身现在没有任何产线渲染点（模块仍导出别的东西给
+    //   SessionStory 用），单独在 review 里记了一笔。
+    const listAt = html.indexOf('data-checklist="project-task-checklist"');
     expect(speechAt).toBeGreaterThan(-1);
     expect(listAt).toBeGreaterThan(-1);
     expect(listAt).toBeGreaterThan(speechAt);

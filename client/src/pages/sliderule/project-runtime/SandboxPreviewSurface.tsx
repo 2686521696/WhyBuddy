@@ -1340,6 +1340,12 @@ export function SandboxPreviewSurface({
                 data-testid="project-preview-frame"
                 tabIndex={-1}
                 onLoad={() => {
+                  // ⚠ 2026-09-20：entryUrl / frameSrc 在契约里都是 string | null，
+                  //   ed38b9bf 直接把它们喂给要 string 的 previewFrameAfterLoad，
+                  //   tsc 两条 TS2322。顺带一个真 bug：src 两个都为 null 时
+                  //   React 省略属性，iframe 加载 about:blank 照样触发 onLoad，
+                  //   原来的写法会把那一发当成"预览就绪"。没有入口地址就直接返回。
+                  if (!preview.entryUrl) return;
                   const loadedSrc =
                     frame.current?.getAttribute("src") ||
                     frameSrc ||

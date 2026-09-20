@@ -14,45 +14,15 @@ export type WhyArtifact = {
 };
 
 /** S8: pure UI progressive slice — not persisted in V5SessionState. */
-export type TurnStep =
-  | {
-      id: string;
-      kind: "narration";
-      text: string;
-      source: "llm" | "fallback";
-      isFinal?: boolean;
-    }
-  /**
-   * 模型在动手之前对用户说的那段话（`control_text`）。
-   *
-   * ⚠ 故意**不复用** `narration`：narration 会被 `linesFromTurnSteps` 收进
-   * 左栏活动列表，模型散文进去就变成跟「第 1 轮 · 正在执行 planning」同等
-   * 分量的一行，正是要修的那个观感。这个 kind 不被 `textFromStep` 和
-   * `linesFromTurnSteps` 认领，所以只在正文里以段落出现，不会双渲染。
-   */
-  | {
-      id: string;
-      kind: "model_speech";
-      text: string;
-      round?: number;
-    }
-  /**
-   * 自动续跑那一轮的**显式标记**（服务端 `control_continuation` 事件）。
-   *
-   * ⚠ 存在的唯一理由是「认标记不认话」：自动续跑没有用户文本，靠匹配机器
-   * 排的句子来识别续跑那条路在这里必然断。见 turn-continuation.ts 的
-   * `turnHasContinuationMark` 头注。
-   *
-   * 它不进左栏活动列表（linesFromTurnSteps 不认它），也不算一步——它是这一轮
-   * 的一个属性，不是一个动作。
-   */
-  | {
-      id: string;
-      kind: "continuation_mark";
-      attempt: number;
-      blockedReasons?: string[];
-    }
-  | {
+/**
+ * 左栏那一行工具 chip。
+ *
+ * ⚠ 2026-09-20：单独具名，是为了让 chipFromControlTranscriptRow 能把返回类型
+ *   收窄到它。此前那个函数声明返回整个 TurnStep 联合，而它其实只产 chip，
+ *   于是调用方取 `.progressType` 一律 TS2339（ProjectTaskChecklist.test.tsx:368
+ *   就是这么红的）——类型比实现宽，代价全让调用方付。
+ */
+export type TurnChipStep = {
       id: string;
       kind: "chip";
       /**
@@ -91,7 +61,47 @@ export type TurnStep =
        * （`useSandboxLog`）。2026-09-14 补上。
        */
       operationId?: string;
+    };
+
+export type TurnStep =
+  | {
+      id: string;
+      kind: "narration";
+      text: string;
+      source: "llm" | "fallback";
+      isFinal?: boolean;
     }
+  /**
+   * 模型在动手之前对用户说的那段话（`control_text`）。
+   *
+   * ⚠ 故意**不复用** `narration`：narration 会被 `linesFromTurnSteps` 收进
+   * 左栏活动列表，模型散文进去就变成跟「第 1 轮 · 正在执行 planning」同等
+   * 分量的一行，正是要修的那个观感。这个 kind 不被 `textFromStep` 和
+   * `linesFromTurnSteps` 认领，所以只在正文里以段落出现，不会双渲染。
+   */
+  | {
+      id: string;
+      kind: "model_speech";
+      text: string;
+      round?: number;
+    }
+  /**
+   * 自动续跑那一轮的**显式标记**（服务端 `control_continuation` 事件）。
+   *
+   * ⚠ 存在的唯一理由是「认标记不认话」：自动续跑没有用户文本，靠匹配机器
+   * 排的句子来识别续跑那条路在这里必然断。见 turn-continuation.ts 的
+   * `turnHasContinuationMark` 头注。
+   *
+   * 它不进左栏活动列表（linesFromTurnSteps 不认它），也不算一步——它是这一轮
+   * 的一个属性，不是一个动作。
+   */
+  | {
+      id: string;
+      kind: "continuation_mark";
+      attempt: number;
+      blockedReasons?: string[];
+    }
+  | TurnChipStep
   | {
       id: string;
       kind: "step_narration";

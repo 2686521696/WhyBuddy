@@ -35,7 +35,7 @@
 
 import { isProjectWorkbenchTool } from "@/lib/factory-hops";
 import { validSourcePath } from "./project-runtime/preview-selection-bridge";
-import type { TurnStep, UiTurn } from "./types";
+import type { TurnChipStep, TurnStep, UiTurn } from "./types";
 
 export type ProjectActionStatus = "running" | "done" | "failed";
 
@@ -375,7 +375,10 @@ export function turnsHaveProjectChips(turns: readonly UiTurn[]): boolean {
 export function chipFromControlTranscriptRow(
   row: unknown,
   index = 0
-): TurnStep | null {
+  // ⚠ 2026-09-20：原来声明 `TurnStep | null`，但三个 return 只有 null 和
+  //   kind:"chip" 两种——类型比实现宽，调用方取 .progressType 一律 TS2339。
+  //   收窄到 TurnChipStep，调用方不用再 as 任何东西。
+): TurnChipStep | null {
   if (!row || typeof row !== "object") return null;
   const item = row as Record<string, unknown>;
   const tool = String(item.tool || "").trim();
