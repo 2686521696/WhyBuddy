@@ -294,18 +294,19 @@ def test_listed_tools_are_a_subset_of_the_closed_set():
 def test_full_manifest_shape_is_untouched():
     """裁的是清单，不是工具定义本身——形状必须原样。
 
-    workflow 除外：描述里要写上此刻已登记的配方名，改全局 CONTROL_TOOLS
+    workflow / skill 除外：描述里要写上此刻的目录，改全局 CONTROL_TOOLS
     会让 schema 跟着注册表变，provider 那头不稳定。
     """
     listed = list_control_tools(_scoped())
     by_name = {t["function"]["name"]: t for t in listed}
+    live = {"workflow", "skill"}
     for t in CONTROL_TOOLS:
         n = t["function"]["name"]
-        if n in by_name and n != "workflow":
+        if n in by_name and n not in live:
             assert by_name[n] is t, f"{n} 的定义被复制/改写了，应当原样透传"
-    assert by_name["workflow"] is not CONTROL_TOOLS[
-        next(i for i, t in enumerate(CONTROL_TOOLS) if t["function"]["name"] == "workflow")
-    ]
+    for name in live:
+        original = next(t for t in CONTROL_TOOLS if t["function"]["name"] == name)
+        assert by_name[name] is not original
 
 
 # ── 通电：光有 list_control_tools 不算数 ──────────────────────────

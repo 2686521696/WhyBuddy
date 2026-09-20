@@ -62,7 +62,7 @@ const sendMessageFn = SESSION.slice(
 );
 const doSend = DOCK.slice(
   DOCK.indexOf("const doSend = React.useCallback"),
-  DOCK.indexOf("const [installedSkills")
+  DOCK.indexOf("const slashPool")
 );
 const runTurn = SESSION.slice(
   SESSION.indexOf("const runTurn = async"),
@@ -273,15 +273,28 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(SESSION).not.toContain("confirmControlScope");
   });
 
-  it("ComposerDock 斜杠池含推演动词；选中补全命令不进芯片", () => {
-    expect(DOCK).toContain("REHEARSAL_SLASH_ITEMS");
+  it("ComposerDock 斜杠池接计划 + 已装技能；选中计划补全命令不进芯片", () => {
+    const pool = DOCK.slice(
+      DOCK.indexOf("const slashPool"),
+      DOCK.indexOf("const partnerById")
+    );
+    expect(pool).toContain("COMPOSER_SLASH_REHEARSAL_ITEMS");
+    expect(pool).toContain("installedSkillSlashItems");
+    // 反向：整份工厂目录进池，空会话又会冒出推演/精修
+    expect(pool).not.toContain("REHEARSAL_SLASH_ITEMS");
+    expect(pool).not.toContain("BUILTIN_PARTNERS");
+    expect(pool).not.toContain("loadInstalledSkills");
+    expect(pool).not.toContain("listConnectors");
     const pick = DOCK.slice(
       DOCK.indexOf("const pickCapability"),
       DOCK.indexOf("const removeCapability")
     );
     expect(pick).toContain('item.kind === "rehearsal"');
     expect(pick).toContain("applyRehearsalSlashPick");
-    expect(MENU).toContain('rehearsal: "推演"');
+    expect(pick).toContain('item.kind === "skill"');
+    expect(pick).toContain("applySkillSlashPick");
+    expect(MENU).toContain('rehearsal: "计划"');
+    expect(MENU).not.toContain('rehearsal: "推演"');
     expect(MENU).toContain('["rehearsal", "partner", "connector", "skill"]');
   });
 });

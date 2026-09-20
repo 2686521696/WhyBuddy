@@ -101,6 +101,22 @@ def test_反向_没列进白名单的工具不说话():
     assert project_tool_summary("project_start", {"approvalRef": SECRET, "port": 5173}) is None
 
 
+def test_skill_只说名字不说正文():
+    """开场摘要白人话技能名。SKILL.md 正文不许进会话。"""
+    body = "# SKILL.md\n跑 scripts/hello.py\n"
+    assert project_tool_summary("skill", {"name": "frontend-design"}) == "frontend-design"
+    assert project_tool_summary("skill", {"skill": "canvas-design"}) == "canvas-design"
+    summary = project_tool_summary(
+        "skill",
+        {"name": "frontend-design", "body": body, "skill_message": body},
+    )
+    assert summary == "frontend-design"
+    assert project_tool_summary("skill", {"name": "a", "skill": "b"}) == "a"
+    assert project_tool_summary("skill", {"body": body}) is None
+    assert "scripts/hello.py" not in (summary or "")
+    assert "SKILL.md" not in (summary or "")
+
+
 def test_反向_非工程工具和坏输入一律不说话():
     assert project_tool_summary("ask_user_question", {"path": "x"}) is None
     assert project_tool_summary("project_read", None) is None

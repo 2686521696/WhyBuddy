@@ -35,6 +35,7 @@ describe("project tool activity labels", () => {
     expect(projectToolLabel("project_start")).toBe("正在启动工程");
     expect(projectToolLabel("project_exec")).toBe("正在执行工程命令");
     expect(projectToolLabel("project_verify")).toBe("正在执行浏览器检查");
+    expect(projectToolLabel("skill")).toBe("正在加载技能");
   });
 
   it("does not turn unrelated or malformed events into activity", () => {

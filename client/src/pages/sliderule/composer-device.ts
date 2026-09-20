@@ -83,7 +83,7 @@ export function composerDeviceTriggerLabel(device: ComposerDevice): string {
  *
  * ⚠ 2026-08-26 上午在占位符尾巴加了「（输入 / 挂技能或连接器）」，下午用户
  *   指着首页圈了四处：占位符、框内 hint、工具条钮，同一句话写了三遍。
- *   斜杠入口只留工具条那颗「/ 技能 · 连接器」（sliderule-slash-hint），
+ *   斜杠入口只留工具条那颗 `/`（sliderule-slash-hint），
  *   占位符回到只描述任务。再加回去，空框里又是三处重复。
  */
 export function composerHeroPlaceholder(device: ComposerDevice): string {

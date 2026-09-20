@@ -140,13 +140,8 @@ export function toggleInjectDisabled(key: string): string[] {
 }
 
 /**
- * 推演注入载荷（技能库六期）：已安装且未被关掉的技能瘦身为
- * {name, description, channel}，上限 6 条（prompt 预算）——随 /drive-full
- * 请求进服务端。
- *
- * channel 决定服务端把它拼进哪个 prompt 块：只有 aigc 通道的技能才会变成
- * "必须落成一条 aigc.capabilities" 的硬要求（字段绑定照旧过门禁硬校验）；
- * experience/unbound 走软参考，不会因为绑不上字段把整轮推演拖进门禁失败。
+ * 六字段还要这个键。目录已经改走服务端安装表，localStorage / featured-skills
+ * 不再冒充已装技能。
  */
 export function installedSkillsDrivePayload(): Array<{
   name: string;
@@ -154,14 +149,5 @@ export function installedSkillsDrivePayload(): Array<{
   channel: SkillChannel;
   binding?: { inputTypes: string[]; outputType: string };
 }> {
-  const disabled = new Set(loadInjectDisabledKeys());
-  return loadInstalledSkills()
-    .filter(s => !disabled.has(installKeyOf(s)))
-    .slice(0, 6)
-    .map(s => ({
-      name: s.name.slice(0, 60),
-      description: s.description.slice(0, 160),
-      channel: channelOf(s),
-      ...(s.binding ? { binding: s.binding } : {}),
-    }));
+  return [];
 }

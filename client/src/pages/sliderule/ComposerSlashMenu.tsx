@@ -25,7 +25,7 @@ import { Blocks, Play, Plug, Search, Settings2, Users } from "lucide-react";
 import type { SlashItem, SlashKind } from "./composer-slash";
 
 const KIND_LABEL: Record<SlashKind, string> = {
-  rehearsal: "推演",
+  rehearsal: "计划",
   skill: "技能",
   connector: "连接器",
   partner: "伙伴",
@@ -53,7 +53,7 @@ const CHIP_TONE: Record<SlashKind, string> = {
   partner: "border-[#ffe4cc] bg-[#fff8f1] text-[#c2570b]",
 };
 
-/** 分组顺序：推演动词在最前，再是伙伴 / 连接器 / 技能。 */
+/** 分组顺序：计划在最前，再是伙伴 / 连接器 / 技能。 */
 const KIND_ORDER: SlashKind[] = ["rehearsal", "partner", "connector", "skill"];
 
 export function CapabilityChip({

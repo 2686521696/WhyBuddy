@@ -175,6 +175,18 @@ function Writing() {
   );
 }
 
+/** 办公：公文包。Word / PPT / 汇报坐这一栏，不跟规格混。 */
+function Office() {
+  return (
+    <Svg label="办公">
+      <Plate id="sr-sk-office" from="#7dd3fc" to="#0369a1" />
+      <rect x="18" y="11" width="12" height="6" rx="2" fill="#bae6fd" />
+      <rect x="11" y="16" width="26" height="20" rx="4" fill="#ffffff" />
+      <rect x="11" y="22" width="26" height="5" fill="#e0f2fe" />
+    </Svg>
+  );
+}
+
 /** 效率提升：闪电。 */
 function Efficiency() {
   return (
@@ -247,6 +259,7 @@ const ART: Record<string, () => React.JSX.Element> = {
   数据分析: Analysis,
   数据可视化: Viz,
   内容创作: Writing,
+  办公: Office,
   效率提升: Efficiency,
   需求分析: Requirement,
   交互体验: Interaction,

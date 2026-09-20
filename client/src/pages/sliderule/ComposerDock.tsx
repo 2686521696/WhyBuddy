@@ -1,10 +1,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
-  Blocks,
-  Check,
   ChevronLeft,
-  ChevronRight,
   FileText,
   ImagePlus,
   Lightbulb,
@@ -15,9 +12,6 @@ import {
   Square,
   X,
 } from "lucide-react";
-// 用 navigate 函数而非 useLocation hook：hook 渲染期就读 window.location，
-// 会炸掉 node 环境的静态渲染测试；navigate 只在点击时触达 history。
-import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
 import { shouldSendOnKey } from "./user-prefs";
 import { PlanApprovalPanel, type PlanApprovalOutcome } from "./PlanApprovalPanel";
@@ -25,23 +19,23 @@ import {
   QuestionnaireCard,
   type QuestionnaireOutcome,
 } from "./QuestionnaireCard";
-import {
-  installKeyOf,
-  loadInjectDisabledKeys,
-  loadInstalledSkills,
-  toggleInjectDisabled,
-  type InstalledSkill,
-} from "./installed-skills";
+import { installKeyOf, loadInstalledSkills } from "./installed-skills";
 import {
   applyRehearsalSlashPick,
+  applySkillSlashPick,
   applySlashPick,
+  COMPOSER_SLASH_REHEARSAL_ITEMS,
   filterSlashItems,
+  installedSkillSlashItems,
   moveHighlight,
-  REHEARSAL_SLASH_ITEMS,
   seedSlash,
   slashQueryAt,
   type SlashItem,
 } from "./composer-slash";
+import {
+  fetchSkillCatalog,
+  type SkillPackage,
+} from "@/lib/skill-store-client";
 import {
   BUILTIN_PARTNERS,
   loadPartners,
@@ -441,11 +435,11 @@ export function ComposerDock({
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
   // （Python drive-full-stream 一条消息推到闭环），持续推演是浏览器端
   // 马拉松遗留、还会丢实时流——引擎能力保留在 Dev 面，不再出现在产品面。
-  // + 菜单改为 Claude 式实用动作：文件 / 示例意图 / 技能库（就地勾选）。
+  // + 菜单：文件 / 示例意图。技能勾选已撤——装了也不进控制面。
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [menuView, setMenuView] = React.useState<
-    "actions" | "examples" | "skills"
-  >("actions");
+  const [menuView, setMenuView] = React.useState<"actions" | "examples">(
+    "actions"
+  );
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
     null
@@ -683,18 +677,7 @@ export function ComposerDock({
     queuedTurns.length,
   ]);
 
-  // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
-  const [installedSkills, setInstalledSkills] = React.useState<
-    InstalledSkill[]
-  >([]);
-  const [injectDisabled, setInjectDisabled] = React.useState<string[]>([]);
-  const openSkillsView = React.useCallback(() => {
-    setInstalledSkills(loadInstalledSkills());
-    setInjectDisabled(loadInjectDisabledKeys());
-    setMenuView("skills");
-  }, []);
-
-  /* ─────────────────────────── `/` 能力选择器（扩展中心）
+  /* ─────────────────────────── `/` 命令选择器
    *
    * 判定层在 composer-slash.ts（纯函数、逐条做过变异）；这里只接线。
    *
@@ -741,6 +724,20 @@ export function ComposerDock({
     void refreshConnectors();
   }, [refreshConnectors]);
 
+  const [storeSkills, setStoreSkills] = React.useState<SkillPackage[]>([]);
+  const refreshStoreSkills = React.useCallback(async () => {
+    try {
+      const list = await fetchSkillCatalog();
+      setStoreSkills(list.filter(item => item.installed));
+    } catch {
+      /* 目录取不到就不进面板，斜杠命令还在 */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refreshStoreSkills();
+  }, [refreshStoreSkills]);
+
   /* 从「扩展中心」页点「用这个伙伴」过来的起手意图。
      ⚠ take 语义：取一次就清掉（见 turn-capabilities.takePendingOpener）。
        不清的话用户以后不管从哪进推演，输入框都会自己填上上次那句话。 */
@@ -754,54 +751,14 @@ export function ComposerDock({
     });
   }, [setInput, adjustTextareaHeight]);
 
-  /** 可选能力池：已安装技能 + 后端报上来的连接器。伙伴见「技能·连接器·伙伴」页。 */
-  const slashPool = React.useMemo<SlashItem[]>(() => {
-    const skills: SlashItem[] = loadInstalledSkills().map(sk => ({
-      key: installKeyOf(sk),
-      kind: "skill" as const,
-      name: sk.name,
-      description: sk.description || "",
-    }));
-    const conns: SlashItem[] = connectors.map(c => ({
-      key: c.id,
-      kind: "connector" as const,
-      name: c.name,
-      description: c.description,
-      // 不可用的照样列出来并说明缺什么（后端 /connectors 也是这个判断）
-      unavailable: c.available ? undefined : `${c.name}还没配置凭据`,
-    }));
-    /* 伙伴也进 `/`：它就是"一次挂好几个 + 一句起手意图"，在输入框里一步到位
-       比先跳去库页再跳回来顺手得多。⚠ 依赖不齐的照样列出来并说明缺什么。 */
-    const available = {
-      connectorIds: connectors.filter(c => c.available).map(c => c.id),
-      skillKeys: loadInstalledSkills().map(installKeyOf),
-    };
-    const partners: SlashItem[] = [...BUILTIN_PARTNERS, ...loadPartners()].map(
-      pt => {
-        const missing = pt.needs.filter(n =>
-          n.kind === "connector"
-            ? !available.connectorIds.includes(n.key)
-            : !available.skillKeys.includes(n.key)
-        );
-        /* ⚠ 清单还没问到时**不许**说"还缺 X"——那是把"我不知道"说成
-           "你没有"。用户看到的会是一排莫名其妙的缺件提示，而其实什么都不缺。 */
-        const unavailable =
-          connectorLoad !== "ready" && pt.needs.some(n => n.kind === "connector")
-            ? "连接器清单没取到 — 后端可能没起来，点一下重试"
-            : missing.length
-              ? `还缺：${missing.map(m => m.name).join("、")}`
-              : undefined;
-        return {
-          key: pt.id,
-          kind: "partner" as const,
-          name: pt.name,
-          description: pt.description,
-          unavailable,
-        };
-      }
-    );
-    return [...REHEARSAL_SLASH_ITEMS, ...conns, ...skills, ...partners];
-  }, [connectors, connectorLoad]);
+  /** 斜杠池：计划 + 商店已装技能。连接器/伙伴仍不进。 */
+  const slashPool = React.useMemo<SlashItem[]>(
+    () => [
+      ...COMPOSER_SLASH_REHEARSAL_ITEMS,
+      ...installedSkillSlashItems(storeSkills),
+    ],
+    [storeSkills]
+  );
 
   const partnerById = React.useMemo(() => {
     const map = new Map<string, Partner>();
@@ -823,10 +780,11 @@ export function ComposerDock({
          ⚠ 这是唯一一个"用户明确要看这份清单"的时刻，重试放这儿最省事也最
            准；挂载时那一次赶上后端重启就永远错过了。 */
       if (next && !prev && connectorLoad === "failed") void refreshConnectors();
+      if (next && !prev) void refreshStoreSkills();
       return next;
     });
     setSlashIndex(0);
-  }, [connectorLoad, refreshConnectors]);
+  }, [connectorLoad, refreshConnectors, refreshStoreSkills]);
 
   /*
    * 「/ 技能·连接器」那颗提示钮**替用户打这个斜杠**。
@@ -935,7 +893,33 @@ export function ComposerDock({
         const applied =
           ta && slash
             ? applyRehearsalSlashPick(ta.value, slash, item)
-            : { text: `/${item.name}`, caret: item.name.length + 1 };
+            : applyRehearsalSlashPick(
+                "/",
+                { start: 0, end: 1, query: "" },
+                item
+              );
+        setInput(applied.text);
+        slashSeedRef.current = false;
+        setSlash(null);
+        setSlashIndex(0);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(applied.caret, applied.caret);
+          adjustTextareaHeight();
+        });
+        return;
+      }
+      if (item.kind === "skill") {
+        const applied =
+          ta && slash
+            ? applySkillSlashPick(ta.value, slash, item)
+            : applySkillSlashPick(
+                "/",
+                { start: 0, end: 1, query: "" },
+                item
+              );
         setInput(applied.text);
         slashSeedRef.current = false;
         setSlash(null);
@@ -1151,7 +1135,9 @@ export function ComposerDock({
       {/*
         输入条结构（横排，不是页面三栏）：
           1. 闭环胶囊 / 提示词芯片（会话内；空态不画）
-          2. 多行卡片：字在上，底栏 + / 技能 / 发送
+          2. 多行卡片：字在上，底栏 + / 发送
+        ⚠ 2026-09-20：技能勾选条从这里彻掉。已装技能跟闭集工具一样
+          进控制面目录，人不再在输入条勾；Agent 自己用 skill 工具加载。
           3. 有附件/优化提示时才出一行提示（话题条已撤：跟舞台标题重复）
         ⚠ hintChips 从 SlideRule 传来却从未渲染（2026-08-20）——顶行就是把它接上。
         不许编 git / Commit；闭环胶囊和提示词芯片都是仓里已有的。
@@ -1428,101 +1414,6 @@ export function ComposerDock({
                           </span>
                         </span>
                       </button>
-
-                      {/* 就地勾选（用户反馈：跳走了看不到选择）——二级视图列已安装技能 */}
-                      <button
-                        type="button"
-                        onClick={openSkillsView}
-                        data-testid="sliderule-action-skills"
-                        className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                      >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
-                          <Blocks className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-xs font-semibold text-stone-800">
-                            选择注入的技能
-                          </span>
-                          <span className="block truncate text-[10px] text-stone-500">
-                            勾选的已安装技能随推演注入
-                          </span>
-                        </span>
-                        <ChevronRight className="h-3.5 w-3.5 text-stone-300" />
-                      </button>
-                    </>
-                  ) : menuView === "skills" ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setMenuView("actions")}
-                        className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
-                      >
-                        <ChevronLeft className="h-3 w-3" />
-                        返回
-                      </button>
-                      {installedSkills.length === 0 ? (
-                        <div className="px-2.5 py-3 text-center text-[11px] text-stone-400">
-                          还没有安装技能
-                        </div>
-                      ) : (
-                        <div className="max-h-[260px] overflow-y-auto">
-                          {installedSkills.map(skill => {
-                            const key = installKeyOf(skill);
-                            const enabled = !injectDisabled.includes(key);
-                            return (
-                              <button
-                                key={key}
-                                type="button"
-                                onClick={() =>
-                                  setInjectDisabled(toggleInjectDisabled(key))
-                                }
-                                data-testid="sliderule-skill-toggle"
-                                title={
-                                  enabled ? "点击取消注入" : "点击恢复注入"
-                                }
-                                className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                              >
-                                <span
-                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                                    enabled
-                                      ? "border-[#1677ff] bg-[#1677ff] text-white"
-                                      : "border-[#d3d8e0] bg-white"
-                                  }`}
-                                >
-                                  {enabled && <Check className="h-3 w-3" />}
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                  <span
-                                    className={`block truncate text-xs font-medium ${
-                                      enabled
-                                        ? "text-stone-800"
-                                        : "text-stone-400"
-                                    }`}
-                                  >
-                                    {skill.name}
-                                  </span>
-                                  <span className="block truncate text-[10px] text-stone-400">
-                                    {skill.description || skill.repo}
-                                  </span>
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          setMenuView("actions");
-                          navigate("/agent-loop/skills");
-                        }}
-                        data-testid="sliderule-skills-manage"
-                        className="mt-1 flex w-full items-center justify-center gap-1 rounded-[7px] border-t border-[#f0f0f0] px-2.5 py-2 text-[11px] text-[#1677ff] transition hover:bg-[#eef0f4]"
-                      >
-                        去扩展中心（安装 / 卸载技能）
-                        <ChevronRight className="h-3 w-3" />
-                      </button>
                     </>
                   ) : (
                     <>
@@ -1556,11 +1447,10 @@ export function ComposerDock({
                   data-testid="sliderule-slash-hint"
                 disabled={isRunning}
                 onClick={openSlashPicker}
-                title="挂一个技能或连接器到这一轮（等同于在输入框里打 /）"
+                title="输入 / 选择计划或已装技能"
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:bg-[#ececef] hover:text-[#171717] disabled:opacity-45"
               >
                 <span className="font-mono text-[13px] leading-none">/</span>
-                技能 · 连接器
               </button>
               </div>
 
@@ -1692,10 +1582,6 @@ export function ComposerDock({
               }}
               onPick={pickCapability}
               onHover={setSlashIndex}
-              onManage={() => {
-                dismissSlash();
-                navigate("/agent-loop/skills");
-              }}
             />
           ) : null}
           {pendingAsk?.questions?.length && onSubmitQuestionnaire ? (

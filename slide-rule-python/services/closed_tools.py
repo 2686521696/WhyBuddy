@@ -71,6 +71,8 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     # remember 写的是**记忆**不是五系统模型，不进工厂信封。
     "remember",
     "recall",
+    # 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
+    "skill",
     "rehearse",
     "workflow",
     *FACTORY_HOPS,
@@ -115,6 +117,7 @@ _CLOSED_ID_RE = re.compile(
 )
 _TEXT_FORCED_SKIP = frozenset({
     "rehearse",
+    "skill",
     "idle",
     "make_manus_page",
     "bash", "grep", "glob", "list_dir", "read_file", "write_file", "search_replace",

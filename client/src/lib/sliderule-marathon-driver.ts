@@ -15,6 +15,7 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "./installed-skills";
+import { mentionedSkillSlugs } from "./mentioned-skills";
 import { layoutDevice } from "./product-archetypes";
 import {
   loadTurnCapabilities,
@@ -494,6 +495,11 @@ export interface DriveFullStreamOpts {
     brandConstraints?: string;
   };
   /**
+   * 这一轮点名的技能 slug。缺省从 userText 里的 `@slug` 抽。
+   * 不是 SkillSelectBar 那份 sessionStorage 勾选名单。
+   */
+  selectedSkills?: string[];
+  /**
    * 控制面的一句话。第二个参数是**为什么停**的结构化部分（只有终止那一条带）。
    *
    * ⚠ 服务端 2026-08-27 起把停止原因当数据发（stopReason / stoppedBy / limit /
@@ -947,6 +953,9 @@ export async function postControlTurnStream(
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
   const controlRequestId = opts.controlRequestId ?? crypto.randomUUID();
+  const mentioned = Array.isArray(opts.selectedSkills)
+    ? opts.selectedSkills
+    : mentionedSkillSlugs(userText);
   try {
     const res = await fetch("/api/sliderule/control-turn-stream", {
       method: "POST",
@@ -986,6 +995,7 @@ export async function postControlTurnStream(
           ? { reuseCharter: opts.reuseCharter }
           : {}),
         ...(opts.productCharter ? { productCharter: opts.productCharter } : {}),
+        ...(mentioned.length > 0 ? { selectedSkills: mentioned } : {}),
       }),
     });
     await throwIfAuthRequired(res);

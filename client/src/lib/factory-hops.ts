@@ -40,6 +40,8 @@ export const CLOSED_TOOLS = [
   // 模型记忆 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）。
   "remember",
   "recall",
+  // 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
+  "skill",
   "rehearse",
   "workflow",
   ...FACTORY_HOPS,
@@ -154,13 +156,17 @@ export function isProjectWorkbenchTool(name: unknown): boolean {
     tool === "bash" ||
     tool === "grep" ||
     tool === "list_dir" ||
-    tool === "glob"
+    tool === "glob" ||
+    // ⚠ 2026-09-20：skill 跟工程/文件/shell 一样是会话动作。
+    //   不进白名单 → isProjectChip 滤掉 → 调了也像没调。
+    tool === "skill"
   );
 }
 
 /** 文本不得把 rehearse 当成 forcedTool。跟 `/推演` 同一条合同。 */
 const TEXT_FORCED_SKIP = new Set<string>([
   "rehearse",
+  "skill",
   "idle",
   "make_manus_page",
   "bash",

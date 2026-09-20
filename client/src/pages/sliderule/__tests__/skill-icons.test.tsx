@@ -58,6 +58,13 @@ describe("认得出的图稿", () => {
 });
 
 describe("兜底", () => {
+  it("商店「办公」货架有自己的图稿，不落到星", () => {
+    expect(hasSkillArt("办公")).toBe(true);
+    expect(renderToStaticMarkup(<SkillIcon category="办公" />)).toContain(
+      'data-art="办公"'
+    );
+  });
+
   it("认不出的分类 → 画星，不空白也不抛", () => {
     const html = renderToStaticMarkup(<SkillIcon category="还没配图稿的分类" />);
     expect(html).toContain('data-art="fallback"');

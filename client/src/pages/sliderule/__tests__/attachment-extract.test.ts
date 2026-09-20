@@ -226,7 +226,7 @@ describe("ComposerDock 解析中发送闸接在通电链上", () => {
 
     const doSend = src.slice(
       src.indexOf("const doSend = React.useCallback"),
-      src.indexOf("const [installedSkills")
+      src.indexOf("const slashPool")
     );
     expect(doSend).toContain("isComposerSendBlocked");
     expect(doSend).toContain("isRefining");

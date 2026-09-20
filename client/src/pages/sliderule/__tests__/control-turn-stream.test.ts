@@ -121,6 +121,9 @@ describe("产品客户端不得再 POST 工厂流", () => {
       DRIVER.indexOf("export async function consumeControlStreamResponse")
     );
     expect(postFn).toContain("installedSkillsDrivePayload()");
+    expect(postFn).not.toContain("selectedSkillsDrivePayload()");
+    expect(postFn).toContain("mentionedSkillSlugs");
+    expect(postFn).toContain("selectedSkills");
     expect(postFn).toContain("pickedConnectorIds");
     expect(postFn).toContain("sessionId: state.sessionId");
     expect(postFn).toContain("userText");
@@ -140,6 +143,20 @@ describe("产品客户端不得再 POST 工厂流", () => {
       SESSION.indexOf("const requestRehearsal = async")
     );
     expect(runTurn).not.toContain("loadCharterReuseNext()");
+  });
+
+  it("反向：输入条不许再接 SkillSelectBar；POST 点名不是勾选存档", () => {
+    expect(DOCK).not.toContain("SkillSelectBar");
+    expect(DOCK).not.toContain("skill-select-bar");
+    expect(DOCK).toContain("installedSkillSlashItems");
+    expect(DOCK).toContain("applySkillSlashPick");
+    const postFn = DRIVER.slice(
+      DRIVER.indexOf("export async function postControlTurnStream"),
+      DRIVER.indexOf("export async function consumeControlStreamResponse")
+    );
+    expect(postFn).not.toContain("selectedSkillsDrivePayload()");
+    expect(postFn).toContain("mentionedSkillSlugs");
+    expect(postFn).toContain("selectedSkills");
   });
 });
 

@@ -2,8 +2,9 @@
  * 工厂 hop 人话 → 唯一工具名。跟 Python closed_tools.factory_hop_from_text
  * 同一把尺子。
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
 import {
   CLOSED_TOOLS,
   FACTORY_HOP_LABELS,
@@ -17,6 +18,9 @@ import {
   looksLikeClosedToolCommand,
   looksLikeFactoryHopCommand,
 } from "../factory-hops";
+
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 describe("factoryHopFromText", () => {
   it("收尾卡标签是唯一一跳", () => {
@@ -69,7 +73,17 @@ describe("factoryHopFromText", () => {
     expect(isProjectWorkbenchTool("shell_exec")).toBe(true);
     expect(isProjectWorkbenchTool("browser_navigate")).toBe(true);
     expect(isProjectWorkbenchTool("project_patch")).toBe(true);
+    expect(isProjectWorkbenchTool("skill")).toBe(true);
     expect(isProjectWorkbenchTool("intent.parse")).toBe(false);
+    // 反向：把 skill 从白名单拿掉，上面那句和这段源码钉都会红。
+    const hops = stripComments(
+      readFileSync(resolve(__dirname, "../factory-hops.ts"), "utf8")
+    );
+    const fn = hops.slice(
+      hops.indexOf("export function isProjectWorkbenchTool"),
+      hops.indexOf("const TEXT_FORCED_SKIP")
+    );
+    expect(fn).toMatch(/"skill"/);
   });
 
   it("账本身份按 hop 分开，不是共用信封", () => {

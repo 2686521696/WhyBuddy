@@ -16,6 +16,9 @@
  *   3. **交互** — Cursor Skills 截图。All / Installed 切列表，不在同一页把
  *      已装的再铺一遍；行右是文字钮「添加」，不是圆 +。
  *
+ * 2026-09-20 完整技能包商店底下改成分类三列扁卡。顶栏不许另起：图标+标题、
+ * 中间搜索、筛选一排，跟 AppsWorkbench 同一套。四列描边墙仍不许回来。
+ *
  * ⚠ **不造 Popular、不下假下载数。** Cursor 那两项靠它们的安装遥测。79 条
  *   技能里分不出哪些更"热门"，瞎标一批跟摆一个点了没反应的按钮是同一类。
  * ⚠ **不放「新建技能」。** 自建链路不存在（见 SkillsLibraryPage 头注）。
@@ -251,6 +254,70 @@ export function MarketRow({
         <div className="flex shrink-0 items-center gap-1.5">{action}</div>
       </div>
       {open ? children : null}
+    </div>
+  );
+}
+
+export function MarketSection({
+  title,
+  children,
+  testid,
+}: {
+  title: string;
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <section className="mt-6 first:mt-1" data-testid={testid}>
+      <h2 className="mb-2 px-1 text-[13px] font-semibold text-slate-800">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+export function MarketCardGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      data-testid="market-card-grid"
+      className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 xl:grid-cols-3"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 货架扁卡：圆图标 | 名字+一行描述 | 安装。
+ * 没有描边底板——那是 08-26 裁掉的四列墙。
+ */
+export function MarketCard({
+  icon,
+  name,
+  description,
+  action,
+  testid,
+}: {
+  icon: React.ReactNode;
+  name: React.ReactNode;
+  description: React.ReactNode;
+  action: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <div
+      className="flex min-w-0 items-center gap-3 rounded-xl px-1 py-2.5 transition hover:bg-white/70"
+      data-testid={testid}
+    >
+      {icon}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-semibold leading-5 text-slate-900">
+          {name}
+        </div>
+        <div className="mt-0.5 truncate text-[12px] leading-[18px] text-slate-500">
+          {description}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center">{action}</div>
     </div>
   );
 }

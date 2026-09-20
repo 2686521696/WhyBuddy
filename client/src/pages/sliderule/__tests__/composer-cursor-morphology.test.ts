@@ -134,7 +134,7 @@ describe("ComposerDock Cursor 三行形态", () => {
     );
     // 正向：工具条钮还在，点下去走同一条 `/` 路径
     expect(dock).toContain('data-testid="sliderule-slash-hint"');
-    expect(dock).toContain("技能 · 连接器");
+    expect(dock).not.toContain("技能 · 连接器");
     // 反向：08-26 下午用户圈了三处同一句话。框内 hint / 占位符尾巴加回去必红
     expect(dock).not.toContain("sliderule-composer-slash-hint");
     expect(dock).not.toContain("COMPOSER_SLASH_HINT");

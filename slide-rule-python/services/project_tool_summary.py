@@ -71,6 +71,9 @@ _ALLOWED: Dict[str, tuple] = {
     "project_status": ("operationId",),
     "project_cancel": ("operationId",),
     "project_verification": ("operationId",),
+    # 只说加载了哪份技能。SKILL.md 正文在 tool result 里回给模型，
+    # 不许进会话摘要。
+    "skill": ("name", "skill"),
 }
 
 
@@ -112,12 +115,15 @@ def project_tool_summary(name: str, args: Any) -> Optional[str]:
         tool.startswith(("project_", "file_", "shell_", "browser_", "deploy_"))
         or tool in {
             "make_manus_page", "read_file", "write_file", "search_replace",
-            "bash", "grep", "list_dir", "glob",
+            "bash", "grep", "list_dir", "glob", "skill",
         }
     ) or not isinstance(args, dict):
         return None
     if tool == "project_patch":
         return _patch_summary(args)
+    if tool == "skill":
+        # name 优先，skill 是别名。两个都有也不许拼成「name name」。
+        return _text(args.get("name")) or _text(args.get("skill")) or None
     allowed = _ALLOWED.get(tool)
     if not allowed:
         return None

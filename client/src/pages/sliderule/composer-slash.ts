@@ -61,6 +61,24 @@ export const REHEARSAL_SLASH_ITEMS: SlashItem[] = [
   },
 ];
 
+/**
+ * `/` 面板给人点的推演动词。只留「计划」。
+ *
+ * ⚠ 2026-09-19 空会话：用户圈了推演 / 精修 / 质疑 / 回退，问是不是没用了。
+ *   现在是自由 Agent 编排，那四个是 HTML 工厂遥控器，点了也对不上工程档。
+ *   目录 `REHEARSAL_SLASH_ITEMS` 仍在——手打 `/精修` 还走闸，菜单不再推销。
+ *
+ * 只认 `scope`，不认「不是工厂的都留下」：新加一个工厂动词默认不进面板。
+ */
+export function visibleComposerRehearsalItems(
+  items: readonly SlashItem[] = REHEARSAL_SLASH_ITEMS
+): SlashItem[] {
+  return items.filter(item => item.key === "scope");
+}
+
+export const COMPOSER_SLASH_REHEARSAL_ITEMS: SlashItem[] =
+  visibleComposerRehearsalItems();
+
 export interface SlashQuery {
   /** `/` 所在下标 */
   start: number;
@@ -274,13 +292,66 @@ export function controlUserTextForSlash(
   return rehearsalSlashRemainder(raw) || String(currentGoal || "").trim();
 }
 
-/** 选中推演动词：把 `/查询串` 补成完整命令，不摘成芯片。 */
+/**
+ * 选中推演动词：把 `/查询串` 补成完整命令，不摘成芯片。
+ *
+ * ⚠ 2026-09-19 空会话：点「计划」，框里变成 `/计划`，面板没关，还得再点一次。
+ *   补全后光标停在词上，`slashQueryAt` 仍认这段斜杠；textarea 的 onSelect
+ *   跟着 setSelectionRange 再扫一遍，把刚关掉的面板叫回来。
+ *   尾巴补一个空格——跟「`/天气 帮我做个看板` 必须关面板」是同一条规则。
+ */
 export function applyRehearsalSlashPick(
   text: string,
   q: SlashQuery,
   item: SlashItem
 ): { text: string; caret: number } {
-  const command = `/${item.name}`;
+  const command = `/${item.name} `;
   const next = `${text.slice(0, q.start)}${command}${text.slice(q.end)}`;
   return { text: next, caret: q.start + command.length };
+}
+
+/**
+ * 商店已装技能 → `/` 面板条目。没装的不进。
+ *
+ * 选中后走 `applySkillSlashPick`，在正文里留下 `@slug`，这一轮自由
+ * Agent 就按这份 SKILL.md 编排。不是勾选存档，也不是死流程。
+ */
+export function installedSkillSlashItems(
+  skills: ReadonlyArray<{
+    slug: string;
+    name?: string;
+    description?: string;
+    installed?: boolean;
+  }>
+): SlashItem[] {
+  const out: SlashItem[] = [];
+  const seen = new Set<string>();
+  for (const skill of skills) {
+    const key = String(skill.slug || "").trim();
+    if (!key || seen.has(key) || skill.installed === false) continue;
+    seen.add(key);
+    out.push({
+      key,
+      kind: "skill",
+      name: String(skill.name || key).trim() || key,
+      description: String(skill.description || "").trim(),
+    });
+  }
+  return out;
+}
+
+/**
+ * 选中已装技能：把 `/查询串` 换成 `@slug `。
+ *
+ * ⚠ 不能走 `applySlashPick` 只摘斜杠。摘完正文里没有点名，服务端
+ *   只看见「做个 PPT」，技能正文不会预加载。
+ */
+export function applySkillSlashPick(
+  text: string,
+  q: SlashQuery,
+  item: SlashItem
+): { text: string; caret: number } {
+  const mention = `@${item.key} `;
+  const next = `${text.slice(0, q.start)}${mention}${text.slice(q.end)}`;
+  return { text: next, caret: q.start + mention.length };
 }
