@@ -19,9 +19,11 @@ import {
   planTodoCompleted,
   planTodoProgress,
   visiblePlanTodo,
+  type PlanTodoAction,
   type PlanTodoItem,
   type PlanTodoStatus,
 } from "./plan-todo-dock";
+import { dispatchInspectAction } from "./project-computer-view";
 import { isMotionReduced } from "./user-prefs";
 
 function statusLabel(status: PlanTodoStatus): string {
@@ -86,8 +88,11 @@ function TodoStatusMark({
 
 export function PlanTodoDock({
   items,
+  action,
 }: {
   items?: Array<{ id?: string; status?: string; content?: string }> | null;
+  /** 控制面当前挑的工程动作。只展示，不改 status。 */
+  action?: PlanTodoAction | null;
 }) {
   const todo = visiblePlanTodo(items);
   const shown = todo.filter(item => item.status !== "cancelled");
@@ -139,16 +144,22 @@ export function PlanTodoDock({
             id={listId}
             data-todo-list=""
             aria-live="polite"
-            className="min-h-0 max-h-52 overflow-y-auto overscroll-contain px-3"
+            className="min-h-0 max-h-52 overflow-y-auto overscroll-contain px-3.5 pb-1.5"
           >
             {shown.map(item => {
               const active = item.status === "in_progress";
+              const hint =
+                active && action?.detail
+                  ? action.detail
+                  : active && action
+                    ? action.tool
+                    : null;
               return (
                 <li
                   key={item.id}
                   ref={active ? currentRef : undefined}
                   data-todo-status={item.status}
-                  className={`flex items-start gap-2.5 px-1 py-[7px] text-[13px] leading-5 ${
+                  className={`flex items-start gap-2.5 py-[7px] text-[13px] leading-5 ${
                     item.status === "completed"
                       ? "text-[#9a9a9a]"
                       : "text-[#333]"
@@ -159,7 +170,28 @@ export function PlanTodoDock({
                   </span>
                   <span className="sr-only">{statusLabel(item.status)}：</span>
                   <span className="min-w-0 flex-1 break-words">
-                    {item.content}
+                    {action && active ? (
+                      <button
+                        type="button"
+                        data-testid="plan-todo-action"
+                        className="block w-full text-left"
+                        onClick={() =>
+                          dispatchInspectAction({
+                            id: action.id,
+                            tool: action.tool,
+                          })
+                        }
+                      >
+                        {item.content}
+                        {hint ? (
+                          <span className="mt-0.5 block break-all text-[12px] text-[#9a9a9a]">
+                            {hint}
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : (
+                      item.content
+                    )}
                   </span>
                 </li>
               );

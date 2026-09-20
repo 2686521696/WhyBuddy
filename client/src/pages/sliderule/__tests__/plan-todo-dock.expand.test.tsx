@@ -69,4 +69,29 @@ describe("点开才摊清单", () => {
     expect(list!.className).toContain("overscroll-contain");
     expect(container.innerHTML).toContain("break-words");
   });
+
+  it("进行中那条挂上当前动作细节，点一下能跟档", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <PlanTodoDock
+          items={REAL_TODO}
+          action={{
+            id: "write-1",
+            tool: "file_write",
+            detail: "src/pages/Home.tsx",
+          }}
+        />
+      );
+    });
+    await act(async () => {
+      container!.querySelector("button")!.click();
+    });
+    expect(container!.textContent).toContain("src/pages/Home.tsx");
+    expect(
+      container!.querySelector('[data-testid="plan-todo-action"]')
+    ).not.toBeNull();
+  });
 });

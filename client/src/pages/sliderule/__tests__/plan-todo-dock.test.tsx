@@ -84,6 +84,42 @@ describe("visiblePlanTodo：脏数据丢掉，不许编一条", () => {
       "pending"
     );
   });
+
+  it("飞机大战同文案两套 id 合成一条，脸上不是 3/16", () => {
+    const oldRows = [
+      { id: "init-project", status: "completed", content: "初始化 Vite React 工程" },
+      {
+        id: "canvas-engine",
+        status: "in_progress",
+        content: "Canvas 渲染器、精灵、输入与游戏循环",
+      },
+    ];
+    const newRows = [
+      { id: "task-1", status: "completed", content: "初始化 Vite React 工程" },
+      {
+        id: "task-3",
+        status: "completed",
+        content: "Canvas 渲染器、精灵、输入与游戏循环",
+      },
+    ];
+    const items = visiblePlanTodo([...oldRows, ...newRows]);
+    expect(items).toHaveLength(2);
+    expect(items[1].status).toBe("completed");
+    expect(items[1].id).toBe("task-3");
+    const { current, total, currentContent } = planTodoProgress(items);
+    expect(total).toBe(2);
+    expect(current).toBe(2);
+    expect(currentContent).toBeNull();
+  });
+
+  it("反向：文案不同的新 id 仍是两条", () => {
+    expect(
+      visiblePlanTodo([
+        { id: "a", status: "pending", content: "画飞机" },
+        { id: "b", status: "pending", content: "加音效" },
+      ])
+    ).toHaveLength(2);
+  });
 });
 
 describe("planTodoProgress：Manus 那格 1/4", () => {
@@ -259,6 +295,11 @@ describe("接在真跑的那条路上（§1 / §3）", () => {
     expect(dock).toContain("overscroll-contain");
     expect(dock).toContain("break-words");
     expect(dock).toContain("sr-todo-spin");
+    // 标题 / 清单 / 底栏同一条横垫，条目不再另加 px-1，不然勾和「待办」错位。
+    expect(dock.match(/px-3\.5/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(dock).toContain("px-3.5 pb-1.5");
+    expect(dock).not.toContain("overscroll-contain px-3\"");
+    expect(dock).not.toContain("gap-2.5 px-1 py-[7px]");
     expect(dock).not.toContain("useState(true)");
     expect(dock).not.toContain("scrollIntoView");
     expect(dock).not.toContain("rounded-[12px]");

@@ -122,6 +122,29 @@ describe("模板之外的动作也要显示（这是改它的理由）", () => {
     expect(projectActionLabel("project_brand_new")).toBe("brand_new");
   });
 
+  it("skill 也有行，脸上是加载技能", () => {
+    const rows = deriveProjectActivity([
+      turn([
+        {
+          id: "sk",
+          capabilityId: "skill",
+          progressType: "completed",
+          projectDetail: "frontend-design",
+        },
+      ]),
+    ]);
+    expect(rows).toEqual([
+      {
+        id: "sk",
+        tool: "skill",
+        label: "加载技能",
+        status: "done",
+        detail: "frontend-design",
+      },
+    ]);
+    expect(projectActionLabel("skill")).toBe("加载技能");
+  });
+
   it("反向：非工程步骤不许混进来", () => {
     const rows = deriveProjectActivity([
       turn([
@@ -192,6 +215,22 @@ describe("细节来自结构化字段，不解析文案", () => {
     expect(
       projectActionDetail({ parentRevision: "rev-aaaaaaaaaaaaaaa", revision: "rev-bbbbbbbbbbbbbbb" })
     ).toBe("rev-aaaaaaaa → rev-bbbbbbbb");
+  });
+
+  it("写入结果优先说 path，不许被版本号盖掉", () => {
+    expect(
+      projectActionDetail({
+        path: "src/components/CreateModal.tsx",
+        parentRevision: "rev-aaaaaaaaaaaaaaa",
+        revision: "rev-bbbbbbbbbbbbbbb",
+      })
+    ).toBe("src/components/CreateModal.tsx");
+    expect(
+      projectActionDetail({
+        changedFiles: ["src/pages/Todos.tsx", "src/api/tasks.ts"],
+        revision: "rev-bbbbbbbbbbbbbbb",
+      })
+    ).toBe("src/pages/Todos.tsx、src/api/tasks.ts");
   });
 
   it("反向：拿不到细节就是没有，不许用 kind 之类的内部名凑数", () => {
@@ -286,6 +325,16 @@ describe("细节来自结构化字段，不解析文案", () => {
     expect(projectToolStillOpen({ ok: true, status: "completed" })).toBe(false);
     expect(projectToolStillOpen({ ok: false, status: "running" })).toBe(false);
     expect(projectToolStillOpen({ ok: true })).toBe(false);
+    const skillStart = chipFromControlTranscriptRow({
+      kind: "tool_start",
+      tool: "skill",
+      summary: "frontend-design",
+    });
+    expect(skillStart).toMatchObject({
+      progressType: "acting",
+      projectDetail: "frontend-design",
+      label: "正在加载技能",
+    });
     const start = chipFromControlTranscriptRow({
       kind: "tool_start",
       tool: "project_exec",

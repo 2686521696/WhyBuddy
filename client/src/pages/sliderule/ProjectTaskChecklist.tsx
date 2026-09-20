@@ -24,7 +24,17 @@
  */
 
 import React from "react";
-import { Check, LoaderCircle, X } from "lucide-react";
+import {
+  Check,
+  FilePen,
+  FolderPlus,
+  Globe,
+  LoaderCircle,
+  Sparkles,
+  Terminal,
+  Wrench,
+  X,
+} from "lucide-react";
 import {
   deriveProjectActivity,
   followProjectActionId,
@@ -38,6 +48,11 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
 } from "./project-computer-view";
+import {
+  isExpandableCommandRow,
+  timelineRowTitle,
+  toolFamily,
+} from "./session-story";
 import type { UiTurn } from "./types";
 
 export type { ProjectActionRow, ProjectActionStatus };
@@ -53,6 +68,17 @@ function StatusIcon({ status }: { status: ProjectActionStatus }) {
       aria-hidden
     />
   );
+}
+
+function FamilyIcon({ tool }: { tool: string }) {
+  const family = toolFamily(tool);
+  const cls = "h-3.5 w-3.5 shrink-0 text-[#8a8a8a]";
+  if (family === "create") return <FolderPlus className={cls} aria-hidden />;
+  if (family === "file") return <FilePen className={cls} aria-hidden />;
+  if (family === "shell") return <Terminal className={cls} aria-hidden />;
+  if (family === "preview") return <Globe className={cls} aria-hidden />;
+  if (family === "skill") return <Sparkles className={cls} aria-hidden />;
+  return <Wrench className={cls} aria-hidden />;
 }
 
 /** 左栏和章节组共用：点一下发出 inspect，右侧跟档。 */
@@ -77,49 +103,75 @@ export function useSelectedProjectActionId(): string | null {
 export function ProjectActionRowView({
   row,
   selected,
+  variant = "flat",
 }: {
   row: ProjectActionRow;
   selected: boolean;
+  variant?: "flat" | "timeline";
 }) {
+  const timeline = variant === "timeline";
+  const title = timeline ? timelineRowTitle(row) : row.label;
+  const expandable = timeline && isExpandableCommandRow(row);
+  const showInlineDetail =
+    Boolean(row.detail) &&
+    !expandable &&
+    !(timeline && (toolFamily(row.tool) === "skill" || toolFamily(row.tool) === "preview"));
+
   return (
-    <button
-      type="button"
-      data-testid="project-task-row"
-      data-status={row.status}
-      data-task-id={row.tool}
-      data-selected={selected ? "true" : "false"}
-      aria-pressed={selected}
-      onClick={() => dispatchInspectAction({ id: row.id, tool: row.tool })}
-      className={`flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-[13px] transition ${
-        selected
-          ? "bg-stone-100 text-stone-900"
-          : "text-stone-700 hover:bg-stone-50"
-      }`}
-    >
-      <span className="mt-[3px] shrink-0">
-        <StatusIcon status={row.status} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span
-          className={row.status === "failed" ? "text-rose-700" : undefined}
-        >
-          {row.label}
+    <div className="min-w-0">
+      <button
+        type="button"
+        data-testid="project-task-row"
+        data-status={row.status}
+        data-task-id={row.tool}
+        data-family={timeline ? toolFamily(row.tool) : undefined}
+        data-selected={selected ? "true" : "false"}
+        aria-pressed={selected}
+        onClick={() => dispatchInspectAction({ id: row.id, tool: row.tool })}
+        className={`flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-[13px] transition ${
+          selected
+            ? "bg-stone-100 text-stone-900"
+            : "text-stone-700 hover:bg-stone-50"
+        }`}
+      >
+        <span className="mt-[3px] shrink-0">
+          {timeline ? <FamilyIcon tool={row.tool} /> : <StatusIcon status={row.status} />}
         </span>
-        {row.detail ? (
+        <span className="min-w-0 flex-1">
           <span
-            className="ml-1.5 break-all text-stone-400"
-            data-testid="project-task-detail"
+            className={row.status === "failed" ? "text-rose-700" : undefined}
           >
-            {row.detail}
+            {title}
+          </span>
+          {showInlineDetail ? (
+            <span
+              className="ml-1.5 break-all text-stone-400"
+              data-testid="project-task-detail"
+            >
+              {row.detail}
+            </span>
+          ) : null}
+        </span>
+        {row.status === "running" && !timeline ? (
+          <span className="ml-auto shrink-0 text-[11px] text-blue-600">
+            进行中
           </span>
         ) : null}
-      </span>
-      {row.status === "running" ? (
-        <span className="ml-auto shrink-0 text-[11px] text-blue-600">
-          进行中
-        </span>
+      </button>
+      {expandable ? (
+        <details
+          data-testid="session-story-command"
+          className="ml-7 mt-0.5 text-[12px] text-[#6b6b6b]"
+        >
+          <summary className="cursor-pointer select-none text-[#8a8a8a]">
+            命令
+          </summary>
+          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-[#555]">
+            {row.detail}
+          </pre>
+        </details>
       ) : null}
-    </button>
+    </div>
   );
 }
 

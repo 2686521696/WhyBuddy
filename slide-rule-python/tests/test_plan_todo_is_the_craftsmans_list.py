@@ -116,6 +116,10 @@ def test_模型列的清单_落库_发事件_下一发自己还看得见(harness
     assert tool_msgs, shots[1]
     body = json.loads(str(tool_msgs[-1].get("content") or "{}"))
     assert "先画页面" in str(body.get("summary") or ""), body
+    # 抄 grok：回喂必须带 id。只回文案，下一发会另起 todo-1 叠两份
+    # （2026-09-19 坦克大战 sr-20260919072444-11CSR1RSM6）。
+    assert "t1:" in str(body.get("summary") or ""), body
+    assert [r.get("id") for r in (body.get("todos") or [])] == ["t1", "t2", "t3"], body
 
     # ④ **下一轮**（新一发 HTTP，state 重新读）：靠系统提示词那条现场。
     shots.clear()
@@ -125,6 +129,7 @@ def test_模型列的清单_落库_发事件_下一发自己还看得见(harness
     harness.post(six_fields(sid, "接着说"))
     system = str(shots[0][0].get("content") or "")
     assert "活儿清单" in system and "先画页面" in system, system[-500:]
+    assert "t1:" in system, system[-500:]
 
 
 def test_没列过清单时提示词里不许凭空多一段(harness):
@@ -204,7 +209,7 @@ def test_忘了写merge时自动升格_但不许扩大成猜意图():
     就按调用方说的算——自动升格只救「明显是想改状态却忘了写 merge」。"""
     rows, _ = apply_todo(None, THREE, merge=False)
     assert effective_merge(rows, [{"id": "t1"}, {"id": "t2"}], False) is True
-    # 新 id → 不升格
+    # 新 id → 不升格。minimax 会整张替换；我们跟 grok，不许猜成替换。
     assert effective_merge(rows, [{"id": "t9"}], False) is False
     # 带了内容 → 不升格（那是真的想重写）
     assert effective_merge(rows, [{"id": "t1", "content": "改一改"}], False) is False
@@ -229,6 +234,88 @@ def test_清单有上限_不许把SPEC抄一遍进提示词():
     many = [{"id": f"i{n}", "content": f"第 {n} 步"} for n in range(MAX_TODO_ITEMS + 8)]
     rows, _ = apply_todo(None, many, merge=False)
     assert len(rows) == MAX_TODO_ITEMS
+
+
+# 2026-09-19 飞机大战 sr-20260919163941-977KTNMZ0K 的形状：
+# 早上 8 条 grok 风 id，续跑另起 task-1…8，文案相同。
+_AIRPLANE_OLD = [
+    {"id": "init-project", "content": "初始化 Vite React 工程", "status": "completed"},
+    {"id": "audio-engine", "content": "音效引擎", "status": "completed"},
+    {"id": "canvas-engine", "content": "Canvas 渲染器、精灵、输入与游戏循环", "status": "in_progress"},
+    {"id": "ui-hud", "content": "HUD 与开始界面", "status": "pending"},
+    {"id": "player-ship", "content": "玩家飞机与射击", "status": "pending"},
+    {"id": "enemies", "content": "敌机与碰撞", "status": "pending"},
+    {"id": "score", "content": "分数与生命", "status": "pending"},
+    {"id": "polish", "content": "手感与收尾", "status": "pending"},
+]
+_AIRPLANE_NEW = [
+    {"id": f"task-{i + 1}", "content": row["content"], "status": "completed"}
+    for i, row in enumerate(_AIRPLANE_OLD)
+]
+
+
+def test_同文案新id合回旧条_飞机大战不许叠成十六():
+    """真机那一发：merge 缺省为真，新 id 按 id 对不上就追加。
+
+    正向：8 + 8 同文案 → 还是 8 条，canvas 完成，不是 3/16。
+    反向：文案不同的新 id 仍追加——那是真的多了一条，不许模糊匹配。
+    """
+    rows, err = apply_todo(None, _AIRPLANE_OLD, merge=False)
+    assert err is None and len(rows) == 8
+    after, err = apply_todo(rows, _AIRPLANE_NEW)
+    assert err is None, err
+    assert len(after) == 8, after
+    assert [r["content"] for r in after] == [r["content"] for r in _AIRPLANE_OLD]
+    assert all(r["status"] == TodoStatus.COMPLETED.value for r in after), after
+    assert after[2]["id"] == "task-3"
+    assert "canvas-engine" not in [r["id"] for r in after]
+    line = one_line(after)
+    assert "8/8" in line
+    assert "正在做" not in line
+
+    extra, err = apply_todo(after, [{"id": "task-9", "content": "额外的收尾"}])
+    assert err is None
+    assert len(extra) == 9, extra
+    assert extra[-1]["content"] == "额外的收尾"
+
+
+def test_已经叠成两套的清单读出来也合成一条():
+    """续跑当时已经落库 16 条。下一笔 todo_write 之前，浮层和回喂
+    也必须是 8——只修 apply、不修 normalize，已经写坏的会话仍钉 3/16。"""
+    stacked = list(_AIRPLANE_OLD) + list(_AIRPLANE_NEW)
+    healed = normalize(stacked)
+    assert len(healed) == 8, healed
+    assert healed[2]["status"] == TodoStatus.COMPLETED.value
+    assert healed[2]["id"] == "task-3"
+    assert "3/16" not in one_line(healed)
+    assert "8/8" in one_line(healed)
+
+
+def test_飞机大战同文案新id_活路径上也是八条(harness):
+    """§1：直接调 apply 绿了不算，todo_write 分发必须走到同一份。"""
+    sid = new_sid("todo-plane")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": _AIRPLANE_OLD, "merge": False})
+        if len(harness.llm_calls) == 1
+        else llm_text("好的")
+    )
+    harness.post(six_fields(sid, "列一下"))
+    n = [0]
+
+    def impl(messages, **kw):
+        n[0] += 1
+        if n[0] == 1:
+            return llm_tool("todo_write", {"todos": _AIRPLANE_NEW})
+        return llm_text("好的")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "接着做"))
+    saved = normalize(getattr(load_session(sid), "controlTodo", None))
+    assert [r["id"] for r in saved] == [f"task-{i}" for i in range(1, 9)], saved
+    assert all(r["status"] == TodoStatus.COMPLETED.value for r in saved)
+    todo_ev = [e for e in events if e.get("type") == "control_todo"]
+    assert todo_ev and len(todo_ev[-1]["todos"]) == 8, todo_ev[-1] if todo_ev else events
 
 
 # ── 三、两份待办不许混（§7）──────────────────────────────────────────────
@@ -336,6 +423,7 @@ def test_工具说明第二句必须在():
     )
     assert "用户看得见" in desc, desc
     assert "三步以上" in desc, desc
+    assert "回喂里的 id" in desc, desc
 
 
 def test_渲染标记只有一处():
@@ -350,7 +438,12 @@ def test_渲染标记只有一处():
         and n.target.id == "_TAG"
     ]
     assert len(tables) == 1
-    assert summarize([{"id": "a", "content": "x", "status": "completed"}]).startswith("●")
+    line = summarize([{"id": "a", "content": "x", "status": "completed"}])
+    assert line.startswith("●")
+    # 抄 grok `- [completed] a: x`：标记、id、文案三段都在。
+    # 反向：只回 `● x` 就是 2026-09-19 那场叠两份的回喂。
+    assert line == "● a: x"
+    assert "a:" in line and line != "● x"
     assert one_line([]) == ""
 
 
@@ -597,3 +690,92 @@ def test_活路径上序列化的一发要变成人看得懂的清单(harness):
     assert "起草并确认" in line, line
     assert "{" not in line and "status" not in line, line
     assert len(todo_ev[-1]["todos"]) == 3, todo_ev[-1]
+
+
+# ── 五、host 不许猜进度（2026-09-19 写死流程撤回） ──────────────────
+
+
+SETUP = [
+    {"id": "t1", "content": "初始化任务管理系统工程与依赖", "status": "in_progress"},
+    {"id": "t2", "content": "设计任务数据模型与持久化", "status": "pending"},
+    {"id": "t3", "content": "实现 Todos 页与 CreateModal", "status": "pending"},
+]
+
+
+def test_反向_写文件不许冒充_todo_write():
+    """控制面自己挑何时改清单。host 按 path 推进 = 写死流程。
+
+    ⚠ 2026-09-19 装过 `_emit_todo_progress`：file_write 成功就发
+    control_todo。变异：把那条接回去，这条必须红。
+    """
+    import asyncio
+    from services import rehearsal_control as rc
+
+    sid = new_sid("todo-host-must-not-guess")
+    state = seed_session(
+        sid,
+        goal={"text": "做一个待办清单", "status": "clear"},
+        controlTodo=SETUP,
+    )
+
+    class FakeTools:
+        owner_id = "test-user"
+
+        def execute(self, name, args, session):
+            return {
+                "ok": True,
+                "path": "src/components/CreateModal.tsx",
+                "revision": "r2",
+            }
+
+    token = rc._PROJECT_TOOLS.set(FakeTools())
+    try:
+        events = asyncio.run(
+            _collect_dispatch(
+                rc,
+                "file_write",
+                {"file": "src/components/CreateModal.tsx", "content": "x\n"},
+                state,
+            )
+        )
+    finally:
+        rc._PROJECT_TOOLS.reset(token)
+
+    assert not [e for e in events if e.get("type") == "control_todo"], [
+        e.get("type") for e in events
+    ]
+    persisted = normalize(getattr(load_session(sid), "controlTodo", None))
+    assert [r["status"] for r in persisted] == [
+        TodoStatus.IN_PROGRESS.value,
+        TodoStatus.PENDING.value,
+        TodoStatus.PENDING.value,
+    ]
+
+
+async def _collect_dispatch(rc, name, args, state):
+    return [
+        event
+        async for event in rc._dispatch_tool(
+            name,
+            args,
+            state,
+            "继续做",
+            [],
+            [],
+            "desktop",
+            None,
+            "做一个待办清单",
+        )
+    ]
+
+
+def test_反向_分发处不许再接host推进():
+    from control_turn_support import strip_python
+
+    src = strip_python(ROOT / "slide-rule-python" / "services" / "rehearsal_control.py")
+    plan = strip_python(ROOT / "slide-rule-python" / "services" / "plan_todo.py")
+    project = src[src.find("if name in PROJECT_TOOL_NAMES") :]
+    assert "_emit_todo_progress" not in project
+    assert "advance_todo_status" not in src
+    assert "def advance_status" not in plan
+    assert "hint_paths" not in plan

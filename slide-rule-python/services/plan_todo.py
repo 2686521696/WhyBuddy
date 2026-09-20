@@ -15,7 +15,12 @@
     factoryTodo   闭集五件套（spec/pages/structure/bind/closure）里哪几件还没跑
                   **服务端拥有**，闭环读它，非空不发合格证（fail-closed）
     这一份        老师傅自己说这活儿分几步，自由文本、有状态
-                  **模型拥有**，给人看进度，不参与任何判定
+                  **条目、文案、status 都是模型的**（`todo_write`），给人看进度
+                  host 只转发 `control_todo`，不许按工程动作猜进度
+
+⚠ 2026-09-19：host 曾按 path 匹配推进 status。那是写死流程，不是
+  控制面自己挑。真机写 CreateModal 被猜成第 3 条做完——模型没调
+  `todo_write`。撤掉。清单只在模型调用 `todo_write` 时变。
 
 一个是闸的输入，一个是叙述。合并了就会出现「模型把 closure 从待办里划掉，
 闭环就放行」——那是 §7 点名的伪造绿灯。两份各管各的，判据钉着。
@@ -37,6 +42,18 @@
    intended a partial update: state already has items and every update targets
    an existing ID without providing content.」
    —— 少了这条，模型一次疏忽就把整张清单冲掉，用户眼睁睁看着进度归零。
+
+4. **回喂必须带 id**（`summarize_todo_state`：`- [in_progress] {id}: {content}`）。
+   合清单按 id，模型看不见 id 就会另起一套。minimax 是整张快照替换、
+   没有 id——我们不抄那条。人看的浮层读 `controlTodo`，不读这段摘要。
+
+5. **同文案新 id 合回旧条**（不是按文件猜进度）。
+   ⚠ 2026-09-19 飞机大战 `sr-20260919163941-977KTNMZ0K`：清单先是
+   `canvas-engine` 等 8 条，续跑另起 `task-1`…`task-8`，文案相同。
+   只按 id 合并就追加成 16 条，旧的 `canvas-engine` 还停在 in_progress，
+   浮层钉「Canvas… 3/16」。host 不许从写文件猜完成；模型自己写了两套
+   同一句话，按**去掉首尾空白后完全相同的 content** 合成一条。完成态
+   覆盖进行中。文案不同的新 id 仍追加——那是真的多了一条。
 
 ──────────────────────────────────────────────────────────────────────────
 ## 真机验过（2026-09-09，真 LLM + 真 HTTP）
@@ -139,8 +156,40 @@ def _coerce_status(raw: Any) -> TodoStatus:
         return TodoStatus.PENDING
 
 
+#: 同文案叠两条时，完成盖过进行中。cancelled 最低，不许反过来冲掉进度。
+_STATUS_RANK = {
+    TodoStatus.CANCELLED.value: -1,
+    TodoStatus.PENDING.value: 0,
+    TodoStatus.IN_PROGRESS.value: 1,
+    TodoStatus.COMPLETED.value: 2,
+}
+
+
+def _collapse_same_content(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """同一句只留一条。后写的 id 留下，状态取更靠前的那档。"""
+    at: Dict[str, int] = {}
+    out: List[Dict[str, str]] = []
+    for row in rows:
+        key = row["content"]
+        if key in at:
+            kept = out[at[key]]
+            if _STATUS_RANK.get(row["status"], 0) >= _STATUS_RANK.get(
+                kept["status"], 0
+            ):
+                kept["status"] = row["status"]
+            kept["id"] = row["id"]
+            continue
+        at[key] = len(out)
+        out.append(dict(row))
+    return out
+
+
 def normalize(raw: Any) -> List[Dict[str, str]]:
-    """把落库的清单读成规范形状。脏数据一律丢，不抛。"""
+    """把落库的清单读成规范形状。脏数据一律丢，不抛。
+
+    同文案叠两套 id 的，这里就合成一条——人看的浮层和回喂模型的摘要
+    必须同一把尺子（§4）。已经落库的 16 条飞机大战清单，读的时候也是 8。
+    """
     out: List[Dict[str, str]] = []
     for row in raw or []:
         if not isinstance(row, dict):
@@ -155,7 +204,7 @@ def normalize(raw: Any) -> List[Dict[str, str]]:
                 "status": _coerce_status(row.get("status")).value,
             }
         )
-    return out
+    return _collapse_same_content(out)
 
 
 #: 键名没加引号的对象字面量，把**键**位置的裸词补上引号。只认这一处形状：
@@ -316,6 +365,22 @@ def apply(
             if str((u or {}).get("status") or "").strip():
                 row["status"] = _coerce_status(u.get("status")).value
             continue
+        twin = None
+        if use_merge and content:
+            for existing in by_id.values():
+                if existing["content"] == content:
+                    twin = existing
+                    break
+        if twin is not None:
+            # 同文案新 id：合到旧条上，换上这次的 id，下一笔按 id 就能对上。
+            old_id = twin["id"]
+            if str((u or {}).get("status") or "").strip():
+                twin["status"] = _coerce_status(u.get("status")).value
+            twin["id"] = rid
+            del by_id[old_id]
+            by_id[rid] = twin
+            order[order.index(old_id)] = rid
+            continue
         # 新条目：content 缺就拿 id 兜底（grok：让合并调用永不报错）。
         by_id[rid] = {
             "id": rid,
@@ -324,17 +389,25 @@ def apply(
         }
         order.append(rid)
 
-    out = [by_id[i] for i in order][:MAX_TODO_ITEMS]
+    out = _collapse_same_content([by_id[i] for i in order])[:MAX_TODO_ITEMS]
     return out, None
 
 
 def summarize(rows: Any) -> str:
-    """喂回模型 / 给人看的那一段。抄 grok `summarize_todo_state` 的形状。"""
+    """喂回模型的那一段。抄 grok `summarize_todo_state`：标记、id、文案都在。
+
+    ⚠ 2026-09-19 坦克大战 `sr-20260919072444-11CSR1RSM6`：第一版只回
+      `◐ 初始化…`，没带 id。模型下一发另起 `todo-1`，merge 按 id 追加，
+      同一条文案叠成 step1 + todo-1 两份，码头钉在还在进行的 step1 上
+      报 1/13。grok 的摘要是 `- [in_progress] step1: 初始化…`——id 在
+      回喂里，下一发才对得上。人看的浮层读 `controlTodo`，不读这段。
+    """
     items = normalize(rows)
     if not items:
         return "还没有列活儿清单。"
     return "\n".join(
-        f"{status_tag(_coerce_status(r['status']))} {r['content']}" for r in items
+        f"{status_tag(_coerce_status(r['status']))} {r['id']}: {r['content']}"
+        for r in items
     )
 
 
