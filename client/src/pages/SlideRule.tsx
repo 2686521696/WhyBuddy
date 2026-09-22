@@ -24,7 +24,8 @@ import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumb
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
 import { deriveProjectActivity } from "./sliderule/project-activity";
-import { latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
+import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
+import { useOfficeArtifactPresent } from "./sliderule/project-runtime/office-artifacts-client";
 import {
   shouldAutoCreateProject,
   shouldShowProjectComputer,
@@ -599,6 +600,7 @@ const ImSurfaceContext = React.createContext<{
   runtimeKind?: "html-prototype" | "project";
   turns?: UiTurn[];
   deliverableKind?: string;
+  hasOfficeArtifact?: boolean;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -614,6 +616,7 @@ const ImSurfaceContext = React.createContext<{
   runtimeKind: "html-prototype",
   turns: [],
   deliverableKind: "web-app",
+  hasOfficeArtifact: false,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -680,6 +683,7 @@ function ImAssistantMessage() {
     runtimeKind,
     turns,
     deliverableKind,
+    hasOfficeArtifact,
   } = ctx;
   const rawAnswer = assistantTextForTurn(turn, publishClosure, goalText, {
     runtimeKind,
@@ -700,6 +704,8 @@ function ImAssistantMessage() {
         turn.id === ctx.latestTurnId ? ctx.thumbnailUrl : null
       }
       hasPages={Boolean(turn.main)}
+      deliverableKind={deliverableKind}
+      hasOfficeArtifact={hasOfficeArtifact}
       onOpen={() => {
         window.dispatchEvent(
           new CustomEvent("sliderule:open-deliverable")
@@ -1021,6 +1027,12 @@ export function ClaudeChatSurface({
   const verifiedThumbnail = useProjectThumbnail(
     runtimeKind === "project" ? projectId : null
   );
+  const hasOfficeArtifact = useOfficeArtifactPresent(
+    runtimeKind === "project" && isOfficeFileDeliverable(deliverableKind)
+      ? projectId
+      : null,
+    isRunning
+  );
   const ctxValue = useMemo(
     () => ({
       publishClosure,
@@ -1039,6 +1051,7 @@ export function ClaudeChatSurface({
       runtimeKind,
       turns: uiTurns,
       deliverableKind,
+      hasOfficeArtifact,
     }),
     [
       publishClosure,
@@ -1057,6 +1070,7 @@ export function ClaudeChatSurface({
       runtimeKind,
       uiTurns,
       deliverableKind,
+      hasOfficeArtifact,
     ]
   );
 

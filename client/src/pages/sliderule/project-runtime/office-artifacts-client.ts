@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const BASE = "/api/sliderule";
 
 export type OfficeArtifactMeta = {
@@ -8,8 +10,30 @@ export type OfficeArtifactMeta = {
   downloadable?: boolean;
 };
 
+export type OfficeSlideShape = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text: string;
+  fontSize?: number;
+  color?: string;
+  fill?: string;
+};
+
+export type OfficeSlide = {
+  text: string;
+  background?: string;
+  shapes?: OfficeSlideShape[];
+};
+
 export type OfficeArtifactPreview =
-  | { kind: "slides"; slides: Array<{ text: string }> }
+  | {
+      kind: "slides";
+      slides: OfficeSlide[];
+      slideWidth?: number;
+      slideHeight?: number;
+    }
   | { kind: "document"; text: string }
   | { kind: "workbook"; sheetCount: number }
   | { kind: "pdf" }
@@ -27,6 +51,31 @@ export async function listOfficeArtifacts(
   if (!response.ok) return [];
   const body = (await response.json()) as { files?: OfficeArtifactMeta[] };
   return Array.isArray(body.files) ? body.files : [];
+}
+
+/** 产物库有没有办公文件。读不到当没有（fail-closed）。 */
+export function useOfficeArtifactPresent(
+  projectId: string | null | undefined,
+  refreshKey?: unknown
+): boolean {
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    const id = String(projectId || "").trim();
+    if (!id) {
+      setPresent(false);
+      return;
+    }
+    const ac = new AbortController();
+    void listOfficeArtifacts(id, ac.signal)
+      .then(items => {
+        if (!ac.signal.aborted) setPresent(items.length > 0);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setPresent(false);
+      });
+    return () => ac.abort();
+  }, [projectId, refreshKey]);
+  return present;
 }
 
 export function officeArtifactDownloadUrl(

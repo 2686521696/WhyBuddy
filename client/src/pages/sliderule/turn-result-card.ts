@@ -30,6 +30,7 @@
  *   有没有写出源码**挡。会话有版本 ≠ 这一轮交付了。
  */
 import type { UiTurn } from "./types";
+import { isOfficeFileDeliverable } from "./deliverable-kind";
 
 /** 这一轮真正改了工程才算出货。读状态 / 写计划 / 提问都不算。 */
 const PROJECT_DELIVERY_TOOLS = new Set([
@@ -43,6 +44,14 @@ const PROJECT_DELIVERY_TOOLS = new Set([
   "search_replace",
 ]);
 
+/** 办公交货：空 README 工作区不算。bash / 二进制写入才可能产出文件。 */
+const OFFICE_DELIVERY_TOOLS = new Set([
+  "bash",
+  "shell_exec",
+  "file_write",
+  "write_file",
+]);
+
 /**
  * 这一轮有没有把源码写进工程。会话上已经有 revision 不算——那是后面落库
  * 回涂到历史轮上的（2026-09-18 那两张开场卡）。
@@ -53,6 +62,19 @@ export function turnDeliveredProject(turn: UiTurn | null | undefined): boolean {
     step =>
       step.kind === "chip" &&
       PROJECT_DELIVERY_TOOLS.has(String(step.capabilityId || "").trim()) &&
+      step.progressType === "completed"
+  );
+}
+
+/**
+ * 这一轮有没有动手去生成办公文件。project_create 落的是空工作区，不算。
+ */
+export function turnDeliveredOfficeFile(turn: UiTurn | null | undefined): boolean {
+  if (!turn || !Array.isArray(turn.steps)) return false;
+  return turn.steps.some(
+    step =>
+      step.kind === "chip" &&
+      OFFICE_DELIVERY_TOOLS.has(String(step.capabilityId || "").trim()) &&
       step.progressType === "completed"
   );
 }
@@ -124,16 +146,25 @@ export function resultCardModel(
     /** HTML 档已经画出页面。 */
     hasPages?: boolean;
     thumbnailUrl?: string | null;
+    /** 批准计划上的交付物类别。办公文件不能拿空工作区冒充交货。 */
+    deliverableKind?: string | null;
+    /** 产物库里有没有 .pptx / .docx / .xlsx。没有就是没有。 */
+    hasOfficeArtifact?: boolean;
   } = {}
 ): ResultCardModel | null {
   if (!turn || turn.status === "streaming") return null;
 
   const isProject = opts.runtimeKind === "project";
-  const produced = isProject
-    ? Boolean(String(opts.projectRevision || "").trim()) &&
-      turnDeliveredProject(turn)
-    : Boolean(opts.hasPages);
+  const office = isOfficeFileDeliverable(opts.deliverableKind);
+  const produced = office
+    ? Boolean(opts.hasOfficeArtifact) && turnDeliveredOfficeFile(turn)
+    : isProject
+      ? Boolean(String(opts.projectRevision || "").trim()) &&
+        turnDeliveredProject(turn)
+      : Boolean(opts.hasPages);
   // 没产出就没有「交付物」可言。问答轮、被闸拦下的轮次都落在这儿。
+  // ⚠ 2026-09-21 sr-20260921102816-KWETH78PZ0：办公计划 project_create
+  //   只落下 README，卡把「有 revision + 创建工程」画成任务已完成。
   if (!produced) return null;
 
   const title = firstNonEmpty(opts.goalText, turn.user, "这一轮的成果");
@@ -142,7 +173,7 @@ export function resultCardModel(
     badge: isProject ? "未发布" : "HTML 原型",
     worked: workedLabel(turn.durationMs),
     canOpen: true,
-    canPublish: isProject,
+    canPublish: isProject && !office,
     // ⚠ 拿不到就是 null，不从别处凑一张图。见模块头注。
     thumbnailUrl: String(opts.thumbnailUrl || "").trim() || null,
   };

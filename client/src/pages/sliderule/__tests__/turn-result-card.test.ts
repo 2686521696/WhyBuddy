@@ -18,9 +18,11 @@
  * 钉的形态。
  */
 import { describe, expect, it } from "vitest";
+import { OFFICE_FILE } from "../deliverable-kind";
 import {
   formatWorkedDuration,
   resultCardModel,
+  turnDeliveredOfficeFile,
   turnDeliveredProject,
   workedLabel,
 } from "../turn-result-card";
@@ -169,6 +171,49 @@ describe("有东西才出卡", () => {
     expect(resultCardModel(turn({ main: null }), {})).toBeNull();
   });
 
+  it("反向：办公计划 project_create 落下空工作区，不许画任务已完成", () => {
+    // 2026-09-21 sr-20260921102816-KWETH78PZ0：5m 56s 绿灯，产物 0 份。
+    const created = turn({
+      user: "@office-skills 做一份5页PPT",
+      steps: [chip("project_create"), chip("todo_write")],
+    });
+    expect(
+      resultCardModel(created, {
+        runtimeKind: "project",
+        goalText: "做一份5页PPT",
+        projectRevision: "prv-09497b738447421792bfb1537e73ebbe",
+        deliverableKind: OFFICE_FILE,
+        hasOfficeArtifact: false,
+      })
+    ).toBeNull();
+    expect(turnDeliveredProject(created)).toBe(true);
+    expect(turnDeliveredOfficeFile(created)).toBe(false);
+  });
+
+  it("反向：办公 bash 芯片绿了但产物库是空的，仍不出卡", () => {
+    expect(
+      resultCardModel(turn({ steps: [chip("bash")] }), {
+        runtimeKind: "project",
+        projectRevision: "prv-abc",
+        deliverableKind: OFFICE_FILE,
+        hasOfficeArtifact: false,
+      })
+    ).toBeNull();
+  });
+
+  it("正向：办公这一轮跑了 bash 且产物库有文件 → 出卡，但不谈发布", () => {
+    const model = resultCardModel(turn({ steps: [chip("bash")] }), {
+      runtimeKind: "project",
+      goalText: "做一份5页PPT",
+      projectRevision: "prv-abc",
+      deliverableKind: OFFICE_FILE,
+      hasOfficeArtifact: true,
+    });
+    expect(model).not.toBeNull();
+    expect(model!.canPublish).toBe(false);
+    expect(turnDeliveredOfficeFile(turn({ steps: [chip("bash")] }))).toBe(true);
+  });
+
   it("反向：坏输入不许崩", () => {
     expect(resultCardModel(null, {})).toBeNull();
     expect(resultCardModel(undefined, {})).toBeNull();
@@ -235,6 +280,10 @@ describe("通电：真的接在完成轮的渲染上（§3）", () => {
     expect(src).toMatch(/<TurnResultCard[\s/>]/);
     expect(src).toContain("projectRevision={ctx.projectRevision}");
     expect(src).toContain("hasPages={Boolean(turn.main)}");
+    expect(src).toContain("deliverableKind={deliverableKind}");
+    expect(src).toContain("hasOfficeArtifact={hasOfficeArtifact}");
+    expect(src).toMatch(/useOfficeArtifactPresent\(/);
+    expect(src).not.toMatch(/hasOfficeArtifact=\{true\}/);
     // 反向：不许挂在还在跑的那一支上（那会让卡片在跑的过程中闪出来）
     const streamingBranch = src.slice(
       src.indexOf('turn.status === "streaming" ? ('),
@@ -256,5 +305,8 @@ describe("通电：真的接在完成轮的渲染上（§3）", () => {
     const fn = code.slice(start, next === -1 ? code.length : next);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(fn).toContain("turnDeliveredProject");
+    expect(fn).toContain("turnDeliveredOfficeFile");
+    expect(fn).toContain("hasOfficeArtifact");
+    expect(fn).toContain("isOfficeFileDeliverable");
   });
 });

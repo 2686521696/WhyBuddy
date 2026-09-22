@@ -72,6 +72,8 @@ export function TurnResultCard({
   projectRevision,
   hasPages,
   thumbnailUrl,
+  deliverableKind,
+  hasOfficeArtifact,
   onOpen,
   onRetry,
 }: {
@@ -82,6 +84,8 @@ export function TurnResultCard({
   /** 结果卡缩略图取这个工程最近一次验收的截图。 */
   hasPages?: boolean;
   thumbnailUrl?: string | null;
+  deliverableKind?: string | null;
+  hasOfficeArtifact?: boolean;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
@@ -93,6 +97,8 @@ export function TurnResultCard({
     projectRevision,
     hasPages,
     thumbnailUrl,
+    deliverableKind,
+    hasOfficeArtifact,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
