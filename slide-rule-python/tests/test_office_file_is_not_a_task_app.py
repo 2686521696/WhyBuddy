@@ -397,7 +397,8 @@ def test_office_prompt_is_a_fact_not_a_recipe():
     ))
     assert "办公文件" in text
     assert "react-vite-tasks 只用于任务管理网页" in text
-    assert "宿主不把 .pptx / .docx / .xlsx 画成那一页" in text
+    assert "没有点名就没有预览" in text
+    assert "应用运行失败不是办公文件的预览" in text
     assert "不能当幻灯片交差" not in text
     assert "空工作区" in text
     assert "必须先调" not in text
@@ -407,7 +408,7 @@ def test_office_prompt_is_a_fact_not_a_recipe():
         sessionId="fruit-prompt",
         goal={"text": "水果店收银台", "status": "clear"},
     ))
-    assert "宿主不把 .pptx / .docx / .xlsx 画成那一页" not in fruit
+    assert "没有点名就没有预览" not in fruit
 
 
 def test_live_path_gates_are_in_source_after_stripping_comments():

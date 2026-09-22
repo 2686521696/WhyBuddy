@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import html
 import io
 import re
 import zipfile
@@ -470,4 +471,140 @@ def _sheet_rows(xml: str, strings: list[str]) -> list[list[str]]:
         if len(rows) >= 40:
             break
     return rows
+
+
+def _css_color(value: Any, fallback: str) -> str:
+    text = str(value or "")
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+        return text
+    return fallback
+
+
+def office_preview_html(payload: Any) -> str | None:
+    """make_manus_page 点名办公文件之后，浏览器打开的那一页。
+
+    ⚠ 2026-09-22 没人点名时宿主自己画，又改成把失败的网页运行当成预览。
+      这一页只在工具回执之后由预览框去取，不在列表出现时自动打开。
+    """
+    if not isinstance(payload, dict):
+        return None
+    kind = payload.get("kind")
+    if kind == "slides":
+        return _slides_html(payload)
+    if kind == "document":
+        return _document_html(payload)
+    if kind == "workbook":
+        return _workbook_html(payload)
+    return None
+
+
+def _slides_html(payload: dict[str, Any]) -> str | None:
+    slides = payload.get("slides")
+    if not isinstance(slides, list) or not slides:
+        return None
+    try:
+        width = int(payload.get("slideWidth") or 12192000)
+        height = int(payload.get("slideHeight") or 6858000)
+    except (TypeError, ValueError):
+        width, height = 12192000, 6858000
+    if width <= 0 or height <= 0:
+        width, height = 12192000, 6858000
+    body = ["<div class=\"stage\">"]
+    buttons = []
+    for index, slide in enumerate(slides[:40]):
+        if not isinstance(slide, dict):
+            continue
+        shown = " on" if index == 0 else ""
+        background = _css_color(slide.get("background"), "#ffffff")
+        body.append(f"<section class=\"slide{shown}\" style=\"background:{background}\">")
+        shapes = slide.get("shapes") if isinstance(slide.get("shapes"), list) else []
+        drawn = False
+        for shape in shapes[:30]:
+            if not isinstance(shape, dict):
+                continue
+            try:
+                x = float(shape["x"]) / width * 100
+                y = float(shape["y"]) / height * 100
+                w = float(shape["w"]) / width * 100
+                h = float(shape["h"]) / height * 100
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                continue
+            color = _css_color(shape.get("color"), "#111827")
+            fill = _css_color(shape.get("fill"), "transparent")
+            body.append(
+                "<div class=\"shape\" style=\""
+                f"left:{x:.3f}%;top:{y:.3f}%;width:{w:.3f}%;height:{h:.3f}%;"
+                f"color:{color};background:{fill}\">"
+                f"{html.escape(str(shape.get('text') or ''))}</div>"
+            )
+            drawn = True
+        if not drawn:
+            body.append(f"<div class=\"plain\">{html.escape(str(slide.get('text') or ''))}</div>")
+        body.append("</section>")
+        label = html.escape(str(slide.get("text") or "").split("\n", 1)[0][:24] or str(index + 1))
+        current = " aria-current=\"true\"" if index == 0 else ""
+        buttons.append(f"<button type=\"button\" data-slide=\"{index}\"{current}>{label}</button>")
+    if not buttons:
+        return None
+    style = (
+        "html,body{margin:0;height:100%;background:#111;font-family:sans-serif}"
+        "body{display:flex;flex-direction:column;height:100%}"
+        ".stage{flex:1;display:flex;align-items:center;justify-content:center;padding:16px}"
+        f".slide{{display:none;width:min(100%,calc((100vh - 120px) * {width} / {height}));aspect-ratio:{width}/{height};position:relative;overflow:hidden;background:#fff}}"
+        ".slide.on{display:block}.shape{position:absolute;overflow:hidden;white-space:pre-wrap}"
+        ".plain{position:absolute;inset:8%;white-space:pre-wrap}"
+        ".thumbs{display:flex;gap:8px;overflow:auto;padding:8px 12px}"
+        ".thumbs button[aria-current=true]{outline:2px solid #38bdf8}"
+    )
+    script = (
+        "<script>const slides=document.querySelectorAll('.slide');"
+        "const buttons=document.querySelectorAll('.thumbs button');"
+        "function show(n){slides.forEach((s,i)=>s.classList.toggle('on',i===n));"
+        "buttons.forEach((b,i)=>b.toggleAttribute('aria-current',i===n))}"
+        "buttons.forEach(b=>b.addEventListener('click',()=>show(Number(b.dataset.slide))));"
+        "show(0);</script>"
+    )
+    return (
+        "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\"><style>"
+        + style + "</style></head><body>" + "".join(body)
+        + "</div><div class=\"thumbs\">" + "".join(buttons) + "</div>" + script
+        + "</body></html>"
+    )
+
+
+def _document_html(payload: dict[str, Any]) -> str | None:
+    paragraphs = payload.get("paragraphs")
+    if not isinstance(paragraphs, list) or not paragraphs:
+        paragraphs = [line for line in str(payload.get("text") or "").splitlines() if line.strip()]
+    if not paragraphs:
+        return None
+    blocks = "".join(f"<p>{html.escape(str(item))}</p>" for item in paragraphs[:80])
+    return (
+        "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\"></head>"
+        f"<body><article>{blocks}</article></body></html>"
+    )
+
+
+def _workbook_html(payload: dict[str, Any]) -> str | None:
+    sheets = payload.get("sheets")
+    if not isinstance(sheets, list) or not sheets:
+        return None
+    parts = []
+    for index, sheet in enumerate(sheets[:8]):
+        if not isinstance(sheet, dict):
+            continue
+        rows = sheet.get("rows") if isinstance(sheet.get("rows"), list) else []
+        body = []
+        for row in rows[:40]:
+            if isinstance(row, list):
+                cells = "".join(f"<td>{html.escape(str(cell))}</td>" for cell in row[:12])
+                body.append(f"<tr>{cells}</tr>")
+        name = html.escape(str(sheet.get("name") or index + 1))
+        parts.append(f"<h2>{name}</h2><table>{''.join(body)}</table>")
+    if not parts:
+        return None
+    return (
+        "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\"></head>"
+        f"<body>{''.join(parts)}</body></html>"
+    )
 

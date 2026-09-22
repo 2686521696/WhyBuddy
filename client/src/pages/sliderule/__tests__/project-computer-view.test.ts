@@ -12,6 +12,8 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   isComputerView,
+  officePreviewStage,
+  presentedOfficeFile,
   presentedSourcePage,
   resolveComputerView,
   shouldAutoCreateProject,
@@ -465,5 +467,24 @@ describe("文件预览只认 Agent 点名的源码页", () => {
         { tool: "make_manus_page", status: "done", detail: "deck.pptx" },
       ])
     ).toBeNull();
+  });
+
+  it("点名已收回的 pptx 才打开那一份，没点名不许拿应用失败来充", () => {
+    const named = [
+      { tool: "bash", status: "done", detail: "deck.pptx" },
+      { tool: "make_manus_page", status: "done", detail: "面团.pptx" },
+    ];
+    expect(presentedOfficeFile(named)).toBe("面团.pptx");
+    expect(presentedSourcePage(named)).toBeNull();
+    expect(
+      officePreviewStage({ office: true, htmlPath: null, officePath: "面团.pptx" })
+    ).toBe("file");
+    expect(
+      officePreviewStage({ office: true, htmlPath: null, officePath: null })
+    ).toBe("idle");
+    expect(
+      officePreviewStage({ office: false, htmlPath: null, officePath: null })
+    ).toBe("app");
+    expect(presentedOfficeFile([])).toBeNull();
   });
 });

@@ -618,17 +618,26 @@ class ProjectTools:
             raise ValueError("project_sudo_forbidden")
         session_id = project.sessionId
         if name == "make_manus_page":
-            # ⚠ 2026-09-22 预览曾由宿主把 pptx 画成一页。浏览器只打开这里
-            #   点名的源码；path 进回执，宿主不改写文件。
+            # ⚠ 2026-09-22 办公文件不在源码树。只查源码时，点名 pptx 得到
+            #   project_file_not_found，右边却把失败的网页运行当成预览。
             result = self._project_result(project)
             if parsed.file:
                 revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
                 files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
                 path = workspace_file_path(parsed.file, files)
-                if path not in files:
-                    raise ProjectNotFound("project_file_not_found")
-                result["path"] = path
-            result["presented"] = "project"
+                if path in files:
+                    result["path"] = path
+                    result["presented"] = "project"
+                else:
+                    meta = ProjectOfficeArtifactStore(self.store).find_by_path(
+                        project.projectId, path, owner_id=self.owner_id)
+                    if meta is None:
+                        raise ProjectNotFound("project_file_not_found")
+                    result["path"] = meta["path"]
+                    result["artifactId"] = meta["artifactId"]
+                    result["presented"] = "office"
+            else:
+                result["presented"] = "project"
             if parsed.title:
                 result["title"] = parsed.title
             return result

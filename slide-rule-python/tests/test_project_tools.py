@@ -55,6 +55,29 @@ def setup(tmp_path, monkeypatch, project_actor):
     sessions._engine.dispose()
 
 
+def test_make_manus_page_names_a_collected_office_file(setup):
+    """办公文件不在源码树。点名失败时右边会把网页运行失败当成预览。"""
+    import io
+    import zipfile
+
+    from services.project_office_artifacts import ProjectOfficeArtifactStore
+
+    created = create(setup)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/slides/slide1.xml", "<a:t>封面</a:t>")
+    meta = ProjectOfficeArtifactStore(setup.store).put(
+        created["projectId"], owner_id="alice", path="面团.pptx", data=buf.getvalue())
+    named = execute(setup, "make_manus_page", {"file": "面团.pptx"})
+    assert named["ok"] is True
+    assert named["presented"] == "office"
+    assert named["path"] == "面团.pptx"
+    assert named["artifactId"] == meta["artifactId"]
+    missing = execute(setup, "make_manus_page", {"file": "没有.pptx"})
+    assert missing["ok"] is False
+    assert missing["error"] == "project_file_not_found"
+
+
 def execute(setup, name, args=None, state=None):
     return setup.tools.execute(name, args or {}, state or setup.state)
 

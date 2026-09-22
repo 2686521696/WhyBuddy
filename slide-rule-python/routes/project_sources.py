@@ -13,7 +13,7 @@ from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
 from services.project_office_artifacts import ProjectOfficeArtifactStore
-from services.deliverable_kind import office_artifact_suffix
+from services.deliverable_kind import office_artifact_suffix, office_preview_html
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
@@ -251,6 +251,14 @@ def preview_office_artifact(project_id: str, artifact_id: str, request: Request,
             return Response(data, media_type="application/pdf", headers={
                 "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             })
-        # ⚠ 2026-09-22 预览槽曾在这里把 pptx/docx/xlsx 画成一页。那不是
-        #   控制面点名的预览。浏览器打开的是 make_manus_page 的源码页。
+        # ⚠ 2026-09-22 列表出现就画，是宿主流程。这一页只给 make_manus_page
+        #   点名之后的预览框来取。
+        if request.query_params.get("render") == "browser":
+            document = office_preview_html(preview)
+            if document:
+                return Response(document, media_type="text/html; charset=utf-8", headers={
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+                })
         return preview

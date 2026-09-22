@@ -477,8 +477,9 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
         assert "封面" in body["slides"][0]["text"]
         page = client.get(url + f"/artifacts/{meta['artifactId']}/preview?render=browser")
         assert page.status_code == 200
-        assert page.headers["content-type"].startswith("application/json")
-        assert "<!DOCTYPE html>" not in page.text
+        assert page.headers["content-type"].startswith("text/html")
+        assert "封面" in page.text
+        assert "function show(n)" in page.text
         download = client.get(url + f"/artifacts/{meta['artifactId']}")
         assert download.status_code == 200
         assert download.content == pptx
@@ -494,12 +495,12 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
     sessions._engine.dispose()
 
 
-def test_preview_route_does_not_paint_the_office_file():
-    """预览路由不许把办公文件画成一页。接回 office_preview_html，本条变红。"""
+def test_browser_page_is_only_the_named_render():
+    """没带 render=browser 仍是 JSON。点名之后那一页才是 HTML。"""
     src = (ROOT / "routes" / "project_sources.py").read_text(encoding="utf-8")
     body = _fn_body(src, "preview_office_artifact")
-    assert "office_preview_html" not in body
-    assert "text/html" not in body
+    assert 'get("render") == "browser"' in body
+    assert body.index('get("render") == "browser"') < body.index("office_preview_html")
 
 
 def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
@@ -548,8 +549,8 @@ def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
         assert preview.json()["slides"][0]["shapes"][0]["x"] == 457200
         page = client.get(url + "?render=browser")
         assert page.status_code == 200
-        assert page.headers["content-type"].startswith("application/json")
-        assert page.json()["slides"][0]["shapes"][0]["x"] == 457200
-        assert "<!DOCTYPE html>" not in page.text
+        assert page.headers["content-type"].startswith("text/html")
+        assert "第二页" in page.text and "第十页" in page.text
+        assert "left:" in page.text
     store.close()
     sessions._engine.dispose()

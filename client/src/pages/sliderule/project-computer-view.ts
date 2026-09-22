@@ -304,7 +304,7 @@ export function shouldAutoWakePreview(input: {
  *   画成一页。文件预览跟别的预览一样，是控制面点名的那一页。没点名、
  *   点了非 html、或这一步失败，宿主都不补一页。
  */
-export function presentedSourcePage(
+function latestPresentedPath(
   rows: readonly { tool?: string; status?: string; detail?: string }[]
 ): string | null {
   for (let i = rows.length - 1; i >= 0; i -= 1) {
@@ -312,9 +312,39 @@ export function presentedSourcePage(
     if (row?.tool !== "make_manus_page") continue;
     if (row.status === "running") continue;
     if (row.status !== "done") return null;
-    const path = sourcePathFromActionDetail(String(row.detail || ""));
-    if (!path || !/\.html?$/i.test(path)) return null;
-    return path;
+    return sourcePathFromActionDetail(String(row.detail || ""));
   }
   return null;
+}
+
+export function presentedSourcePage(
+  rows: readonly { tool?: string; status?: string; detail?: string }[]
+): string | null {
+  const path = latestPresentedPath(rows);
+  if (!path || !/\.html?$/i.test(path)) return null;
+  return path;
+}
+
+/** make_manus_page 点名的已收回办公文件。没点名、点了 html、或失败，都不是。 */
+export function presentedOfficeFile(
+  rows: readonly { tool?: string; status?: string; detail?: string }[]
+): string | null {
+  const path = latestPresentedPath(rows);
+  if (!path || !/\.(pptx|docx|xlsx)$/i.test(path)) return null;
+  return path;
+}
+
+/**
+ * 办公会话的预览槽。点了 html → 源码页；点了办公文件 → 那一份；
+ * 没点名 → 空，不许拿失败的网页运行来充。
+ */
+export function officePreviewStage(input: {
+  office: boolean;
+  htmlPath: string | null;
+  officePath: string | null;
+}): "page" | "file" | "idle" | "app" {
+  if (input.htmlPath) return "page";
+  if (input.office && input.officePath) return "file";
+  if (input.office) return "idle";
+  return "app";
 }

@@ -92,6 +92,14 @@ export function officeArtifactPreviewUrl(
   return `${BASE}/projects/${projectId}/artifacts/${artifactId}/preview`;
 }
 
+/** make_manus_page 点名之后，浏览器打开的那一份。列表本身不取这一页。 */
+export function officeArtifactBrowserUrl(
+  projectId: string,
+  artifactId: string
+): string {
+  return `${officeArtifactPreviewUrl(projectId, artifactId)}?render=browser`;
+}
+
 export async function loadOfficeArtifactPreview(
   projectId: string,
   artifactId: string,

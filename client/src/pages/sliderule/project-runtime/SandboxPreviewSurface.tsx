@@ -37,6 +37,7 @@ import {
 import { ProjectDataPanel } from "./ProjectDataPanel";
 import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
 import { OfficeArtifactPane } from "./OfficeArtifactPane";
+import { PresentedOfficeFile } from "./PresentedOfficeFile";
 import { PresentedSourcePage } from "./PresentedSourcePage";
 import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
@@ -53,6 +54,8 @@ import {
   FOLLOW_COMPUTER_EVENT,
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
+  officePreviewStage,
+  presentedOfficeFile,
   presentedSourcePage,
   resolveComputerView,
   shouldAutoOpenPreview,
@@ -635,6 +638,12 @@ export function SandboxPreviewSurface({
   //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
   const lastTool = computerNow.current?.tool ?? null;
   const presentedPath = presentedSourcePage(activityRows);
+  const presentedOfficePath = presentedOfficeFile(activityRows);
+  const previewStage = officePreviewStage({
+    office: isOfficeFileDeliverable(deliverableKind),
+    htmlPath: presentedPath,
+    officePath: presentedOfficePath,
+  });
   const hasConsole = activityRows.some(
     row => Boolean(sandboxCommandLine(row) && row.operationId)
   );
@@ -1322,8 +1331,18 @@ export function SandboxPreviewSurface({
             只对 HTML 舞台的 srcdoc 同源框有效；工程预览票跨源，
             Chromium 命中盒还按 1920 算。zoom 写在 iframe 上，布局盒
             和看见的盒子才是同一份。pointer-events-auto 仍钉着。 */}
-        {presentedPath && projectId ? (
+        {previewStage === "page" && presentedPath && projectId ? (
           <PresentedSourcePage projectId={projectId} path={presentedPath} />
+        ) : previewStage === "file" && presentedOfficePath && projectId ? (
+          <PresentedOfficeFile projectId={projectId} path={presentedOfficePath} />
+        ) : previewStage === "idle" ? (
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+            data-testid="office-preview-idle"
+          >
+            <p className="m-0 text-sm text-[#3c3c3c]">预览还没打开</p>
+            <p className="m-0 text-xs text-[#8a8a8a]">控制面还没有点名要打开的文件。</p>
+          </div>
         ) : (
         <ScaledStageFrame
           viewport={previewView.viewport}

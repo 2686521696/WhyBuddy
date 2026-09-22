@@ -3672,8 +3672,8 @@ def _system_prompt(state: V5SessionState) -> str:
             "办公文件（.pptx / .docx / .xlsx）是磁盘上的文件，不是 Vite 网页。"
             "react-vite-tasks 只用于任务管理网页。"
             "办公计划下的工程是空工作区，不是 Vite 脚手架。"
-            "右侧预览显示的是控制面已经点名打开的源码页。宿主不把 .pptx / .docx / .xlsx 画成那一页。"
-            "Vite 页面不是办公文件。"
+            "右侧预览显示 make_manus_page 点名的那一份：源码里的 .html，或已经收回的 .pptx / .docx / .xlsx。"
+            "没有点名就没有预览。应用运行失败不是办公文件的预览。Vite 页面不是办公文件。"
             "办公文件不以 project_verify 为交付证据。"
         )
     mentioned = _mentioned_skill_infos(state)

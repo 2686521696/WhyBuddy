@@ -621,7 +621,7 @@ _DESCRIPTIONS = {
     "browser_console_view": "Read the latest managed command log, which is the closest console this workspace exposes.",
     "deploy_expose_port": "Start the managed private preview on port. This is not a public deployment.",
     "deploy_apply_deployment": "Start the private preview (same kernel as deploy_expose_port). This is not a public CDN. deployed is always false; previewPrivate is true.",
-    "make_manus_page": "Name an existing source file as the page the preview browser opens. The host serves that file unchanged and does not draw a deck from .pptx, .docx, or .xlsx. An .html file is what the browser renders; any other existing path is only recorded. A missing path fails. This does not generate a template and does not start Vite.",
+    "make_manus_page": "Open one existing file in the preview browser. file may be a source .html, or a collected .pptx/.docx/.xlsx (the officeFiles path). The browser opens that file. A missing path fails. This does not start Vite and does not preview a file you did not name.",
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
