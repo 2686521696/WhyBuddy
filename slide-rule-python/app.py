@@ -386,6 +386,48 @@ async def lifespan(app: FastAPI):
     # ⚠ 2026-09-20：源码是 v3、活进程仍按 v2 花。启动必须亮这一进程
     #   实际 import 到的档，不能只看仓库里的 control_budget.py。
     print(startup_budget_line())
+    # ⚠ 2026-09-22 AFFWP4GMZR：进程启动时间晚于源码 mtime，建出来的办公区
+    #   README 仍是旧的 150 字节，skill 种子和 bash 跳过 lockfile 都没发生。
+    #   启动必须印出这一进程 import 到的文件和正文长度，不能只看仓库。
+    from services import deliverable_kind as _deliverable_kind
+    from services.skill_catalog_store import local_seed_skill_info
+
+    _office = local_seed_skill_info("office-skills")
+    import services.rehearsal_control as _rc
+    import services.project_creation as _pc
+    import inspect as _inspect
+    _dispatch_src = _inspect.getsource(_rc._dispatch_tool)
+    _turn_src = _inspect.getsource(_rc.run_control_turn)
+    import services.control_run_service as _crs
+    print(
+        f"[startup] turnFnSame={_crs.run_control_turn is _rc.run_control_turn} "
+        f"turnTrace={'session_id[:40]' in _turn_src} "
+        f"serviceFile={_crs.__file__}"
+    )
+    import routes.sliderule_full as _routes
+    print(f"[startup] routeFile={_routes.__file__}")
+    import services.project_runtime_worker as _prw
+    _sandbox_reuse = (
+        "keepSandbox" in _inspect.getsource(_prw._RuntimeTask.finish)
+        and "keepSandbox" in _inspect.getsource(_prw._RuntimeTask.run)
+    )
+    print(
+        f"[startup] orchestration file={_deliverable_kind.__file__} "
+        f"readmeBytes={len(_deliverable_kind.WORKSPACE_README.encode())} "
+        f"officeSeed={0 if _office is None else len(_office.body or '')} "
+        f"control={_rc.__file__} "
+        f"taskChars={'taskChars' in _dispatch_src} "
+        f"ensure={'def _ensure_office_tree' in _inspect.getsource(_pc)} "
+        f"sandboxReuse={_sandbox_reuse} worker={_prw.__file__}"
+    )
+    _deliverable_kind.orch_trace(
+        "startup",
+        control=_rc.__file__,
+        taskChars="taskChars" in _dispatch_src,
+        readmeBytes=len(_deliverable_kind.WORKSPACE_README.encode()),
+        sandboxReuse=_sandbox_reuse,
+        worker=_prw.__file__,
+    )
     print("[startup] session archive: payloads deferred until first request")
     _warm_storage_backends()
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see

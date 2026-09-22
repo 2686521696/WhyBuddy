@@ -54,7 +54,11 @@ from services.capability_maps import execute_mapped_capability
 from config.settings import settings
 from services.project_access import project_access_enabled
 from services.control_run_store import ControlRunConflict, ControlRunUnavailable, ControlRunNotFound
-from services.control_run_service import ControlRunService, public_control_run
+from services.control_run_service import (
+    ControlRunService,
+    overlay_live_control_phase,
+    public_control_run,
+)
 from services.project_store import get_project_store
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
@@ -586,7 +590,7 @@ def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
             raise HTTPException(409, "plan_approval_required")
         return persisted
     raw_state.pop("ownerId", None)
-    for key in ("controlTranscript", "controlTodo", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
+    for key in ("controlTranscript", "controlTodo", "controlSkillCache", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
         raw_state.pop(key, None)
     if sid:
         raw_state["sessionId"] = sid
@@ -875,7 +879,14 @@ def get_sess(
         except PersistClosedError:
             # sanitize 落盘是增强：存档失败不该把 GET 打成 500。
             pass
-    return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
+    presented = state
+    try:
+        # 叠在落盘之后。写回 orchestrating = abandoned stream 侧栏僵死。
+        presented = overlay_live_control_phase(
+            state, ControlRunService.observer(get_project_store()).store)
+    except Exception:
+        presented = state
+    return {"state": presented.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 def _cap_turn_narrations(state: V5SessionState) -> None:
     """E13 展示数据封顶。实现与驱动器共用，避免 PUT 一条、drive 一条。"""
@@ -935,6 +946,7 @@ def save_sess(
     client_input.pop("factoryTodo", None)
     # 活儿清单同 factoryTodo：服务端拥有，客户端 PUT 一律不许带。
     client_input.pop("controlTodo", None)
+    client_input.pop("controlSkillCache", None)
     client_input.pop("subagentTasks", None)
     for key in ("controlTranscript", "modelVersions", "currentModelVersionId", "specFirstPages", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision", "projectVerification"):
         client_input.pop(key, None)
@@ -994,7 +1006,7 @@ def save_sess(
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "controlSkillCache", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision"})
             if existing.runtimeKind == "project":
                 updates.pop("publishClosure", None)
             for k, v in updates.items():
@@ -1561,6 +1573,8 @@ async def control_turn_stream(
     """M1 薄控制面。产品新烧唯一点火 HTTP。无 Node twin（catch-all 转发）。"""
     import json
 
+    from services.deliverable_kind import orch_trace
+    orch_trace("http-turn", session=str((payload or {}).get("sessionId") or "")[:40])
     _auth(x_internal_key)
     _require_login(viewer)
     from services.rehearsal_control import run_control_turn, validate_control_turn_body, reserve_control_turn

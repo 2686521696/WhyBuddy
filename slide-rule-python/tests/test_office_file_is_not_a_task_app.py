@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,6 +37,7 @@ from services.deliverable_kind import (
     OFFICE_FILE,
     WEB_APP,
     WORKSPACE_README,
+    WORKSPACE_TEMPLATE_VERSION,
     WRONG_ARTIFACT,
     is_office_file_plan,
     normalize_deliverable_kind,
@@ -43,9 +45,10 @@ from services.deliverable_kind import (
     office_workspace_files,
     plan_deliverable_kind,
     reject_tasks_template,
+    skip_vite_dependency_install,
 )
 from services.project_authority import approved_reference
-from services.project_creation import WORKSPACE_TEMPLATE_VERSION, create_session_project
+from services.project_creation import create_session_project
 from services.project_store import ProjectStore
 from services.control_skills import SkillInfo
 from services.scope_authority import latest_control_plan
@@ -56,6 +59,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTROL_SRC = ROOT / "services" / "rehearsal_control.py"
 CREATE_SRC = ROOT / "services" / "project_creation.py"
 GOAL_SRC = ROOT / "services" / "control_run_service.py"
+WORKER_SRC = ROOT / "services" / "project_runtime_worker.py"
 PPT_PLAN = (
     "用 office-skills 做一份办公启动 PPT，产出 office-skills-launch.pptx。"
 )
@@ -87,8 +91,48 @@ def test_leaf_defaults_unknown_to_web_app():
     assert "package.json" not in files
     assert "先 pip" not in WORKSPACE_README
     assert "必须先调" not in WORKSPACE_README
+    assert "project_logs" in WORKSPACE_README
+    assert "一行" in WORKSPACE_README
     assert office_file_uses_task_delivery(OFFICE_FILE)
     assert not office_file_uses_task_delivery(WEB_APP)
+    assert skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version=WORKSPACE_TEMPLATE_VERSION,
+        files=files,
+    )
+    assert not skip_vite_dependency_install(
+        operation_kind="runtime.start",
+        template_version=WORKSPACE_TEMPLATE_VERSION,
+        files=files,
+    )
+    assert not skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version="whybuddy-react-vite-1",
+        files={"package.json": "{}"},
+    )
+    assert not skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version=WORKSPACE_TEMPLATE_VERSION,
+        files={**files, "package-lock.json": "{}"},
+    )
+    # ⚠ 13ME64TF8Z：revision 不是 workspace-1，树却是办公文件。
+    assert skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version="whybuddy-react-vite-1",
+        files={"README.md": WORKSPACE_README,
+               "scripts/generate_kickoff_pptx.py": "print(1)\n"},
+    )
+    assert skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version=None,
+        files={"README.md": WORKSPACE_README},
+    )
+    # ⚠ XSGAMK9PYZ：template 是 workspace-1，files 形状哪怕古怪也要 skip。
+    assert skip_vite_dependency_install(
+        operation_kind="runtime.exec",
+        template_version=WORKSPACE_TEMPLATE_VERSION,
+        files=None,
+    )
 
 
 def test_write_plan_persists_office_file_kind(monkeypatch):
@@ -230,8 +274,36 @@ def test_office_file_ignores_vite_templates_on_create(project_setup):
     assert store.get_revision(project.projectId, owner_id="alice").templateVersion == WORKSPACE_TEMPLATE_VERSION
     files = store.read_files(project.projectId, owner_id="alice")
     assert "package.json" not in files
-    assert "README.md" in files
-    assert "Vite" in files["README.md"]
+    assert files["README.md"] == WORKSPACE_README
+    assert "一行" in files["README.md"]
+
+
+def test_stale_office_readme_is_replaced_before_the_tool_returns(project_setup):
+    """⚠ 2026-09-22 Z8NPKNM14C：已有工程的 README 仍是 78 字旧句。
+
+    create 再走一次必须换成当前正文。删掉 _ensure_office_tree 本条变红。
+    """
+    from services.project_manifest import content_hash
+
+    store, _ = project_setup
+    state, ref = _approved("sess-stale-readme", kind=OFFICE_FILE)
+    old = (
+        "这是空工作区。源码树里没有 Vite。"
+        "写文本用 file_write，跑命令用 bash。"
+        "办公文件（.pptx / .docx / .xlsx）不进源码树。"
+    )
+    assert content_hash(old) == "5edc1d7ee54f4cce5832e05c538243f6f8d505ec50206a5bb921b8aeec772624"
+    store.create_project(
+        state.sessionId, owner_id="alice", files={"README.md": old},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref=ref,
+    )
+    project = create_session_project(
+        store, state.sessionId, owner_id="alice",
+        approval_ref=ref, template_id="react-vite",
+    )
+    files = store.read_files(project.projectId, owner_id="alice")
+    assert files["README.md"] == WORKSPACE_README
+    assert content_hash(files["README.md"]) != content_hash(old)
 
 
 def test_office_file_may_use_bare_computer(project_setup):
@@ -325,15 +397,17 @@ def test_office_prompt_is_a_fact_not_a_recipe():
     ))
     assert "办公文件" in text
     assert "react-vite-tasks 只用于任务管理网页" in text
-    assert "不能当幻灯片交差" in text
+    assert "宿主不把 .pptx / .docx / .xlsx 画成那一页" in text
+    assert "不能当幻灯片交差" not in text
     assert "空工作区" in text
     assert "必须先调" not in text
+    assert "先调 make_manus_page" not in text
     assert "先 pip" not in text
     fruit = control._system_prompt(V5SessionState(
         sessionId="fruit-prompt",
         goal={"text": "水果店收银台", "status": "clear"},
     ))
-    assert "不能当幻灯片交差" not in fruit
+    assert "宿主不把 .pptx / .docx / .xlsx 画成那一页" not in fruit
 
 
 def test_live_path_gates_are_in_source_after_stripping_comments():
@@ -367,6 +441,16 @@ def test_live_path_gates_are_in_source_after_stripping_comments():
     reasons_body = _fn_body(strip_python(GOAL_SRC), "_goal_blocked_reasons")
     assert "office_file_uses_task_delivery" in reasons_body
     assert "office_file_not_found" in reasons_body
+
+    # worker 里有只含文档串的类，整文件 strip_python 再 unparse 会空 class。
+    # 先切 run() 再剥注释，标识符写在头注里不得把变异养绿。
+    run_body = _fn_body(WORKER_SRC.read_text(encoding="utf-8"), "run")
+    run_body = re.sub(r'""".*?"""', "", run_body, flags=re.S)
+    run_body = re.sub(r"#.*", "", run_body)
+    skip_at = run_body.find("skip_vite_dependency_install")
+    npm_at = run_body.find("npm ci --ignore-scripts")
+    assert 0 <= skip_at < npm_at
+    assert "not skip_install" in run_body
 
 
 def test_project_create_tool_description_does_not_advertise_tasks_as_the_real_app():

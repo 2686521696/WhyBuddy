@@ -154,6 +154,7 @@ from services.closed_tools import (
     resolve_tool_scope,
 )
 from services.control_skills import (
+    SkillInfo,
     invoke_skill,
     mentioned_skill_playbooks,
     mentioned_skill_slugs,
@@ -164,11 +165,13 @@ from services.deliverable_kind import (
     DELIVERABLE_KINDS,
     OFFICE_FILE,
     normalize_deliverable_kind,
+    orch_trace,
     plan_deliverable_kind,
 )
 from services.skill_catalog_store import (
     OFFICE_SKILL_CATEGORY,
     installed_skill_infos,
+    local_seed_skill_info,
     skill_seed_category,
 )
 from services.drive_full_factory import start_drive_full_factory_run
@@ -177,6 +180,7 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
+from services.project_tools import command_receipt_from
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
 from services.scope_authority import (
@@ -634,6 +638,69 @@ def _unapproved_plan_ready(state: V5SessionState) -> bool:
     return not plan_execution_authorized(state)
 
 
+def _task_text_for_recall(state: V5SessionState) -> str:
+    """当前任务文本。goal 空就退到本轮信封 / 最近一句用户话。"""
+    goal = state.goal if isinstance(getattr(state, "goal", None), dict) else {}
+    text = str(goal.get("text") or "").strip()
+    if text:
+        return text
+    payload = _CONTROL_PAYLOAD.get() or {}
+    for key in ("sessionGoal", "userText"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if isinstance(row, dict) and row.get("kind") == "turn":
+            value = str(row.get("text") or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _recall_belongs_to_task(query: str, note: str) -> bool:
+    """空查询按目标滤时，2 字滑窗太松。要 3 字中文或长度≥3 的词。"""
+    q = str(query or "")
+    text = str(note or "")
+    if not q or not text:
+        return False
+    terms: list[str] = [w.lower() for w in q.split() if len(w) >= 3 and w.isascii()]
+    cjk = "".join(ch for ch in q if "一" <= ch <= "鿿")
+    terms.extend(cjk[i : i + 3] for i in range(max(0, len(cjk) - 2)))
+    if not terms:
+        return False
+    blob = text.lower()
+    return any((t in blob) if t.isascii() else (t in text) for t in terms)
+
+
+def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
+    """本回合已经成功加载过的技能 slug。
+
+    ⚠ 2026-09-21 sr-20260921150545-6QG1GNGP1P：office-skills 加载成功后
+      压缩桩让模型再调一遍，同一回合第三发 skill() 时生产者崩了。
+      只数「上一句用户话之后、已经有成功 tool_result」的，正在飞的
+      这一发 start 不算。
+    """
+    loaded: set[str] = set()
+    pending = ""
+    for row in getattr(state, "controlTranscript", None) or []:
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("kind") or "")
+        if kind in {"turn", "user_answer", "plan_approved"}:
+            loaded = set()
+            pending = ""
+            continue
+        if kind == "tool_start" and row.get("tool") == "skill":
+            pending = normalize_skill_name(str(row.get("summary") or ""))
+            continue
+        if kind == "tool_result" and row.get("tool") == "skill":
+            slug = pending
+            pending = ""
+            if slug and row.get("ok") is not False:
+                loaded.add(slug)
+    return loaded
+
+
 def _memory_scope_id(state: V5SessionState) -> str:
     """记忆挂在**账号**上，不是会话上——跨会话活着才是它的意义。
 
@@ -1083,20 +1150,92 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
     return out
 
 
+def _skill_infos_from_cache(state: V5SessionState) -> list:
+    rows = getattr(state, "controlSkillCache", None) or []
+    out: list[SkillInfo] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = normalize_skill_name(str(row.get("name") or ""))
+        body = str(row.get("body") or "")
+        description = str(row.get("description") or "")
+        path = str(row.get("path") or "")
+        if not name or not body or not description:
+            continue
+        out.append(SkillInfo(
+            name=name, description=description, path=path, body=body, enabled=True,
+        ))
+    return out
+
+
+def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
+    by_name = {info.name: info for info in _skill_infos_from_cache(state)}
+    for info in infos:
+        if getattr(info, "name", None) and getattr(info, "body", None):
+            by_name[info.name] = info
+    state.controlSkillCache = [
+        {
+            "name": info.name,
+            "description": info.description,
+            "path": info.path,
+            "body": info.body,
+        }
+        for info in by_name.values()
+    ]
+
+
 def _skill_infos_for_turn(state: V5SessionState) -> list:
     """已安装短目录。点名只预加载正文，不把别的技能藏起来。
 
     ⚠ 2026-09-20：selectedSkills 曾经用来 filter_selected 收窄目录。
     用户要的是「自由 Agent 编排 + 这次 @ 的 Skills 流程」——已装的
     都还能调，@ 只是把那份 SKILL.md 提前展开。收窄等于把搭配藏起来。
+
+    ⚠ 2026-09-21 sr-20260921170121-13ME64TF8Z：批准计划后新回合
+      skill(office-skills) → skill_not_found。商店目录这一发空了，
+      上一回合已经打开过的正文必须还在。目录有就并进缓存，目录空
+      就用缓存。
     """
     owner = str(getattr(state, "ownerId", None) or "").strip()
-    if not owner:
-        return []
-    try:
-        return installed_skill_infos(owner)
-    except Exception:
-        return []
+    live: list = []
+    if owner:
+        try:
+            live = list(installed_skill_infos(owner) or [])
+        except Exception:
+            live = []
+    cached = _skill_infos_from_cache(state)
+    by_name = {info.name: info for info in cached}
+    for info in live:
+        by_name[info.name] = info
+    payload = _CONTROL_PAYLOAD.get() or {}
+    wanted: list[str] = []
+    raw = payload.get("installedSkills")
+    if isinstance(raw, list):
+        wanted.extend(
+            normalize_skill_name(str(item))
+            for item in raw
+            if str(item or "").strip()
+        )
+    wanted.extend(mentioned_skill_slugs(str(payload.get("userText") or "")))
+    wanted.extend(mentioned_skill_slugs(_task_text_for_recall(state)))
+    extra = payload.get("selectedSkills")
+    if isinstance(extra, list):
+        wanted.extend(
+            normalize_skill_name(str(item))
+            for item in extra
+            if str(item or "").strip()
+        )
+    for name in dict.fromkeys(wanted):
+        if name in by_name:
+            continue
+        info = local_seed_skill_info(name)
+        if info is not None:
+            by_name[info.name] = info
+            live.append(info)
+    merged = list(by_name.values())
+    if live or wanted:
+        _remember_skill_infos(state, merged)
+    return merged
 
 
 def _mentioned_skill_infos(state: V5SessionState) -> list:
@@ -3533,7 +3672,8 @@ def _system_prompt(state: V5SessionState) -> str:
             "办公文件（.pptx / .docx / .xlsx）是磁盘上的文件，不是 Vite 网页。"
             "react-vite-tasks 只用于任务管理网页。"
             "办公计划下的工程是空工作区，不是 Vite 脚手架。"
-            "右侧预览 iframe 只跑 Vite，不能当幻灯片交差。"
+            "右侧预览显示的是控制面已经点名打开的源码页。宿主不把 .pptx / .docx / .xlsx 画成那一页。"
+            "Vite 页面不是办公文件。"
             "办公文件不以 project_verify 为交付证据。"
         )
     mentioned = _mentioned_skill_infos(state)
@@ -3543,7 +3683,8 @@ def _system_prompt(state: V5SessionState) -> str:
         facts.append(mentioned_skill_playbooks(mentioned))
     if _PROJECT_TOOLS.get() is not None or getattr(state, "runtimeKind", None) == "project":
         facts.append(
-            "源码和技能以磁盘为准。file_read / project_read 默认只回路径和摘要；"
+            "源码以工程磁盘为准。技能全文在 skill 回执里，path 不是工程文件。"
+            "file_read / project_read 默认只回路径和摘要；"
             "要原文带 offset/limit 或 start_line/end_line，搜内容用 grep。"
             "旧工具输出不是全文。"
         )
@@ -3794,8 +3935,73 @@ async def _canned(
     """
     _append_transcript(state, {"role": "assistant", "kind": "canned", "text": text})
     await _apersist(state)
-    yield {"type": "control_text", "text": text, **(stop or {})}
-    yield _complete(state)
+    wire = dict(stop or {})
+    yield {"type": "control_text", "text": text, **wire}
+    event = {**_complete(state), **wire}
+    # ⚠ 2026-09-21 349E2KVH7G：control_text 有 llm_unavailable，
+    #   complete 却是裸 _complete(idle)。停因必须挂在 complete 上。
+    if wire.get("stopReason") in {"llm_unavailable", "unknown"}:
+        state_dump = dict(event.get("state") or {}) if isinstance(event.get("state"), dict) else {}
+        state_dump["runtimePhase"] = "failed"
+        state_dump["awaitReason"] = "error"
+        state_dump["awaitDetail"] = str(wire.get("stopReason") or "control_loop_failed")
+        event["state"] = state_dump
+    yield event
+
+
+_ERROR_PARK_FIELDS = ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase")
+
+
+def _stamp_error_park(state: V5SessionState, detail: str) -> None:
+    state.runtimePhase = "failed"
+    state.awaitReason = "error"
+    state.awaitDetail = detail
+
+
+async def _park_control_error(
+    state: V5SessionState,
+    text: str,
+    *,
+    stop: Optional[Dict[str, Any]] = None,
+    detail: str,
+) -> AsyncIterator[Dict[str, Any]]:
+    """网关/循环炸了。会话必须停在 error，不许看起来像做完了。
+
+    ⚠ 2026-09-21 真机 sr-20260921155056-HKA1MC5142：except 里写了
+      failed/error，接着走 `_canned`。控制 run 是 failed/llm_unavailable，
+      complete.state 和 GET 却是 idle/None——卡片画成「任务已完成」。
+      `_canned` 是额度到顶那种「先停着」，不负责失败停泊。失败要自己
+      persist-as-authority 写回去，complete 还得带上停因（跟 control_text
+      同一份 stop，CLAUDE.md §4：两处措辞必然只改一半）。
+    """
+    _stamp_error_park(state, detail)
+    _append_transcript(state, {"role": "assistant", "kind": "canned", "text": text})
+    saved = await _apersist(state)
+    if (
+        getattr(saved, "runtimePhase", None) == "failed"
+        and getattr(saved, "awaitReason", None) == "error"
+    ):
+        for field in _ERROR_PARK_FIELDS:
+            setattr(state, field, getattr(saved, field))
+    else:
+        # 落盘剥了标量。本地停泊留下，再写一次；complete 仍以失败为准。
+        _stamp_error_park(state, detail)
+        await _apersist(state)
+        _stamp_error_park(state, detail)
+    print(
+        f"[control] park error phase={state.runtimePhase} await={state.awaitReason} "
+        f"detail={state.awaitDetail}",
+        flush=True,
+    )
+    wire = dict(stop or {})
+    yield {"type": "control_text", "text": text, **wire}
+    event = {**_complete(state), **wire}
+    state_dump = dict(event.get("state") or {}) if isinstance(event.get("state"), dict) else {}
+    state_dump["runtimePhase"] = "failed"
+    state_dump["awaitReason"] = "error"
+    state_dump["awaitDetail"] = detail
+    event["state"] = state_dump
+    yield event
 
 
 _ACTIVE_CONTROL_TURNS: set[str] = set()
@@ -3823,6 +4029,7 @@ async def run_control_turn(
     """One control producer per session, including while durable writes await I/O."""
     validate_control_turn_body(payload)
     session_id = str(payload["sessionId"]).strip()
+    orch_trace("turn", session=session_id[:40])
     # The HTTP response owns its reservation before it sends SSE headers. Direct
     # consumers acquire here. Closing this wrapper must close the child in the
     # same task: deferred async-generator GC used to reset ContextVars elsewhere
@@ -4750,6 +4957,15 @@ async def _control_llm_loop(
                 )
                 await _apersist(state)
                 yield {"type": "control_text", "text": text}
+                # ⚠ 2026-09-22 BABCJGGB44：清掉 503 停泊时把 phase 设成
+                #   orchestrating。模型说完就结束，complete 仍停在 orchestrating。
+                #   没有待答问题，这一轮已经收口。
+                if (
+                    getattr(state, "runtimePhase", None) == "orchestrating"
+                    and not getattr(state, "awaitReason", None)
+                ):
+                    state.runtimePhase = "idle"
+                    await _apersist(state)
                 yield _complete(state)
                 return
 
@@ -4964,22 +5180,31 @@ async def _control_llm_loop(
         # ⚠ 2026-09-08：NeedUserAnswer 把 empty_text 设成那句罐头，
         #   异常分支优先端罐头，停因表的实话又被盖掉。
         #   同一天：LlmError 是 522 仍端「连不上」——机器知道状态码。
-        async for event in _canned(
+        # ⚠ 2026-09-21 sr-20260921150545 / HKA1MC5142：问卷后 503、首轮
+        #   503 都写过 failed，再走 `_canned` 就会被读成 idle。失败停泊
+        #   走 `_park_control_error`，不借用额度到顶那条罐头。
+        async for event in _park_control_error(
             state,
             _provider_failure_text(exc, state),
             stop={**stop_wire(ControlStopReason.LLM_UNAVAILABLE),
                   **({"providerFinishReason": finish} if finish else {})},
+            detail="llm_unavailable",
         ):
             yield event
-    except Exception:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
+    except Exception as exc:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
         import logging
 
         logging.getLogger(__name__).exception("control llm loop failed after write")
         # persist / schema / 代码自己炸了 ≠ 网关连不上。
-        async for event in _canned(
+        # ⚠ 2026-09-22 FFR6：罐头只有「没点火」，awaitDetail 是
+        #   control_loop_failed。模型下一轮不知道是哪一种异常。类型名
+        #   不是栈，也不把异常正文塞进用户话里。
+        name = type(exc).__name__ or "Exception"
+        async for event in _park_control_error(
             state,
-            stop_text(ControlStopReason.UNKNOWN),
+            stop_text(ControlStopReason.UNKNOWN) + f"（{name}）",
             stop=stop_wire(ControlStopReason.UNKNOWN),
+            detail=name[:80],
         ):
             yield event
 
@@ -5084,6 +5309,19 @@ async def _run_control_turn_body(
             if getattr(state, "runtimePhase", None) == "awaiting":
                 state.runtimePhase = "idle"
         _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
+        # ⚠ 2026-09-22 BABCJGGB44：上一轮 503 把会话停在 failed/error。
+        #   这一轮工具都成功，模型 idle 交回，complete 仍是 phase=failed
+        #   await=error、stop=None。驾驶把它当成又一次 llm_unavailable。
+        #   用户已经开口，旧停泊不能跟着这一轮走。
+        if (
+            getattr(state, "awaitReason", None) == "error"
+            or getattr(state, "runtimePhase", None) == "failed"
+        ):
+            state.awaitReason = None
+            state.awaitDetail = None
+            if getattr(state, "runtimePhase", None) == "failed":
+                state.runtimePhase = "orchestrating"
+            await _apersist(state)
         await _resolve_answered_gaps(state, payload)
 
         # 没 SPEC 也没页面 = 这句是产品话题，不是针对交付物的指令。
@@ -5349,6 +5587,7 @@ async def _dispatch_tool(
     design_system_id: Any,
     original_goal: str,
 ) -> AsyncIterator[Dict[str, Any]]:
+    orch_trace("dispatch", name=name, session=str(getattr(state, "sessionId", "") or "")[:40])
     await run_in_threadpool(guard_control_run)
     if name in PROJECT_TOOL_NAMES and not isinstance(args, dict):
         yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "project_tool_arguments_invalid"}
@@ -5443,9 +5682,13 @@ async def _dispatch_tool(
                     )
                     body = {**body, "status": operation.status}
                     if operation.status in {"completed", "failed", "cancelled"}:
-                        # Preserve the original public shape while exposing
-                        # the durable terminal result to the model.
-                        body = {**body, **adapter._snapshot(operation_id)}
+                        # ⚠ 2026-09-21 13ME64TF8Z：裸 snapshot 没有 excerpt。
+                        #   enqueue 时 wait=False，日志还没写；等终态必须
+                        #   再取 PTY/文件日志尾，否则模型只看见 errorCode。
+                        body = {
+                            **body,
+                            **command_receipt_from(adapter, operation_id),
+                        }
                         break
                 except Exception:
                     # The operation may be claimed by a recovering worker;
@@ -5818,7 +6061,22 @@ async def _dispatch_tool(
                 "say": say,
             }
             return
-        rows = recall_memory(scope_id=owner, query=str(args.get("query") or ""))
+        query = str(args.get("query") or "").strip()
+        goal_text = _task_text_for_recall(state)
+        if not query:
+            # ⚠ 2026-09-21 真机 PPT：空查询把账号里待办清单偏好整段倒回来。
+            query = goal_text
+        rows = recall_memory(scope_id=owner, query=query)
+        # ⚠ 2026-09-21 YKEDKJDJ5R：state.goal 空时上一版闸不响，最近一条
+        #   待办偏好照样倒出来。没有当前任务文本就交空，不许 dump 最近记忆。
+        if not goal_text:
+            rows = []
+        else:
+            rows = [
+                row for row in rows
+                if _recall_belongs_to_task(goal_text, str(row.get("text") or ""))
+            ]
+        orch_trace("recall", count=len(rows), taskChars=len(goal_text))
         yield {
             "type": "control_tool_result",
             "tool": "recall",
@@ -5826,17 +6084,67 @@ async def _dispatch_tool(
             "count": len(rows),
             "notes": rows,
             "summary": summarize_memory(rows),
+            "taskChars": len(goal_text),
+            "orchBuild": "20260922-recall",
         }
         return
     if name == "skill":
         # 开场就带技能名。正文只回给模型（tool result），不进会话。
+        slug = normalize_skill_name(str(args.get("name") or args.get("skill") or ""))
         summary = project_tool_summary("skill", args)
         yield tool_start_event("skill", summary=summary or "")
+        # 先看上一发成功结果，再认这一发 start——正在飞的不算已加载。
+        if slug and slug in _skills_loaded_this_turn(state):
+            yield {
+                "type": "control_tool_result",
+                "tool": "skill",
+                "ok": True,
+                "skill": slug,
+                "alreadyLoaded": True,
+                "skill_message": (
+                    f"「{slug}」本回合已经加载过。不要再调 skill，"
+                    "按未完成待办继续。"
+                ),
+            }
+            return
+        infos = list(_skill_infos_for_turn(state))
+        # ⚠ 2026-09-22 Z8NPKNM14C：fallback 只在 error==skill_not_found 之后
+        #   才打开种子。真机回执就是 skill_not_found / available=[]，
+        #   种子正文没进结果。点名先并进目录，再 invoke，不靠事后补救。
+        seeded = local_seed_skill_info(slug) if slug else None
+        if seeded is not None and all(getattr(info, "name", None) != seeded.name for info in infos):
+            infos = [seeded, *infos]
         result = invoke_skill(
-            _skill_infos_for_turn(state),
+            infos,
             str(args.get("name") or args.get("skill") or ""),
             str(args.get("args") or "") or None,
         )
+        if (
+            not result.get("ok")
+            and result.get("error") == "skill_not_found"
+            and seeded is not None
+        ):
+            result = invoke_skill(
+                [seeded],
+                seeded.name,
+                str(args.get("args") or "") or None,
+            )
+        result["seedBytes"] = 0 if seeded is None else len(seeded.body or "")
+        orch_trace(
+            "skill",
+            slug=slug,
+            catalog=[getattr(info, "name", "") for info in infos],
+            seedBytes=result["seedBytes"],
+            ok=bool(result.get("ok")),
+            error=result.get("error"),
+        )
+        if result.get("ok") and result.get("skill"):
+            hit = next((i for i in infos if getattr(i, "name", None) == result.get("skill")), None)
+            if hit is None and seeded is not None and seeded.name == result.get("skill"):
+                hit = seeded
+            if hit is not None:
+                _remember_skill_infos(state, [hit])
+                await _apersist(state)
         # 正文只回给模型（tool result）。不要另发 control_text。
         yield {"type": "control_tool_result", "tool": "skill", **result}
         return
