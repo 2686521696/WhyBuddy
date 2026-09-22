@@ -251,6 +251,60 @@ def test_start_console_types_each_character_into_the_pty_not_commands_run(setup_
     assert provider.process_result(handle, "7").exit_code == 0
 
 
+def test_console_reader_keeps_stdout_that_arrives_after_the_exit_marker():
+    """退出 OSC 先到、print 后到。读循环在标记处停掉，缓冲里就没有 PING123。"""
+    provider = E2BWorkspaceProvider(api_key="reader-key")
+    console = module._ConsoleSession(sandbox_id="sb", pid=9)
+
+    class Handle:
+        def __iter__(self):
+            yield None, None, b"\x1b]777;wb;0\x07"
+            yield None, None, b"\x1b]777;wb;0\x07"
+            yield "PING123\n", "Traceback: boom\n", None
+
+        def kill(self):
+            self.killed = True
+
+    console.handle = Handle()
+    provider._console_read(console)
+    text = bytes(console.buffer).decode()
+    assert "PING123" in text
+    assert "Traceback: boom" in text
+    assert console.exit_code == 0
+
+
+def test_console_reader_keeps_stdout_stderr_and_bytes_after_the_exit_marker():
+    """FFR6：退出码在 pty 的 OSC 上，print/traceback 在另外两条通道。
+
+    只吃 pty、或在退出标记处把同一块后面的字节丢掉，缓冲就是空的，
+    工人只能把 excerpt 写成 ""。
+    """
+    provider = E2BWorkspaceProvider(api_key="reader-key")
+    console = module._ConsoleSession(sandbox_id="sb", pid=7)
+
+    class Handle:
+        def __iter__(self):
+            yield "setup-noise\n", None, None
+            yield None, None, b"\x1b]777;wb;0\x07"
+            yield "PING123\n", None, None
+            yield None, "Traceback: boom\n", None
+            yield None, None, b"\x1b]777;wb;1\x07left-on-pty\n"
+
+        def kill(self):
+            self.killed = True
+
+    console.handle = Handle()
+    provider._console_read(console)
+    text = bytes(console.buffer).decode()
+    assert "setup-noise" not in text
+    assert "PING123" in text
+    assert "Traceback: boom" in text
+    assert "left-on-pty" in text
+    assert "\x1b]777;" not in text
+    assert console.exit_code == 1
+    assert console.killed
+
+
 def test_start_console_does_not_inject_log_bytes_without_typing(setup_provider, monkeypatch):
     """反向：不许把 stdout 灌进假 PTY 却不敲命令——那就是日志回放。"""
     provider, handle, fake, _ = setup_provider

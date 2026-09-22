@@ -37,7 +37,12 @@ from services.project_preview_config import (
 from services.vite_preview_hosts import injected_preview_dev_command
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
-from services.deliverable_kind import is_office_artifact_path, is_office_zip_bytes
+from services.deliverable_kind import (
+    is_office_artifact_path,
+    is_office_zip_bytes,
+    orch_trace,
+    skip_vite_dependency_install,
+)
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
@@ -175,10 +180,26 @@ class ProjectRuntimeSupervisor:
             kind="runtime.exec", idempotencyKey=idempotency_key, requestHash="", expectedRevision=expected_revision,
             approvalRef=approval_ref, createdAt=_timestamp(), updatedAt=_timestamp())
         self.authorizer(self.store, candidate, owner_id)
-        operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
-            idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
-            input=payload)
-        self._wake.set()
+        # 同一把钥匙的重放不许抢租约。命令还在跑时先 acquire，会把
+        # 「钥匙冲突」盖成 workspace_lease_busy，重试也拿不回那次操作。
+        if self.store.operation_by_key(project_id, idempotency_key, owner_id=owner_id) is not None:
+            return self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                approval_ref=approval_ref, input=payload)
+        # ⚠ 2026-09-22 KM48CMNDPE：操作一进共享库，另一个监督器先领走，
+        #   用旧代码把只有 README 的 bash 打成 lockfile。先占租约再插入，
+        #   公开时 list_runnable 已经看不见它。
+        lease = self.store.acquire_lease(project_id, owner_id=owner_id,
+            lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
+        try:
+            operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
+                idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
+                input=payload)
+        except Exception:
+            self.store.release_lease(project_id, owner_id=owner_id,
+                lease_owner=lease.leaseOwner, generation=lease.generation)
+            raise
+        self._start_held(operation, owner_id, lease)
         return operation
 
     def enqueue_stdin(self, operation_id: str, *, owner_id: str, text: str,
@@ -286,11 +307,21 @@ class ProjectRuntimeSupervisor:
             self._wake.wait(self.poll_interval)
             self._wake.clear()
 
-    def _execute(self, candidate: ProjectOperation, owner_id: str) -> None:
-        context, lease = None, None
+    def _start_held(self, operation: ProjectOperation, owner_id: str, lease) -> None:
+        with self._lock:
+            if operation.operationId in self._workers:
+                return
+            worker = threading.Thread(target=self._execute,
+                args=(operation, owner_id, lease), name="project-operation", daemon=True)
+            self._workers[operation.operationId] = worker
+            worker.start()
+
+    def _execute(self, candidate: ProjectOperation, owner_id: str, held_lease=None) -> None:
+        context, lease = None, held_lease
         try:
-            lease = self.store.acquire_lease(candidate.projectId, owner_id=owner_id,
-                lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
+            if lease is None:
+                lease = self.store.acquire_lease(candidate.projectId, owner_id=owner_id,
+                    lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
             prior_id = lease.processRefs.get("operationId")
             if prior_id and prior_id != candidate.operationId:
                 prior = self.store.get_operation(prior_id, owner_id=owner_id)
@@ -462,6 +493,37 @@ class _RuntimeTask:
             self.log_offsets[pid] = chunk.next_offset
         return chunk.next_offset
 
+    def _persist_process_output(self, pid, executed):
+        """把 process_result 里的 stdout/stderr 补进操作日志。
+
+        ⚠ 2026-09-22 FFR6：PTY 缓冲是空的时，read_console 不写事件，
+          但 process_result 仍可能带着同一段输出。只写日志里还没有的部分，
+          避免和已经落库的 runtime.console 再贴一遍。
+        """
+        parts = [str(getattr(executed, "stdout", "") or ""), str(getattr(executed, "stderr", "") or "")]
+        text = "".join(part for part in parts if part)
+        if not text.strip():
+            return
+        have = []
+        events = self.store.list_events(self.operation_id, owner_id=self.owner_id, after_seq=0, limit=1000)
+        for event in events:
+            if event.type not in {"runtime.log", "runtime.console"}:
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if payload.get("processId") != pid:
+                continue
+            have.append(str(payload.get("text") or payload.get("data") or ""))
+        if text in "".join(have):
+            return
+        encoded = text.encode("utf-8", errors="replace")
+        offset = self.log_offsets.get(pid, 0)
+        next_offset = offset + len(encoded)
+        self.store.append_event(self.operation_id, owner_id=self.owner_id, event_type="runtime.console",
+            event_id=f"{pid}:captured:{offset}:{next_offset}",
+            payload={"processId": pid, "data": text, "nextOffset": next_offset, "truncated": False},
+            lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner)
+        self.log_offsets[pid] = next_offset
+
     def development_server_command(self):
         server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
         hosts = self._vite_allowed_hosts()
@@ -550,30 +612,89 @@ class _RuntimeTask:
         if self.original.runtime is None:
             self.save("provisioning")
             files = self.store.read_files(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
-            if "package-lock.json" not in files or REVISION_FILE in files:
+            if REVISION_FILE in files:
+                orch_trace("lockfile", reason="revision_file", files=sorted(str(n) for n in files))
+                self.result["gate"] = "revision_file:" + ",".join(sorted(str(n) for n in files))[:300]
                 raise ValueError("project_lockfile_or_reserved_path_invalid")
-            if self.handle is not None:
-                self.provider.destroy(self.handle)
-                self.handle = None
-            self.check()
-            # Record intent before create. Discovery by workspace metadata repairs
-            # a crash between provider creation and storing its returned identity.
-            self.heartbeat.renew(sandbox_id=None, process_refs={"operationId": self.operation_id})
-            for orphan in self.provider.find_workspaces(workspace_id=self.lease.workspaceId):
-                self.heartbeat.check()
-                self.provider.destroy(orphan)
-            self.handle = self.provider.create(workspace_id=self.lease.workspaceId)
+            revision = self.store.get_revision(
+                self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
+            skip_install = skip_vite_dependency_install(
+                operation_kind=self.original.kind,
+                template_version=revision.templateVersion,
+                files=files,
+            )
+            # ⚠ 2026-09-22 Z8NPKNM14C：树只有 README.md，skip 助手按源码应返回
+            #   True，真机仍 lockfile。没有 package.json 就不是 Vite 开箱，
+            #   不把这一发交给「助手返回了 False」。
+            bare = "package.json" not in files and "package-lock.json" not in files
+            if bare and self.original.kind == "runtime.exec":
+                skip_install = True
+            orch_trace(
+                "exec-gate",
+                kind=self.original.kind,
+                template=revision.templateVersion,
+                files=sorted(str(n) for n in files),
+                skip=bool(skip_install),
+                bare=bare,
+            )
+            if "package-lock.json" not in files and not skip_install:
+                # ⚠ 2026-09-21 XSGAMK9PYZ：源码只有 README.md / workspace-1，
+                #   bash 仍 lockfile。打印当时那一发，别再对着测试里的 dict 猜。
+                self.result["gate"] = (
+                    f"template={revision.templateVersion} "
+                    f"files={sorted(str(n) for n in files)} skip={skip_install}"
+                )[:300]
+                print(
+                    f"[project] lockfile gate kind={self.original.kind} "
+                    f"template={revision.templateVersion!r} "
+                    f"files={sorted(str(n) for n in files)} skip={skip_install}",
+                    flush=True,
+                )
+                raise ValueError("project_lockfile_or_reserved_path_invalid")
+            # ⚠ 2026-09-22 BABCJGGB44：办公 bash 每条命令都拆沙盒再建。
+            #   pip 和刚写出的 pptx 下一条就没了，模型只好把文件 base64
+            #   塞进日志。没有 package.json 的工作区留下同一个沙盒。
+            reused = False
+            if skip_install and self.handle is not None:
+                try:
+                    self.provider.connect(self.handle)
+                    reused = True
+                except Exception:
+                    self.handle = None
+            if not reused:
+                if self.handle is not None:
+                    self.provider.destroy(self.handle)
+                    self.handle = None
+                self.check()
+                self.heartbeat.renew(sandbox_id=None, process_refs={"operationId": self.operation_id})
+                for orphan in self.provider.find_workspaces(workspace_id=self.lease.workspaceId):
+                    self.heartbeat.check()
+                    self.provider.destroy(orphan)
+                self.handle = self.provider.create(workspace_id=self.lease.workspaceId)
+            orch_trace(
+                "sandbox",
+                reused=reused,
+                sandbox=None if self.handle is None else self.handle.sandbox_id,
+            )
             self.heartbeat.renew(sandbox_id=self.handle.sandbox_id, process_refs={"operationId": self.operation_id})
             self.heartbeat.handle = self.handle
+            if skip_install:
+                self.result["keepSandbox"] = True
             restore_application_data(self)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
             self.heartbeat.renew(mounted_revision=self.runtime.revision)
             self.check()
-            self.result["phaseDeadline"] = time.time() + self.supervisor.install_timeout
-            self.save("installing")
-            self._start_visible("install", "npm ci --ignore-scripts", timeout_seconds=600)
-            phase = "installing"
+            if skip_install:
+                self.save("executing")
+                visible = script if isinstance(script, str) else f"npm run {command}"
+                self._start_visible("command", visible, timeout_seconds=900)
+                phase = "executing"
+            else:
+                self.result["phaseDeadline"] = time.time() + self.supervisor.install_timeout
+                self.save("installing")
+                self._start_visible("install", "npm ci --ignore-scripts", timeout_seconds=600)
+                phase = "installing"
         else:
             if self.handle is None:
                 raise WorkspaceProviderError("runtime_dispatch_uncertain")
@@ -604,6 +725,7 @@ class _RuntimeTask:
                 previous = self.log_offsets.get(pid, 0)
                 if self.logs(pid) == previous:
                     break
+            self._persist_process_output(pid, installed)
             if installed.exit_code != 0:
                 if self.original.kind == "runtime.exec":
                     self.result["installExitCode"] = installed.exit_code
@@ -710,6 +832,7 @@ class _RuntimeTask:
             previous = self.log_offsets.get(pid, 0)
             if self.logs(pid) == previous:
                 break
+        self._persist_process_output(pid, executed)
         # 命令结束后都扫。失败也可能已经写出 .pptx；收集 fail-open。
         self._collect_office_artifacts()
         if executed.exit_code is None:
@@ -760,6 +883,11 @@ class _RuntimeTask:
                 )
             except Exception:
                 logger.warning("office artifact persist failed", exc_info=True)
+                continue
+            kept = list(self.result.get("officeFiles") or [])
+            if path not in kept:
+                kept.append(path)
+            self.result["officeFiles"] = kept[:8]
 
     def _flush_stdin(self):
         pending = self.supervisor.peek_stdin(self.operation_id)
@@ -838,12 +966,19 @@ class _RuntimeTask:
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.revoke(self)
             checkpoint_application_data(self, final=True)
-            if self.handle is not None:
+            # 办公命令成功或脚本失败都留下沙盒。Vite 工程仍拆掉。
+            keep = (
+                bool(self.result.get("keepSandbox"))
+                and self.handle is not None
+                and self.original.kind == "runtime.exec"
+                and status in {"completed", "failed"}
+            )
+            if self.handle is not None and not keep:
                 self.provider.destroy(self.handle)
             if self.provider is None:
                 if self.original.runtime is not None or self.handle is not None:
                     raise WorkspaceProviderError("project_provider_unavailable")
-            else:
+            elif not keep:
                 for orphan in self.provider.find_workspaces(workspace_id=self.lease.workspaceId):
                     self.heartbeat.check()
                     self.provider.destroy(orphan)
@@ -858,7 +993,8 @@ class _RuntimeTask:
         self.save(phase, status=status, error=code)
         self.heartbeat.close()
         self.store.release_lease(self.original.projectId, owner_id=self.owner_id,
-            lease_owner=self.lease.leaseOwner, generation=self.lease.generation, clear_runtime=True)
+            lease_owner=self.lease.leaseOwner, generation=self.lease.generation,
+            clear_runtime=not bool(self.result.get("keepSandbox")))
 
     def suspend(self, reason):
         checkpoint_application_data(self, force=True)

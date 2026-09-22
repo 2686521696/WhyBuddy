@@ -17,6 +17,7 @@ from services import persistence
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session, sync_session_project
+from services.deliverable_kind import idle_office_exec_allows_source_write, operation_left_on_lease
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 
@@ -118,7 +119,8 @@ class ProjectSourceOperations:
         lease = self.store.acquire_lease(project_id, owner_id=self.owner_id,
             lease_owner="source-" + uuid.uuid4().hex, ttl_seconds=120)
         try:
-            if lease.sandboxId or lease.processRefs:
+            prior = operation_left_on_lease(self.store, lease, self.owner_id)
+            if (lease.sandboxId or lease.processRefs) and not idle_office_exec_allows_source_write(lease, prior):
                 raise ProjectConflict("project_runtime_reconciliation_required")
             self.authority(project_id, write=True)
             base = self.store.get_revision(project_id, expected_revision, owner_id=self.owner_id)

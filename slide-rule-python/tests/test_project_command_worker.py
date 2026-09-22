@@ -314,3 +314,132 @@ def test_queued_stale_revision_fails_and_releases_lease_instead_of_retrying_fore
     next_operation = worker.submit_command(project.projectId, owner_id="alice", expected_revision=latest.revision,
         approval_ref=ref, idempotency_key="current")
     assert eventually(lambda: state(store, next_operation, "stopped")).status == "completed"
+
+
+def test_office_workspace_bash_skips_npm_ci(command_setup):
+    """真机 sr-20260921102816-KWETH78PZ0：办公工作区 bash 被锁文件闸打死。
+
+    必须跑 worker，不许重抄 skip 条件。npm ci 出现 = 又接到 Vite 开箱上。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+
+    store, _, provider, worker, _ = command_setup
+    project = store.create_project(
+        "session-office-bash", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="py-ver", command="shell",
+        script="python3 --version")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed" and finished.result["exitCode"] == 0
+    assert finished.result["command"] == "python3 --version"
+    assert provider.commands == ["python3 --version"]
+    assert provider.created == 1
+
+
+def test_office_readme_tree_skips_npm_even_if_revision_says_vite(command_setup):
+    """⚠ 2026-09-21 13ME64TF8Z：树是 README，revision 不是 workspace-1，
+    echo hello 仍 project_lockfile_or_reserved_path_invalid。
+    """
+    from services.deliverable_kind import WORKSPACE_README
+
+    store, _, provider, worker, _ = command_setup
+    project = store.create_project(
+        "session-office-vite-rev", owner_id="alice",
+        files={"README.md": WORKSPACE_README,
+               "scripts/generate_kickoff_pptx.py": "print(1)\n"},
+        template_version="whybuddy-react-vite-1", plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="hello", command="shell",
+        script="echo hello")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed" and finished.result["exitCode"] == 0
+    assert provider.commands == ["echo hello"]
+    assert "npm ci --ignore-scripts" not in provider.commands
+
+
+def test_readme_only_bash_skips_npm_when_skip_helper_returns_false(command_setup, monkeypatch):
+    """⚠ 2026-09-22 Z8NPKNM14C：助手若返回 False，只有 README 的 bash 仍不许 lockfile。
+
+    把 worker 里 `bare → skip_install = True` 删掉，本条变红。
+    """
+    import services.project_runtime_worker as worker_mod
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+
+    monkeypatch.setattr(worker_mod, "skip_vite_dependency_install", lambda **_k: False)
+    store, _, provider, worker, _ = command_setup
+    project = store.create_project(
+        "session-office-skip-false", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="skip-false", command="shell",
+        script="echo hello")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed" and finished.result["exitCode"] == 0
+    assert provider.commands == ["echo hello"]
+    assert "npm ci --ignore-scripts" not in provider.commands
+
+
+def test_vite_exec_without_lockfile_still_fails(command_setup):
+    """反向：网页工程缺锁文件仍 fail-closed。把 skip 写成「没有 lockfile 就跳过」必须红。"""
+    store, _, provider, worker, _ = command_setup
+    project = store.create_project(
+        "session-vite-nolock", owner_id="alice",
+        files={"package.json": "{}"}, template_version="whybuddy-react-vite-1",
+        plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="no-lock", command="shell",
+        script="python3 --version")
+    failed = eventually(lambda: state(store, operation, "failed"))
+    assert failed.result["errorCode"] == "project_lockfile_or_reserved_path_invalid"
+    assert provider.created == 0 and provider.commands == []
+
+
+def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
+    """⚠ 2026-09-22 BABCJGGB44：每条 bash 拆沙盒，装上的库和 pptx 下一条就没了，
+    模型只好把文件 base64 塞进日志。
+
+    第二条办公命令不得再 create。删掉 reused / keepSandbox，created 变成 2，本条变红。
+    Vite 工程仍拆掉，见 test_command_runs_fixed_script_returns_real_result_and_reclaims_workspace。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store, _, provider, worker, _ = command_setup
+    pptx = b"PK\x03\x04" + b"kickoff"
+    provider.collect_office_files = lambda _handle: [{"path": "kickoff.pptx", "data": pptx}]
+    project = store.create_project(
+        "session-office-reuse", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+
+    def office_bash(key, script):
+        return worker.submit_command(
+            project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+            approval_ref="plan-1", idempotency_key=key, command="shell", script=script)
+
+    first = office_bash("build-deck", "python3 build_deck.py")
+    built = eventually(lambda: state(store, first, "stopped"))
+    assert built.status == "completed" and built.result["exitCode"] == 0
+    assert provider.created == 1 and "sandbox-1" in provider.handles
+    assert store.get_lease(project.projectId, owner_id="alice").sandboxId == "sandbox-1"
+    assert built.result["officeFiles"] == ["kickoff.pptx"]
+    snap = operation_snapshot(store.snapshot_operation(first.operationId, owner_id="alice"))
+    assert snap["officeFiles"] == ["kickoff.pptx"]
+    receipt = _command_pointer(snap, "saved kickoff.pptx")
+    assert "kickoff.pptx" in receipt["hint"] and "base64" in receipt["hint"]
+    assert "npm ci --ignore-scripts" not in provider.commands
+    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").expiresAt <= time.time())
+
+    second = office_bash("import-pptx", "python3 -c \"import pptx\"")
+    again = eventually(lambda: state(store, second, "stopped"))
+    assert again.status == "completed" and again.result["exitCode"] == 0
+    assert provider.created == 1 and "sandbox-1" in provider.handles
+    assert store.get_lease(project.projectId, owner_id="alice").sandboxId == "sandbox-1"
+    assert provider.commands == ["python3 build_deck.py", 'python3 -c "import pptx"']

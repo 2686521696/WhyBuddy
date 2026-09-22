@@ -82,6 +82,37 @@ def test_runtime_start_types_install_but_keeps_vite_on_start_process(setup):
     eventually(lambda: state(store, operation, "stopped"))
 
 
+def test_process_result_text_is_stored_when_the_console_buffer_is_empty(command_setup):
+    """反向：read_console 是空的时，不许把 process_result 里的 stdout 丢掉。
+
+    2026-09-22 FFR6 的回执就是 exitCode 有、excerpt 空、logs []。
+    删掉 _persist_process_output，这条红。
+    """
+    store, project, _, worker, _ = command_setup
+
+    class ResultOnly(ConsoleProvider):
+        def read_console(self, handle, pid, *, offset=0):
+            return ProcessLogChunk("", offset)
+
+        def process_result(self, handle, pid):
+            if pid in self.console_output:
+                return ProcessResult(pid, stdout="PING123\n", stderr="Traceback: boom\n", exit_code=0)
+            return super().process_result(handle, pid)
+
+    provider = ResultOnly()
+    worker.provider_factory = lambda: provider
+    operation = submit(worker, project)
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed" and finished.result["exitCode"] == 0
+    events = store.list_events(operation.operationId, owner_id="alice")
+    text = "".join(
+        str((e.payload or {}).get("data") or (e.payload or {}).get("text") or "")
+        for e in events if e.type in {"runtime.console", "runtime.log"}
+    )
+    assert "PING123" in text
+    assert "Traceback: boom" in text
+
+
 def test_provider_without_console_keeps_start_process_path(command_setup):
     """反向：没有 start_console 时不许空转，旧 provider 仍走进程文件。"""
     store, project, provider, worker, _ = command_setup

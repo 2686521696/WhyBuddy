@@ -456,6 +456,17 @@ def _pid(process_id: str) -> int:
     return value
 
 
+def _console_bytes(value: Any) -> bytes:
+    """SDK yields pty as bytes and stdout/stderr as str. Both are the pane."""
+    if value is None or isinstance(value, bool):
+        return b""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8", errors="replace")
+    return b""
+
+
 def _console_hold_from(pending: bytearray) -> int:
     """Keep an incomplete OSC 777 in pending; flush everything else."""
     esc = pending.rfind(b"\x1b")
@@ -872,15 +883,64 @@ class E2BWorkspaceProvider:
         return console
 
     def _console_read(self, console: _ConsoleSession) -> None:
+        """Read until the exit OSC, then stop. Do not kill inside the ingest.
+
+        ⚠ 2026-09-22 sr-20260921195005-FFR6VWM7CT：`print('PING123')` 和
+          `python3 scripts/build_pptx.py` 的 exitCode 都回来了，excerpt 和
+          project_logs 仍是空的。SDK 把命令输出放在 stdout/stderr，OSC 放在
+          pty；这里以前只吃第三项，退出标记一到就把同一块里标记后面的字节丢掉。
+          工人看到进程停时缓冲还是空的。
+        """
+        armed = False
         try:
-            for _stdout, _stderr, pty_bytes in console.handle:
-                if pty_bytes:
-                    self._console_ingest(console, bytes(pty_bytes))
+            for stdout, stderr, pty_bytes in console.handle:
+                for piece in (pty_bytes, stdout, stderr):
+                    data = _console_bytes(piece)
+                    if data:
+                        self._console_ingest(console, data)
+                # 退出标记经常先于 stdout 事件到达。这里停读会把 print /
+                # traceback 留在还没 yield 的下一块里。标记之后继续读，
+                # 短暂后再关 PTY，避免 bash 停在提示符上永不结束。
+                if console.exit_code is not None and not armed:
+                    armed = True
+                    threading.Thread(
+                        target=self._console_finish_after,
+                        args=(console, 0.4),
+                        daemon=True,
+                    ).start()
         except Exception:
             pass
         finally:
+            with console.lock:
+                if console.ready.is_set() and console.pending:
+                    console.buffer.extend(console.pending)
+                    console.pending.clear()
+                self._absorb_sdk_output(console)
             console.running = False
+            self._kill_console(console)
             console.finished.set()
+
+    def _console_finish_after(self, console: _ConsoleSession, delay: float) -> None:
+        if console.finished.wait(delay):
+            return
+        self._kill_console(console)
+
+    def _absorb_sdk_output(self, console: _ConsoleSession) -> None:
+        """SDK 在 yield 之前就把 stdout/stderr 放进句柄。读循环漏了也要留下。"""
+        if not console.ready.is_set() or console.handle is None:
+            return
+        extra = bytearray()
+        for attr in ("_stdout_chunks", "_stderr_chunks"):
+            chunks = getattr(console.handle, attr, None)
+            if not chunks:
+                continue
+            for chunk in chunks:
+                extra.extend(_console_bytes(chunk))
+        if not extra:
+            return
+        if bytes(extra) in bytes(console.buffer):
+            return
+        console.buffer.extend(extra)
 
     def _console_boot(self, sandbox: Any, console: _ConsoleSession, command: str) -> None:
         try:
@@ -913,7 +973,9 @@ class E2BWorkspaceProvider:
                 self._console_mark(console, int(match.group(1)))
                 del console.pending[:match.end()]
             hold = _console_hold_from(console.pending)
-            if console.ready.is_set() and console.exit_code is None:
+            # 退出标记同一块里、标记后面的字节仍是这次命令的输出（traceback
+            # 经常紧挨着 OSC）。标记之前的「还没 ready」已经在上面丢掉了。
+            if console.ready.is_set():
                 console.buffer.extend(console.pending[:hold])
             del console.pending[:hold]
 
@@ -925,8 +987,8 @@ class E2BWorkspaceProvider:
             return
         if console.exit_code is None:
             console.exit_code = code
-            console.running = False
-            self._kill_console(console)
+            # 留给 _console_read 吃完这一块再杀。这里杀会把还在队列里的
+            # stdout/stderr 切掉，工人只剩退出码。
 
     def _kill_console(self, console: _ConsoleSession) -> None:
         if console.killed:

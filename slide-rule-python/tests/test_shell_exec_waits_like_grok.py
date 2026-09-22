@@ -20,13 +20,17 @@ grok-build bash：前台 `backend.run()` 等进程退出才交 Terminal；
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
+from types import SimpleNamespace
 
 from project_actor_support import project_actor  # noqa: F401
 from test_project_tools import create, execute, setup  # noqa: F401
 
+from control_turn_support import new_sid, seed_approved_session as seed_session
 from services import project_tools
+from services import rehearsal_control as rc
 from services.project_tool_contracts import SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
 
 
@@ -166,6 +170,84 @@ async def _collect_until_operation_id(rc, state):
     return events
 
 
+def test_dispatch_terminal_receipt_keeps_command_excerpt():
+    """⚠ 13ME64TF8Z：wait 循环用裸 snapshot 盖掉 excerpt。
+
+    真机：python3 scripts/generate_kickoff_pptx.py → project_command_failed，
+    回执没有 Traceback，project_logs 再空。判据必须看见 PTY 字节。
+    变异：把 command_receipt_from 改回 adapter._snapshot → excerpt 没了。
+    """
+    sid = new_sid("shell-excerpt")
+    state = seed_session(sid, goal={"text": "跑测试", "status": "clear"})
+
+    class Event:
+        type = "runtime.console"
+        payload = {"data": "ModuleNotFoundError: No module named 'pptx'\n"}
+        seq = 1
+
+    class Tools:
+        owner_id = "test-user"
+
+        def execute(self, name, args, session, *, wait=True):
+            return {
+                "ok": True,
+                "operationId": "op-pptx",
+                "status": "running",
+                "commandFinished": False,
+            }
+
+        def _snapshot(self, oid):
+            return {
+                "ok": True,
+                "operationId": oid,
+                "status": "failed",
+                "errorCode": "project_command_failed",
+                "exitCode": 1,
+                "commandFinished": True,
+            }
+
+        class store:
+            @staticmethod
+            def get_operation(oid, owner_id=None):
+                return SimpleNamespace(status="failed")
+
+            @staticmethod
+            def list_events(oid, owner_id=None, after_seq=0, limit=100):
+                return [Event()]
+
+    token = rc._PROJECT_TOOLS.set(Tools())
+    try:
+        events = asyncio.run(_collect_tool_result(rc, state))
+    finally:
+        rc._PROJECT_TOOLS.reset(token)
+    results = [e for e in events if e.get("type") == "control_tool_result"]
+    assert results, events
+    body = results[-1]
+    assert "ModuleNotFoundError" in str(body.get("excerpt") or ""), body
+    assert body.get("errorCode") == "project_command_failed"
+
+
+async def _collect_tool_result(rc, state):
+    events = []
+    agen = rc._dispatch_tool(
+        "shell_exec",
+        {"command": "python3 scripts/generate_kickoff_pptx.py"},
+        state,
+        "跑测试",
+        [],
+        [],
+        "desktop",
+        None,
+        "跑测试",
+    )
+    try:
+        async for event in agen:
+            events.append(event)
+    finally:
+        await agen.aclose()
+    return events
+
+
 def test_dispatch_source_really_skips_the_foreground_block():
     from pathlib import Path
 
@@ -182,3 +264,7 @@ def test_dispatch_source_really_skips_the_foreground_block():
     ]
     assert "_execute_project_tool" in project, "分发处必须走先 enqueue 再堵"
     assert "wait" in execute and "False" in execute, execute
+    wait = project[project.find("wait_seconds = _project_tool_wait_seconds"):]
+    wait = wait[: wait.find('yield {"type": "control_tool_result"')]
+    assert "command_receipt_from" in wait, wait[:600]
+    assert "adapter._snapshot" not in wait, wait[:600]
