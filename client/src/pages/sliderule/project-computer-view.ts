@@ -16,6 +16,7 @@
  */
 
 import { isOfficeFileDeliverable } from "./deliverable-kind";
+import { sourcePathFromActionDetail } from "./project-runtime/preview-selection-bridge";
 
 export const COMPUTER_VIEWS = [
   "computer",
@@ -108,11 +109,10 @@ export function resolveComputerView(input: {
   if (input.userPinned) return input.userPinned;
   const fromTool = input.lastTool ? computerViewForAction(input.lastTool) : null;
   if (input.live) return fromTool ?? "computer";
-  // ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：办公会话 bash 一跑，
-  //   hasActivity 把档钉在终端/源码，previewReady 又被强制 false，
-  //   产物面永远进不去，右边只剩 Vite 登录页。跑完（非 live）回预览档；
-  //   预览槽渲染产物，不叫醒 Vite。
-  if (isOfficeFileDeliverable(input.deliverableKind)) return "preview";
+  // ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：办公会话跑完被钉在终端，
+  //   右边只剩 Vite 登录页。当时用「办公就回预览档」补上产物面。
+  // ⚠ 2026-09-22 那一档又变成宿主把 pptx 画出来。预览档只跟控制面点的
+  //   预览工具走，不因为交付物是办公文件就自己切过去。Vite 仍不叫醒。
   if (input.previewReady) return "preview";
   if (input.hasActivity) {
     if (fromTool && fromTool !== "computer") return fromTool;
@@ -295,4 +295,26 @@ export function shouldAutoWakePreview(input: {
   }
   if (!input.live) return false;
   return Boolean(input.lastTool && PREVIEW_ACTION_TOOLS.has(input.lastTool));
+}
+
+/**
+ * 预览浏览器该打开的源码页。只认 Agent 已经做成的 make_manus_page。
+ *
+ * ⚠ 2026-09-22 办公预览被写成宿主流程：交付物是 office-file 就把 pptx
+ *   画成一页。文件预览跟别的预览一样，是控制面点名的那一页。没点名、
+ *   点了非 html、或这一步失败，宿主都不补一页。
+ */
+export function presentedSourcePage(
+  rows: readonly { tool?: string; status?: string; detail?: string }[]
+): string | null {
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (row?.tool !== "make_manus_page") continue;
+    if (row.status === "running") continue;
+    if (row.status !== "done") return null;
+    const path = sourcePathFromActionDetail(String(row.detail || ""));
+    if (!path || !/\.html?$/i.test(path)) return null;
+    return path;
+  }
+  return null;
 }

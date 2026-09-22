@@ -12,6 +12,7 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   isComputerView,
+  presentedSourcePage,
   resolveComputerView,
   shouldAutoCreateProject,
   shouldAutoOpenPreview,
@@ -132,7 +133,7 @@ describe("没点过：按干活 / 预览自动切", () => {
     ).toBe("preview");
   });
 
-  it("office-file 跑完回预览档，干活时仍看终端，钉住仍听用户", () => {
+  it("office-file 不因为跑完就自己切预览，点了预览工具才去预览", () => {
     expect(
       resolveComputerView({
         userPinned: null,
@@ -150,6 +151,16 @@ describe("没点过：按干活 / 预览自动切", () => {
         hasActivity: true,
         previewReady: false,
         lastTool: "shell_exec",
+        deliverableKind: "office-file",
+      })
+    ).toBe("computer");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "make_manus_page",
         deliverableKind: "office-file",
       })
     ).toBe("preview");
@@ -418,5 +429,41 @@ describe("档位名单", () => {
     expect(isComputerView("source")).toBe(true);
     expect(isComputerView("terminal")).toBe(false);
     expect(isComputerView("")).toBe(false);
+  });
+});
+
+describe("文件预览只认 Agent 点名的源码页", () => {
+  it("做成的 html 才是浏览器那一页", () => {
+    expect(
+      presentedSourcePage([
+        { tool: "file_write", status: "done", detail: "slides.html" },
+        { tool: "make_manus_page", status: "done", detail: "slides.html" },
+      ])
+    ).toBe("slides.html");
+  });
+
+  it("反向：pptx、失败、或只写了文件，宿主都不补一页", () => {
+    expect(
+      presentedSourcePage([
+        { tool: "make_manus_page", status: "done", detail: "deck.pptx" },
+      ])
+    ).toBeNull();
+    expect(
+      presentedSourcePage([
+        { tool: "make_manus_page", status: "done", detail: "slides.html" },
+        { tool: "make_manus_page", status: "failed", detail: "slides.html" },
+      ])
+    ).toBeNull();
+    expect(
+      presentedSourcePage([
+        { tool: "file_write", status: "done", detail: "slides.html" },
+      ])
+    ).toBeNull();
+    expect(
+      presentedSourcePage([
+        { tool: "make_manus_page", status: "done", detail: "old.html" },
+        { tool: "make_manus_page", status: "done", detail: "deck.pptx" },
+      ])
+    ).toBeNull();
   });
 });

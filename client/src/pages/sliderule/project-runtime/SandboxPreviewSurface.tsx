@@ -37,6 +37,7 @@ import {
 import { ProjectDataPanel } from "./ProjectDataPanel";
 import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
 import { OfficeArtifactPane } from "./OfficeArtifactPane";
+import { PresentedSourcePage } from "./PresentedSourcePage";
 import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
   ProjectWorkspaceError,
@@ -52,6 +53,7 @@ import {
   FOLLOW_COMPUTER_EVENT,
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
+  presentedSourcePage,
   resolveComputerView,
   shouldAutoOpenPreview,
   shouldAutoWakePreview,
@@ -632,6 +634,7 @@ export function SandboxPreviewSurface({
   // ⚠ 2026-09-18：自动切档必须看**当前跟的那一行**，不是数组最后一项
   //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
   const lastTool = computerNow.current?.tool ?? null;
+  const presentedPath = presentedSourcePage(activityRows);
   const hasConsole = activityRows.some(
     row => Boolean(sandboxCommandLine(row) && row.operationId)
   );
@@ -1319,8 +1322,8 @@ export function SandboxPreviewSurface({
             只对 HTML 舞台的 srcdoc 同源框有效；工程预览票跨源，
             Chromium 命中盒还按 1920 算。zoom 写在 iframe 上，布局盒
             和看见的盒子才是同一份。pointer-events-auto 仍钉着。 */}
-        {officeFile && projectId ? (
-          <OfficeArtifactPane projectId={projectId} />
+        {presentedPath && projectId ? (
+          <PresentedSourcePage projectId={projectId} path={presentedPath} />
         ) : (
         <ScaledStageFrame
           viewport={previewView.viewport}
@@ -1401,6 +1404,9 @@ export function SandboxPreviewSurface({
           )}
         </ScaledStageFrame>
         )}
+        {officeFile && projectId ? (
+          <OfficeArtifactPane projectId={projectId} filesOnly />
+        ) : null}
       </div>
     </section>
   );

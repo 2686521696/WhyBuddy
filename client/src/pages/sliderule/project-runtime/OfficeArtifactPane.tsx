@@ -8,7 +8,14 @@ import {
   type OfficeArtifactPreview,
 } from "./office-artifacts-client";
 
-export function OfficeArtifactPane({ projectId }: { projectId: string }) {
+export function OfficeArtifactPane({
+  projectId,
+  filesOnly = false,
+}: {
+  projectId: string;
+  /** 浏览器已经打开 Agent 点名的页时，这里只留文件和下载。 */
+  filesOnly?: boolean;
+}) {
   const [files, setFiles] = useState<OfficeArtifactMeta[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [preview, setPreview] = useState<OfficeArtifactPreview>({ kind: null });
@@ -46,7 +53,11 @@ export function OfficeArtifactPane({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
+      className={
+        filesOnly
+          ? "flex shrink-0 flex-col overflow-hidden bg-transparent"
+          : "flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
+      }
       data-testid="office-artifact-pane"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
@@ -79,6 +90,7 @@ export function OfficeArtifactPane({ projectId }: { projectId: string }) {
         ) : null}
       </div>
       {error ? <p className="px-3 text-sm">{error}</p> : null}
+      {filesOnly ? null : (
       <div className="min-h-0 flex-1 overflow-auto p-3" data-testid="office-artifact-preview">
         {preview.kind === "pdf" && active ? (
           <iframe
@@ -87,32 +99,13 @@ export function OfficeArtifactPane({ projectId }: { projectId: string }) {
             src={officeArtifactPreviewUrl(projectId, active)}
           />
         ) : null}
-        {preview.kind === "slides"
-          ? preview.slides.map((slide, index) => (
-              <section
-                key={index}
-                className="mb-3 rounded-lg border border-[var(--sr-line)] bg-white p-4 text-slate-900"
-                data-testid={`office-slide-${index}`}
-              >
-                <p className="m-0 mb-2 text-xs text-slate-500">第 {index + 1} 页</p>
-                <pre className="m-0 whitespace-pre-wrap font-sans text-sm">
-                  {slide.text || "（这一页没有抽出正文）"}
-                </pre>
-              </section>
-            ))
-          : null}
-        {preview.kind === "document" ? (
-          <pre className="m-0 whitespace-pre-wrap text-sm">{preview.text}</pre>
-        ) : null}
-        {preview.kind === "workbook" ? (
-          <p className="m-0 text-sm">工作表 {preview.sheetCount} 张。请下载后在 Excel 里打开。</p>
-        ) : null}
         {preview.kind === null && current ? (
           <p className="m-0 text-sm opacity-70">
             这份文件可以下载。当前环境没有幻灯片预览。
           </p>
         ) : null}
       </div>
+      )}
     </div>
   );
 }

@@ -251,4 +251,6 @@ def preview_office_artifact(project_id: str, artifact_id: str, request: Request,
             return Response(data, media_type="application/pdf", headers={
                 "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             })
+        # ⚠ 2026-09-22 预览槽曾在这里把 pptx/docx/xlsx 画成一页。那不是
+        #   控制面点名的预览。浏览器打开的是 make_manus_page 的源码页。
         return preview
