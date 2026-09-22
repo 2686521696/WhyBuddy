@@ -271,6 +271,56 @@ def test_patch_never_writes_into_active_or_unreconciled_workspace(setup, lease_s
     if lease_state == "expired-dispatch": assert remaining.processRefs == {"operationId": "unknown-dispatch"}
 
 
+def test_finished_office_exec_keeps_sandbox_but_file_write_still_lands(setup):
+    """⚠ 2026-09-22 BABCJGGB44：办公 bash 留下 sandboxId 后，file_write 被
+    project_runtime_reconciliation_required 拦住。命令已经完成就不是还在跑的运行时。
+
+    删掉 idle_office_exec_allows_source_write，本条变红。
+    没有终态 exec 的沙盒仍拒绝，见 test_patch_never_writes_into_active_or_unreconciled_workspace。
+    """
+    project = create(setup)
+    operation = setup.store.create_operation(
+        project["projectId"], owner_id="alice", kind="runtime.exec",
+        idempotency_key="office-done", expected_revision=project["revision"],
+        approval_ref=setup.approval, input={"command": "shell", "script": "echo hi"})
+    lease = setup.store.acquire_lease(project["projectId"], owner_id="alice", lease_owner="office-worker")
+    setup.store.claim_operation(
+        operation.operationId, owner_id="alice",
+        lease_owner=lease.leaseOwner, generation=lease.generation)
+    runtime = RuntimeInstance(
+        runtimeId="rt-office", workspaceId=lease.workspaceId, projectId=project["projectId"],
+        revision=project["revision"], status="executing", port=5173, health="unknown",
+        lastHeartbeat="now")
+    setup.store.update_runtime_operation(
+        operation.operationId, owner_id="alice", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner, expected_status="queued", status="running",
+        runtime=runtime, result={"command": "echo hi", "exitCode": None})
+    setup.store.flush_operation_event(
+        operation.operationId, owner_id="alice",
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    done = runtime.model_copy(update={"status": "stopped", "processId": None})
+    setup.store.update_runtime_operation(
+        operation.operationId, owner_id="alice", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner, expected_status="running", status="completed",
+        runtime=done, result={"command": "echo hi", "exitCode": 0, "keepSandbox": True})
+    setup.store.flush_operation_event(
+        operation.operationId, owner_id="alice",
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    setup.store.renew_lease(
+        project["projectId"], owner_id="alice", lease_owner=lease.leaseOwner,
+        generation=lease.generation, sandbox_id="office-sandbox",
+        process_refs={"operationId": operation.operationId})
+    setup.store.release_lease(
+        project["projectId"], owner_id="alice",
+        lease_owner=lease.leaseOwner, generation=lease.generation, clear_runtime=False)
+    written = execute(setup, "file_write", {"file": "build_deck.py", "content": "print(1)\n"})
+    assert written["ok"], written
+    assert "print(1)" in setup.store.read_files(project["projectId"], owner_id="alice")["build_deck.py"]
+    kept = setup.store.get_lease(project["projectId"], owner_id="alice")
+    assert kept.sandboxId == "office-sandbox"
+    assert not setup.provider_calls
+
+
 def test_patch_detects_authority_changed_during_source_read(setup, monkeypatch):
     project = create(setup)
     read = setup.store.read_files
@@ -355,6 +405,34 @@ def test_durable_logs_continue_inside_large_event_without_leaking_process_identi
     assert received == "".join(expected)
 
 
+def test_project_logs_include_console_pty_bytes(setup):
+    """⚠ 13ME64TF8Z：bash 走 PTY 写 runtime.console，project_logs 只认
+    runtime.log → 空日志，模型去 file_read 沙箱 tee 文件。"""
+    project = create(setup)
+    operation = setup.store.create_operation(
+        project["projectId"], owner_id="alice", kind="runtime.exec",
+        idempotency_key="console-logs", expected_revision=project["revision"],
+        approval_ref=setup.approval)
+    lease = setup.store.acquire_lease(
+        project["projectId"], owner_id="alice", lease_owner="worker-secret")
+    setup.store.claim_operation(
+        operation.operationId, owner_id="alice", lease_owner=lease.leaseOwner,
+        generation=lease.generation)
+    setup.store.append_event(
+        operation.operationId, owner_id="alice", event_type="runtime.console",
+        event_id="pty-1",
+        payload={"data": "ModuleNotFoundError: No module named 'pptx'\n",
+                 "processId": "process-secret", "nextOffset": 48, "truncated": False},
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    result = execute(setup, "project_logs", {"operationId": operation.operationId})
+    assert result["ok"], result
+    encoded = json.dumps(result, ensure_ascii=False)
+    assert "process-secret" not in encoded
+    text = "".join(item["text"] for item in result["logs"])
+    assert "ModuleNotFoundError" in text
+    assert "pptx" in text
+
+
 def test_start_is_durable_idempotent_and_never_executes_provider_inline(setup):
     project = create(setup)
     args = {"expectedRevision": project["revision"], "approvalRef": setup.approval, "idempotencyKey": "start-1"}
@@ -426,4 +504,26 @@ def test_unbound_creation_record_requires_binding_recovery_before_other_tools(se
     repaired = create(setup)
     assert repaired["projectId"] == project.projectId and repaired["revision"] == project.currentRevision
     assert execute(setup, "project_list")["ok"]
+    assert not setup.provider_calls
+
+
+def test_file_read_of_skill_catalog_path_returns_the_seed_not_not_found(setup):
+    """⚠ 2026-09-22 BABCJGGB44：file_read .sliderule/skills/office-skills/SKILL.md
+    是 project_file_not_found，模型接着 bash find /。
+
+    必须走 ProjectTools.execute。删掉 _skill_body_for_catalog_path，本条变红。
+    """
+    from services.skill_catalog_store import local_seed_skill_info
+
+    create(setup)
+    seeded = local_seed_skill_info("office-skills")
+    assert seeded is not None and seeded.body
+    needle = seeded.body.strip().splitlines()[0][:40]
+    result = execute(setup, "file_read", {"file": ".sliderule/skills/office-skills/SKILL.md"})
+    assert result["ok"], result
+    assert "project_file_not_found" not in json.dumps(result, ensure_ascii=False)
+    assert needle in (result.get("excerpt") or "")
+    assert "不要在沙盒里 find" in result["hint"]
+    missing = execute(setup, "file_read", {"file": "no-such-file.txt"})
+    assert missing == {"ok": False, "error": "project_file_not_found"}
     assert not setup.provider_calls

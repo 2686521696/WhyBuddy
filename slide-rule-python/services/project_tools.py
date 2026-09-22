@@ -39,9 +39,33 @@ from services.project_tool_contracts import (
 )
 from services.deliverable_kind import (
     OFFICE_START_NOT_APPLICABLE, OFFICE_VERIFY_NOT_APPLICABLE,
+    WORKSPACE_TEMPLATE_VERSION,
+    idle_office_exec_allows_source_write,
+    operation_left_on_lease,
     is_office_artifact_path, is_office_file_plan,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
+
+
+def _skill_body_for_catalog_path(path: str, owner_id: str | None) -> str | None:
+    """技能目录标签读不到工程文件时，交种子正文，不许变成 project_file_not_found。"""
+    from services.control_skills import catalog_skill_slug
+    from services.skill_catalog_store import installed_skill_infos, local_seed_skill_info
+
+    slug = catalog_skill_slug(path)
+    if not slug:
+        return None
+    if owner_id:
+        try:
+            for info in installed_skill_infos(owner_id):
+                if getattr(info, "name", None) == slug and getattr(info, "body", None):
+                    return info.body
+        except Exception:
+            pass
+    seeded = local_seed_skill_info(slug)
+    if seeded is not None and getattr(seeded, "body", None):
+        return seeded.body
+    return None
 from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
@@ -110,6 +134,11 @@ def operation_snapshot(snapshot):
     for name in ("command", "exitCode", "errorCode"):
         if name in saved and isinstance(saved[name], (str, int, type(None))):
             result[name] = saved[name][:240] if isinstance(saved[name], str) else saved[name]
+    if isinstance(saved.get("gate"), str) and saved["gate"]:
+        result["gate"] = saved["gate"][:300]
+    files = saved.get("officeFiles")
+    if isinstance(files, list) and files:
+        result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
     if operation.kind == "runtime.patch":
         for name in ("revision", "parentRevision", "runtimeOperationId", "synchronized", "sourcePublished"):
             if name in saved and isinstance(saved[name], (str, bool)):
@@ -174,15 +203,47 @@ def _command_pointer(result, excerpt=""):
     """
     if not isinstance(result, dict):
         return result
+    hint = "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。"
+    # ⚠ 2026-09-22 BABCJGGB44：回执没有文件路径，模型把 pptx base64 进日志。
+    #   收回的路径必须写在模型看得见的这句话里，不能只藏在字段名里。
+    files = result.get("officeFiles")
+    if isinstance(files, list) and files:
+        named = ", ".join(str(item) for item in files[:8])
+        hint = (
+            f"办公文件已收回：{named}。"
+            "这就是交付，不要再把文件 base64 进日志或 file_write。"
+            "同一个沙盒留给下一条命令，已安装的包还在。"
+            + hint
+        )
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
-        "hint": "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。",
+        "hint": hint,
     }
     out.pop("stdout", None)
     out.pop("stderr", None)
     out.pop("logPath", None)
     return out
+
+
+def command_receipt_from(adapter, operation_id):
+    """终态回执 = 快照 + 日志尾。分发处等完不许拿裸 snapshot 盖掉 excerpt。
+
+    ⚠ 2026-09-21 sr-20260921170121-13ME64TF8Z：enqueue 时 wait=False，
+      excerpt 还是空的；等命令进终态后 `_dispatch_tool` 用 `_snapshot`
+      覆盖 body，模型只看见 project_command_failed。PTY 字节在
+      runtime.console 里，file_read 源码树找不到。
+    """
+    snapper = getattr(adapter, "_snapshot", None)
+    if not callable(snapper):
+        return {"operationId": operation_id}
+    snap = snapper(operation_id)
+    store = getattr(adapter, "store", None)
+    owner = getattr(adapter, "owner_id", None)
+    return _command_pointer(
+        snap,
+        _command_log_excerpt(store, operation_id, owner),
+    )
 
 
 def _wait_backoff(elapsed: float) -> float:
@@ -263,7 +324,13 @@ class ProjectTools:
                 guard_control_run()
                 project = create_session_project(self.store, session_id,
                     owner_id=self.owner_id, approval_ref=parsed.approvalRef, template_id=parsed.templateId)
-                return {"ok": True, **self._project_result(project)}
+                created = self._project_result(project)
+                if created.get("templateVersion") == WORKSPACE_TEMPLATE_VERSION:
+                    tree = self.store.read_files(project.projectId, owner_id=self.owner_id)
+                    readme = tree.get("README.md") or ""
+                    created["readmeBytes"] = len(readme.encode())
+                    created["readmeSha"] = content_hash(readme)[:16]
+                return {"ok": True, **created}
             project = self.store.get_project_for_session(session_id, owner_id=self.owner_id)
             if (project is None or project.sessionId != authority.sessionId
                     or authority.projectId != project.projectId or authority.runtimeKind != "project"):
@@ -524,11 +591,7 @@ class ProjectTools:
                 if block is None:
                     block = SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
                 operation = self._poll_operation(operation, block)
-            snap = self._snapshot(operation.operationId)
-            return _command_pointer(
-                snap,
-                _command_log_excerpt(self.store, operation.operationId, self.owner_id),
-            )
+            return command_receipt_from(self, operation.operationId)
         if name in {"deploy_expose_port", "deploy_apply_deployment"}:
             port = getattr(parsed, "port", None) or 5173
             operation = self.supervisor.submit(project.projectId, **params, port=port)
@@ -555,6 +618,8 @@ class ProjectTools:
             raise ValueError("project_sudo_forbidden")
         session_id = project.sessionId
         if name == "make_manus_page":
+            # ⚠ 2026-09-22 预览曾由宿主把 pptx 画成一页。浏览器只打开这里
+            #   点名的源码；path 进回执，宿主不改写文件。
             result = self._project_result(project)
             if parsed.file:
                 revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
@@ -719,7 +784,8 @@ class ProjectTools:
         lease = self.store.acquire_lease(project.projectId, owner_id=self.owner_id,
             lease_owner="patch-" + uuid.uuid4().hex, ttl_seconds=120)
         try:
-            if lease.sandboxId or lease.processRefs:
+            prior = operation_left_on_lease(self.store, lease, self.owner_id)
+            if (lease.sandboxId or lease.processRefs) and not idle_office_exec_allows_source_write(lease, prior):
                 raise ProjectConflict("project_runtime_reconciliation_required")
             load_authorized_session(project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
             current = self.store.get_revision(project.projectId, owner_id=self.owner_id)
@@ -781,10 +847,23 @@ class ProjectTools:
                 "downloadable": True, "artifactId": meta["artifactId"],
                 "content": "", "truncated": False,
             }
+        skill_read = False
         if path not in files:
-            raise ProjectNotFound("project_file_not_found")
+            # ⚠ 2026-09-22 BABCJGGB44：file_read .sliderule/skills/.../SKILL.md
+            #   得到 project_file_not_found，模型接着 bash `find /`。
+            skill_body = _skill_body_for_catalog_path(path, self.owner_id)
+            if skill_body is None:
+                raise ProjectNotFound("project_file_not_found")
+            files = {**files, path: skill_body}
+            skill_read = True
         if not explicit_read_window(args):
-            return _pointer_file(path, files[path], revision)
+            pointer = _pointer_file(path, files[path], revision)
+            if skill_read:
+                pointer["hint"] = (
+                    "这是技能正文的摘要，不是工程文件。"
+                    "全文已经在 skill 回执里。不要在沙盒里 find .sliderule/skills。"
+                )
+            return pointer
         lines = files[path].splitlines(keepends=True)
         if getattr(args, "start_line", None) is not None:
             start = args.start_line
@@ -916,13 +995,17 @@ class ProjectTools:
         result = {"operationId": operation.operationId, "logs": [], "nextSeq": args.afterSeq,
             "nextOffset": args.offset, "hasMore": False}
         for event in events:
-            if event.type == "runtime.log":
-                text = str(event.payload.get("text") or "")
+            # PTY 走 runtime.console（data），文件日志走 runtime.log（text）。
+            # ⚠ 2026-09-21 13ME64TF8Z：只认 runtime.log → bash 终态后
+            #   project_logs 空，模型去 file_read 沙箱里 tee 的文件。
+            if event.type in {"runtime.log", "runtime.console"}:
+                payload = event.payload if isinstance(event.payload, dict) else {}
+                text = str(payload.get("text") or payload.get("data") or "")
                 offset = result["nextOffset"]
                 if offset > len(text):
                     raise ValueError("invalid_project_log_offset")
                 item = {"seq": event.seq, "offset": offset,
-                    "providerTruncated": bool(event.payload.get("truncated"))}
+                    "providerTruncated": bool(payload.get("truncated"))}
                 segment = _bounded_log_text(result, item, text[offset:])
                 if text[offset:] and not segment:
                     result["hasMore"] = True
