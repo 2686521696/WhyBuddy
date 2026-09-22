@@ -991,6 +991,14 @@ def _resolve_write_state(
                     update={"controlTodo": prior_plan}
                 )
 
+        prior_skills = getattr(prior, "controlSkillCache", None) if prior is not None else None
+        if prior_skills:
+            inc_skills = getattr(merged_logs_state, "controlSkillCache", None)
+            if inc_skills is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"controlSkillCache": prior_skills}
+                )
+
         prior_subs = getattr(prior, "subagentTasks", None) if prior is not None else None
         if prior_subs:
             inc_subs = getattr(merged_logs_state, "subagentTasks", None)

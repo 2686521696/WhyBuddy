@@ -64,6 +64,9 @@ def test_playbook_is_path_and_summary_not_the_skill_body():
     assert "office-skills" in text
     assert "做 PPT" in text
     assert ".sliderule/skills/office-skills/SKILL.md" in text
+    assert "不是工程" in text
+    assert "不要 file_read" in text
+    assert "find" in text
     assert "HOW TO MAKE PPT WITH PYTHON-PPTX" not in text
     assert "必须先调" not in text
     assert "先 pip" not in text
@@ -95,6 +98,8 @@ def test_at_mention_points_to_path_and_keeps_other_installed_skills(monkeypatch)
     assert "HOW TO MAKE PPT WITH PYTHON-PPTX" not in prompt
     assert "用户这一轮点名了技能" in prompt
     assert ".sliderule/skills/office-skills/SKILL.md" in prompt
+    assert "不是工程文件" in prompt
+    assert "源码和技能以磁盘为准" not in prompt
     assert "必须先调" not in prompt
     assert [info.name for info in named] == ["office-skills"]
     assert {info.name for info in catalog} == {"office-skills", "frontend-design"}

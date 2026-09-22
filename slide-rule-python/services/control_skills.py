@@ -162,15 +162,39 @@ def mentioned_skill_slugs(
     return [slug for slug in found if slug in allow]
 
 
+def catalog_skill_slug(path: str) -> str | None:
+    """`.sliderule/skills/<slug>/SKILL.md` 是目录标签，不是工程源码路径。
+
+    ⚠ 2026-09-22 BABCJGGB44：回执带了这个 path，模型 file_read 得到
+      project_file_not_found，接着在沙盒里 `find /`。种子在仓库 zip 里，
+      工程树没有这份文件。
+    """
+    raw = str(path or "").strip().replace("\\", "/").lstrip("/")
+    lowered = raw.lower()
+    for prefix in ("home/ubuntu/", "home/user/workspace/", "workspace/", "app/"):
+        if lowered.startswith(prefix):
+            raw = raw[len(prefix):]
+            lowered = raw.lower()
+    match = re.fullmatch(
+        r"(?:\.sliderule/)?skills/([A-Za-z0-9][\w.-]{0,63})/SKILL\.md",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return normalize_skill_name(match.group(1))
+
+
 def mentioned_skill_playbooks(skills: Sequence[SkillInfo]) -> str:
-    """点名技能的路径和一句话。正文留在磁盘，要原文再 skill / file_read。"""
+    """点名技能的名字和一句话。正文不进 system，也不在工程树里。"""
     live = [skill for skill in skills if skill.enabled]
     if not live:
         return ""
     names = "、".join(skill.name for skill in live)
     lines = [
         f"用户这一轮点名了技能：{names}。",
-        "目录只给名字、一句话和路径；要原文调 skill 或 file_read。怎么调用工具仍由你决定。",
+        "下面只给名字、一句话和目录标签。正文不在工程里。"
+        "要原文调 skill，回执里就是全文。path 不是工程文件，不要 file_read，也不要在沙盒里 find。",
     ]
     for skill in live:
         lines.append(f"- {skill.name}：{skill.description}；path={skill.path}")

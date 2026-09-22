@@ -113,6 +113,43 @@ def skill_seed_category(slug: str) -> str:
     return str(_SEED_CATEGORY.get(str(slug or "").strip()) or "")
 
 
+_local_info_cache: dict[str, SkillInfo] = {}
+
+
+def local_seed_skill_info(slug: str) -> SkillInfo | None:
+    """仓库里的种子 zip。不经过 OSS。
+
+    ⚠ 2026-09-21 sr-20260921191557-XSGAMK9PYZ：GET /skills 显示已装
+      office-skills，控制回合 skill() 却 available=[]。installed_skill_infos
+      每发都从 OSS unpack 十个包，失败被吞成空目录。种子包在磁盘上，
+      点名了就必须能打开。
+    """
+    name = str(slug or "").strip()
+    if not name:
+        return None
+    hit = _local_info_cache.get(name)
+    if hit is not None:
+        return hit
+    path = (
+        _REPO_SKILLS / "sliderule.zip"
+        if name == "sliderule"
+        else _REPO_SKILLS / "seeds" / f"{name}.zip"
+    )
+    if not path.is_file():
+        return None
+    try:
+        files = unpack_skill_zip(path.read_bytes())
+        body = skill_md_text(files)
+        info = parse_skill_md(
+            body, path=f".sliderule/skills/{name}/SKILL.md", name=name,
+        )
+    except Exception:
+        return None
+    if info is not None:
+        _local_info_cache[name] = info
+    return info
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -270,10 +307,13 @@ class SkillCatalogStore:
     def installed_skill_infos(self, owner_id: str) -> list[SkillInfo]:
         infos: list[SkillInfo] = []
         for pkg in self.list_installed(owner_id):
-            try:
-                info = self.skill_info(pkg)
-            except Exception:
-                continue
+            slug = str(pkg.get("slug") or "")
+            info = local_seed_skill_info(slug)
+            if info is None:
+                try:
+                    info = self.skill_info(pkg)
+                except Exception:
+                    info = None
             if info is not None:
                 infos.append(info)
         return infos
