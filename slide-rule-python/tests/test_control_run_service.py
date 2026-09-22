@@ -14,7 +14,153 @@ from control_turn_support import KEY, llm_text, llm_tool, new_sid, seed_approved
 from middlewares.current_user import optional_user
 from services import persistence, rehearsal_control as control
 from services.control_checkpoint import ControlRunStopped
-from services.control_run_service import ControlRunService, RunCheckpoint
+from services.control_run_service import (
+    ControlRunService,
+    RunCheckpoint,
+    complete_with_provider_failure,
+    overlay_live_control_phase,
+)
+from models.v5_state import V5SessionState
+
+
+def test_accepting_worker_claims_before_the_scanner(monkeypatch):
+    """⚠ 2026-09-22：POST 落在本进程，执行却被共享库上的另一个 worker 抢走。
+
+    rollout 开着时 submit 必须自己 claim。把 claim 从 submit 里拿掉，本条变红。
+    """
+    import services.control_run_service as mod
+
+    monkeypatch.setattr(mod, "rollout_readiness", lambda: {"configured": True})
+    monkeypatch.setattr(mod, "reject_reason", lambda: None)
+    monkeypatch.setattr(mod, "validate_control_turn_body", lambda _payload: None)
+    monkeypatch.setattr(mod, "stamp_control_goal_payload", lambda payload, _state: payload)
+
+    claimed = {}
+
+    class Store:
+        def submit(self, *_a, claim_worker=None, claim_seconds=None, **_k):
+            claimed["worker"] = claim_worker
+            claimed["lease"] = claim_seconds
+            return {
+                "runId": "ctr-race", "generation": 1, "status": "running",
+                "leaseOwner": claim_worker,
+            }
+
+    service = ControlRunService.__new__(ControlRunService)
+    service.store = Store()
+    service.authorize = lambda *_a, **_k: None
+    service._stopping = False
+    service.worker_id = "local-worker"
+    service.lease_seconds = 30
+    service._tasks = {}
+    service._wake = asyncio.Event()
+    produced = {}
+
+    async def _produce(record):
+        produced["runId"] = record["runId"]
+
+    service._produce = _produce
+
+    async def _go():
+        record = await service.submit({"sessionId": "sr-race"}, "alice", "idem-1")
+        await service._tasks["ctr-race"]
+        return record
+
+    record = asyncio.run(_go())
+    assert record["runId"] == "ctr-race"
+    assert claimed == {"worker": "local-worker", "lease": 30}
+    assert produced["runId"] == "ctr-race"
+
+
+def test_complete_with_provider_failure_stamps_idle_snapshot():
+    """真机 CYVWJFENJQ：control_text 有停因，complete.state 却是 idle。"""
+    events = [{
+        "type": "control_text",
+        "text": "账号池空了",
+        "stopReason": "llm_unavailable",
+        "stoppedBy": "provider",
+    }]
+    out = complete_with_provider_failure(
+        {"type": "complete", "state": {"runtimePhase": "idle", "awaitReason": None}},
+        events,
+    )
+    assert out["stopReason"] == "llm_unavailable"
+    assert out["stoppedBy"] == "provider"
+    assert out["state"]["runtimePhase"] == "failed"
+    assert out["state"]["awaitReason"] == "error"
+
+
+def test_canned_llm_unavailable_complete_is_failed_not_idle():
+    """⚠ 349E2KVH7G：_canned 把 stop 挂在 control_text 上，complete 仍 idle。"""
+    from control_turn_support import strip_python
+    from pathlib import Path
+
+    src = strip_python(
+        Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
+    )
+    start = src.find("async def _canned")
+    nxt = src.find("\nasync def ", start + 1)
+    body = src[start:nxt if nxt > start else None]
+    assert "llm_unavailable" in body
+    assert "failed" in body
+    assert "{**_complete(state)" in body or "{ **_complete(state)" in body
+    assert "yield _complete(state)" not in body, body[:800]
+
+
+def test_overlay_live_control_phase_does_not_mutate_or_write():
+    """⚠ 13ME64TF8Z：GET idle 而 control run 仍 running。叠相位不许改原对象。"""
+    state = V5SessionState(
+        sessionId="sr-overlay", ownerId="alice", runtimePhase="idle",
+        goal={"text": "做PPT"},
+    )
+
+    class Running:
+        def latest(self, sid, oid):
+            assert sid == "sr-overlay" and oid == "alice"
+            return {"status": "running", "runId": "ctr-1"}
+
+    out = overlay_live_control_phase(state, Running())
+    assert out.runtimePhase == "orchestrating"
+    assert state.runtimePhase == "idle"
+
+    class Done:
+        def latest(self, sid, oid):
+            return {"status": "completed"}
+
+    assert overlay_live_control_phase(state, Done()).runtimePhase == "idle"
+
+    parked = state.model_copy(update={"awaitReason": "control_ask", "runtimePhase": "awaiting"})
+    assert overlay_live_control_phase(parked, Running()).runtimePhase == "awaiting"
+
+    class Failed:
+        def latest(self, sid, oid):
+            return {"status": "failed", "error": "llm_unavailable"}
+
+    failed = overlay_live_control_phase(state, Failed())
+    assert failed.runtimePhase == "failed"
+    assert failed.awaitReason == "error"
+    assert failed.awaitDetail == "llm_unavailable"
+    assert state.runtimePhase == "idle"
+
+
+def test_get_sess_overlays_after_persist_not_before():
+    """叠在 save_session 之后。写回 orchestrating = abandoned stream 侧栏僵死。"""
+    from pathlib import Path
+
+    from control_turn_support import strip_python
+
+    src = strip_python(
+        Path(__file__).resolve().parents[1] / "routes" / "sliderule_full.py"
+    )
+    start = src.find("def get_sess")
+    assert start >= 0
+    nxt = src.find("\ndef ", start + 1)
+    body = src[start:nxt if nxt > start else None]
+    save_at = body.find("save_session")
+    overlay_at = body.find("overlay_live_control_phase")
+    assert 0 <= save_at < overlay_at, body[save_at:overlay_at + 80] if save_at >= 0 else body[:400]
+
+
 import services.control_run_service as control_run_service_module
 from services.control_run_store import ControlRunConflict, ControlRunStore, ControlRunUnavailable, TERMINAL
 from services.identity_store import User

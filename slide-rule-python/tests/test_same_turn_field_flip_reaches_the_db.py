@@ -65,6 +65,27 @@ class Test服务端同轮翻转会落库:
         out = _resolve_write_state(prior, inc, server_write=True)
         assert out.runtimePhase == "awaiting"
 
+    def test_控制面无轮次的失败相位不许被丢(self):
+        """⚠ 2026-09-21 真机 HKA1MC5142：控制面首轮 503，会话 lastTurnId
+        仍是空。守卫 `if p_lt and i_lt` 不进，incoming 必须原样留下 failed。
+        """
+        prior = V5SessionState(
+            sessionId="sr-guard-1",
+            goal={"text": "t"},
+            runtimePhase="idle",
+        )
+        inc = V5SessionState(
+            sessionId="sr-guard-1",
+            goal={"text": "t"},
+            runtimePhase="failed",
+            awaitReason="error",
+            awaitDetail="llm_unavailable",
+            controlTranscript=[{"kind": "canned", "text": "503"}],
+        )
+        out = _resolve_write_state(prior, inc, server_write=True)
+        assert out.runtimePhase == "failed"
+        assert out.awaitReason == "error"
+
     def test_假设确认置True不许被丢(self):
         """这条红 = 用户点了「确认继续」，刷新后同一张卡又摊回来。"""
         prior = _st("turn-1", phase="awaiting", confirmed=False)

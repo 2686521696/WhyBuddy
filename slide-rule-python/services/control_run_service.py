@@ -46,6 +46,45 @@ def authorize_control_run(session_id, owner_id):
     return load_authorized_session(session_id, owner_id=owner_id)
 
 
+def overlay_live_control_phase(state, run_store=None):
+    """GET 时叠正在跑的控制回合。不写库。
+
+    ⚠ 2026-09-21 sr-20260921170121-13ME64TF8Z：控制回合还在跑，
+      GET /sessions 是 idle / await=None。驱动器当成做完；刷新工作台
+      也是假绿灯。相位不许落成 orchestrating——abandoned stream 会
+      把侧栏钉死在「推演中」。只在读路径叠 running。
+    """
+    if state is None or run_store is None:
+        return state
+    if getattr(state, "awaitReason", None):
+        return state
+    phase = getattr(state, "runtimePhase", None)
+    if phase not in (None, "idle", "done"):
+        return state
+    try:
+        record = run_store.latest(
+            str(getattr(state, "sessionId", "") or ""),
+            str(getattr(state, "ownerId", "") or ""),
+        )
+    except Exception:
+        return state
+    if not isinstance(record, dict):
+        return state
+    status = record.get("status")
+    presented = state.model_copy(deep=False)
+    if status == "running":
+        presented.runtimePhase = "orchestrating"
+        return presented
+    # ⚠ 2026-09-21 FFR6VWM7CT：run=failed/llm_unavailable，GET 仍 idle。
+    #   complete 信封没带停因；读路径必须和 discovery 同一份。
+    if status == "failed" and phase in (None, "idle"):
+        presented.runtimePhase = "failed"
+        presented.awaitReason = "error"
+        presented.awaitDetail = str(record.get("error") or "llm_unavailable")
+        return presented
+    return state
+
+
 def public_control_run(record):
     # Model messages, tool arguments and provider handles never enter discovery.
     public = {key: record[key] for key in (
@@ -93,6 +132,44 @@ def _event_failure(event):
 def _record_failure(record):
     return next((failure for event in record["events"]
                  if (failure := _event_failure(event))), None)
+
+
+def complete_with_provider_failure(completion, events):
+    """control_text 带了停因、complete.state 却是 idle 时钉回去。
+
+    ⚠ 2026-09-21 真机 CYVWJFENJQ：except 里写了 failed，SSE complete
+      仍是 phase=idle stop=None。控制 run 是 failed/llm_unavailable。
+      停因已经挂在 control_text 上，complete 必须同一份。
+    """
+    if not isinstance(completion, dict):
+        return completion
+    stop = None
+    if completion.get("stopReason") in {"llm_unavailable", "unknown"}:
+        stop = completion
+    else:
+        for event in events or []:
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "control_text" and event.get("stopReason") in {
+                "llm_unavailable", "unknown",
+            }:
+                stop = event
+    if stop is None:
+        return completion
+    out = dict(completion)
+    for key in ("stopReason", "stoppedBy", "providerFinishReason"):
+        if key in stop:
+            out[key] = stop[key]
+    state = dict(out.get("state") or {}) if isinstance(out.get("state"), dict) else {}
+    if state.get("runtimePhase") in (None, "idle") and not state.get("awaitReason"):
+        state["runtimePhase"] = "failed"
+        state["awaitReason"] = "error"
+        state["awaitDetail"] = (
+            "llm_unavailable" if stop.get("stopReason") == "llm_unavailable"
+            else "control_loop_failed"
+        )
+    out["state"] = state
+    return out
 
 
 class RunCheckpoint:
@@ -255,8 +332,18 @@ class ControlRunService:
         # 六字段 POST 没有业务目标 / runtimeKind。不盖进去，durable goal
         # 就会把「批准计划并执行」当成目标，kind 永远停在 conversation。
         stamped = stamp_control_goal_payload(payload, state)
-        record = await asyncio.to_thread(self.store.submit, session_id, owner_id,
-                                        idempotency_key, stamped)
+        # ⚠ 2026-09-22 RFZYDAVHG9：submit 先落 queued，claim 是下一次 SQL。
+        #   共享库上的另一个 worker 在这两拍之间把 run 领走。
+        #   租约必须跟插入在同一次 submit 里写上，公开指针时已经是 running。
+        own = rollout_readiness().get("configured", False) and not self._stopping
+        record = await asyncio.to_thread(
+            self.store.submit, session_id, owner_id, idempotency_key, stamped,
+            claim_worker=self.worker_id if own else None,
+            claim_seconds=self.lease_seconds if own else None)
+        if (own and record.get("leaseOwner") == self.worker_id
+                and record.get("status") == "running"
+                and record["runId"] not in self._tasks):
+            self._tasks[record["runId"]] = asyncio.create_task(self._produce(record))
         self._wake.set()
         return record
 
@@ -604,6 +691,13 @@ class ControlRunService:
             if checkpoint is None:
                 await port.save({"schemaVersion": 1, "phase": "entry"})
             tools = ProjectTools(self.project_store, self.project_supervisor, record["ownerId"])
+            from services.deliverable_kind import orch_trace as _orch_trace
+            _orch_trace(
+                "service-turn",
+                session=str((record.get("payload") or {}).get("sessionId") or "")[:40],
+                fn=getattr(run_control_turn, "__code__", None)
+                and run_control_turn.__code__.co_filename,
+            )
             async with aclosing(run_control_turn(record["payload"],
                     authorized_owner_id=record["ownerId"], project_tools=tools)) as stream:
                 async for event in stream:
@@ -700,6 +794,22 @@ class ControlRunService:
                         goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
                         await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
                             generation, status=goal_status)
+                        completion = complete_with_provider_failure(
+                            completion, latest_record.get("events"))
+                        # ⚠ 2026-09-21 349E2KVH7G：control_text stop=llm_unavailable，
+                        #   落库 complete 仍 idle/stop=None。run status 已经
+                        #   failed，信封必须同一份。
+                        if status == "failed":
+                            completion = dict(completion or {"type": "complete"})
+                            completion["type"] = "complete"
+                            if error and not completion.get("stopReason"):
+                                completion["stopReason"] = error
+                            st = dict(completion.get("state") or {}) if isinstance(completion.get("state"), dict) else {}
+                            if st.get("runtimePhase") in (None, "idle") and not st.get("awaitReason"):
+                                st["runtimePhase"] = "failed"
+                                st["awaitReason"] = "error"
+                                st["awaitDetail"] = str(error or "control_loop_failed")
+                            completion["state"] = st
                         await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
                             generation, status, completion, error)
                 elif not abandoned:
@@ -732,6 +842,22 @@ class ControlRunService:
             for event in record["events"]:
                 if event["seq"] > cursor:
                     cursor = event["seq"]
+                    if (
+                        event.get("type") == "complete"
+                        and record.get("status") == "failed"
+                    ):
+                        event = complete_with_provider_failure(
+                            event, record.get("events"))
+                        st = event.get("state") if isinstance(event.get("state"), dict) else {}
+                        if st.get("runtimePhase") in (None, "idle") and not st.get("awaitReason"):
+                            event = dict(event)
+                            st = dict(st)
+                            st["runtimePhase"] = "failed"
+                            st["awaitReason"] = "error"
+                            st["awaitDetail"] = str(record.get("error") or "llm_unavailable")
+                            event["state"] = st
+                            if record.get("error") and not event.get("stopReason"):
+                                event["stopReason"] = record.get("error")
                     yield event
             if record["status"] in TERMINAL:
                 public = public_control_run(record)

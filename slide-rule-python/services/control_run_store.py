@@ -302,7 +302,8 @@ class ControlRunStore:
             raise ControlRunNotFound("control_run_not_found")
         return self.get(slots[0]["active_run_id"], owner_id) if slots[0]["active_run_id"] else None
 
-    def submit(self, session_id: str, owner_id: str, idempotency_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def submit(self, session_id: str, owner_id: str, idempotency_key: str, payload: dict[str, Any],
+               *, claim_worker: str | None = None, claim_seconds: float | None = None) -> dict[str, Any]:
         _required(session_id, "control_session_required")
         _required(owner_id, "control_owner_required")
         _required(idempotency_key, "control_idempotency_key_required")
@@ -332,14 +333,29 @@ class ControlRunStore:
                 self._q("update wb_control_run set accepted=1 where id=$1", [active["id"]])
             if not existing:
                 now = _now()
+                # ⚠ 2026-09-22 RFZYDAVHG9：先插 queued、回头再 claim，中间那一拍
+                #   共享库上的另一个 worker 把 run 抢走，本进程的新代码没跑到。
+                #   收下的 worker 要在指针公开之前就把租约写上。
+                leased = bool(claim_worker)
+                expires = time.time() + _seconds(claim_seconds or 30) if leased else 0.0
                 record = {"runId": run_id, "sessionId": session_id, "ownerId": owner_id,
-                    "idempotencyKey": idempotency_key, "requestHash": request_hash, "status": "queued",
+                    "idempotencyKey": idempotency_key, "requestHash": request_hash,
+                    "status": "running" if leased else "queued",
                     "payload": json.loads(encoded), "checkpoint": None, "events": [], "lastSeq": 0,
-                    "generation": 0, "leaseOwner": None, "leaseExpiresAt": 0.0, "cancelRequested": False,
+                    "generation": 1 if leased else 0,
+                    "leaseOwner": claim_worker if leased else None,
+                    "leaseExpiresAt": expires, "cancelRequested": False,
                     "goal": _goal_from_payload(json.loads(encoded)),
                     "createdAt": now, "updatedAt": now, "error": None}
-                self._q("insert into wb_control_run(id,session_id,owner_id,idempotency_key,status,accepted,rev,generation,lease_owner,lease_expires_at,payload) values($1,$2,$3,$4,'queued',0,0,0,null,0,$5) on conflict(session_id,idempotency_key) do nothing",
-                    [run_id, session_id, owner_id, idempotency_key, _json(record, self.max_run_bytes - _RESERVED_BYTES)])
+                self._q(
+                    "insert into wb_control_run(id,session_id,owner_id,idempotency_key,status,accepted,rev,generation,lease_owner,lease_expires_at,payload) "
+                    "values($1,$2,$3,$4,$5,0,0,$6,$7,$8,$9) on conflict(session_id,idempotency_key) do nothing",
+                    [run_id, session_id, owner_id, idempotency_key,
+                     "running" if leased else "queued",
+                     1 if leased else 0,
+                     claim_worker if leased else None,
+                     expires,
+                     _json(record, self.max_run_bytes - _RESERVED_BYTES)])
                 continue
             changed = self._q("update wb_control_session set active_run_id=$1,rev=rev+1 where session_id=$2 and owner_id=$3 and rev=$4 returning session_id",
                 [run_id, session_id, owner_id, slot["rev"]])

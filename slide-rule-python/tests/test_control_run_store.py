@@ -48,6 +48,22 @@ def claim(store, *, worker="worker-1", lease=30):
     return store.claim(run["runId"], worker, lease)
 
 
+def test_leased_submit_is_not_claimable_by_another_worker(store):
+    """⚠ 2026-09-22 RFZYDAVHG9：queued 窗口里另一个 worker 把 run 领走。
+
+    带 claim_worker 插入后，list_runnable 不许再看见它。
+    """
+    record = store.submit(
+        "session-leased", "alice", "idem-leased", {"message": "做PPT"},
+        claim_worker="local-worker", claim_seconds=60,
+    )
+    assert record["status"] == "running"
+    assert record["leaseOwner"] == "local-worker"
+    assert record["generation"] == 1
+    runnable = [item["runId"] for item in store.list_runnable()]
+    assert record["runId"] not in runnable
+
+
 def test_submission_is_idempotent_and_data_is_detached(store):
     request = {"message": "Hello", "nested": {"value": 1}}
     first = submit(store, payload=request)

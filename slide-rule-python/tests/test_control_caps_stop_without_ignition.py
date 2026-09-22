@@ -442,3 +442,4 @@ def test_非_LlmError_不许冒充网关连不上(harness):
     assert stop["stopReason"] == ControlStopReason.UNKNOWN.value, stop
     texts = _over_cap_texts(events)
     assert not any("网关" in (t or "") for t in texts), texts
+    assert any("RuntimeError" in (t or "") for t in texts), texts
