@@ -43,16 +43,56 @@ _POINTER_TOOLS = frozenset({
 })
 
 
-def tool_result_stub(tool_name: str = "tool", path: str | None = None) -> str:
-    """可逆压缩桩：告诉模型去哪查，不把原文留在 messages 里。"""
-    body: Dict[str, Any] = {
+def tool_result_stub(tool_name: str = "tool", path: str | None = None,
+                     skill: str | None = None) -> str:
+    """可逆压缩桩：告诉模型去哪查，不把原文留在 messages 里。
+
+    ⚠ 2026-09-21 真机 sr-20260921150545-6QG1GNGP1P：skill 被当成磁盘文件，
+      桩写「用 file_read/grep 再取」。模型读完「技能正文被压缩了」又去
+      skill(office-skills) 第三遍，然后 control_producer_failed。技能不是
+      源码树里的文件。
+    """
+    name = str(tool_name or "tool")
+    if name == "skill":
+        body: Dict[str, Any] = {
+            "compacted": True,
+            "tool": "skill",
+            "hint": "技能正文本回合已经加载过。不要再调 skill。按未完成待办继续。",
+        }
+        if skill:
+            body["skill"] = skill
+        return json.dumps(body, ensure_ascii=False)
+    body = {
         "compacted": True,
-        "tool": str(tool_name or "tool"),
+        "tool": name,
         "hint": "用 file_read/grep 再取",
     }
     if path:
         body["path"] = path
     return json.dumps(body, ensure_ascii=False)
+
+
+def skill_name_from_tool_content(content: Any) -> str | None:
+    """从 skill 工具回执里抽出 slug。压缩桩要点名，不能只说 tool=skill。"""
+    body: Any = content
+    if isinstance(content, str):
+        try:
+            body = json.loads(content)
+        except (TypeError, ValueError):
+            body = None
+    if isinstance(body, dict):
+        slug = str(body.get("skill") or "").strip()
+        if slug:
+            return slug
+        message = str(body.get("skill_message") or "")
+        marker = 'name="'
+        start = message.find(marker)
+        if start >= 0:
+            start += len(marker)
+            end = message.find('"', start)
+            if end > start:
+                return message[start:end]
+    return None
 
 
 def path_from_tool_content(content: Any) -> str | None:
@@ -109,8 +149,10 @@ def _tool_name(messages: Sequence[Dict[str, Any]], index: int) -> str:
 
 def _stub_row(messages: Sequence[Dict[str, Any]], index: int) -> str:
     name = _tool_name(messages, index)
-    path = path_from_tool_content(messages[index].get("content"))
-    return tool_result_stub(name, path)
+    content = messages[index].get("content")
+    path = path_from_tool_content(content)
+    skill = skill_name_from_tool_content(content) if name == "skill" else None
+    return tool_result_stub(name, path, skill=skill)
 
 
 def _notice(folded: int, tokens_after: int, max_tokens: int, tools: Sequence[str]) -> Dict[str, Any]:
@@ -119,7 +161,9 @@ def _notice(folded: int, tokens_after: int, max_tokens: int, tools: Sequence[str
     text = (
         f"{COMPACT_NOTICE_PREFIX}窗口占用已压到 {tokens_after}/{max_tokens} token"
         f"（折叠 {folded} 条：{names}{extra}）。"
-        "源码以工程里的为准，需要哪份就再读；按未完成待办继续，不要重做已完成的步骤。"
+        "源码以工程里的为准，需要哪份就再读。"
+        "已加载的技能不要再调 skill。"
+        "按未完成待办继续，不要重做已完成的步骤。"
     )
     return {"role": "system", "content": text}
 

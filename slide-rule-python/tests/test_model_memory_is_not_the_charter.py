@@ -306,3 +306,63 @@ def test_没归属的会话_说清楚而不是假装记下了():
     assert res, [e.get("type") for e in events]
     assert res[0].get("ok") is False, res[0]
     assert "归属" in str(res[0].get("error") or ""), res[0]
+
+
+def test_空查询按当前目标滤_不许把待办偏好倒进PPT(harness, monkeypatch):
+    """真机 sr-20260921150545：PPT 回合 recall 空查询，倒出待办清单偏好。"""
+    owner = _uid("owner")
+    _login_as(monkeypatch, owner)
+    remember(scope_id=owner, text="待办清单偏好：简洁清爽、要账号登录、All|Active|Done")
+    sid = new_sid("ppt-recall")
+    seed_session(
+        sid,
+        goal={"text": "@office-skills 做一份5页PPT", "status": "clear"},
+        ownerId=owner,
+    )
+    n = {"i": 0}
+
+    def impl(*_a, **_k):
+        n["i"] += 1
+        return llm_tool("recall", {"query": ""}) if n["i"] == 1 else llm_text("好")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "开始做PPT"))
+    res = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "recall"
+    ]
+    assert res, [e.get("type") for e in events]
+    blob = str(res[0].get("summary") or "") + str(res[0].get("notes") or "")
+    assert "All|Active|Done" not in blob
+    assert "账号登录" not in blob
+    assert "待办清单" not in blob
+    assert int(res[0].get("taskChars") or 0) > 0
+
+
+def test_偏好查询也不得把待办倒进PPT(harness, monkeypatch):
+    """⚠ 2026-09-21 XSGAMK9PYZ：模型 query=设计偏好，空查询闸不响。"""
+    owner = _uid("owner")
+    _login_as(monkeypatch, owner)
+    remember(scope_id=owner, text="待办清单偏好：简洁清爽、要账号登录、All|Active|Done")
+    sid = new_sid("ppt-recall-pref")
+    seed_session(
+        sid,
+        goal={"text": "@office-skills 做一份5页PPT，主题是「面团AI办公启动会」", "status": "clear"},
+        ownerId=owner,
+    )
+    n = {"i": 0}
+
+    def impl(*_a, **_k):
+        n["i"] += 1
+        return llm_tool("recall", {"query": "设计偏好"}) if n["i"] == 1 else llm_text("好")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "开始做PPT"))
+    res = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "recall"
+    ]
+    assert res, [e.get("type") for e in events]
+    blob = str(res[0].get("summary") or "") + str(res[0].get("notes") or "")
+    assert "All|Active|Done" not in blob
+    assert "待办清单" not in blob
