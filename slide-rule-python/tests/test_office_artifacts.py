@@ -12,6 +12,7 @@ import ast
 import asyncio
 import base64
 import io
+import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -75,6 +76,53 @@ def minimal_pptx(text: str = "面团启动") -> bytes:
             f"<a:t>{text}</a:t></p:sld>",
         )
     return buf.getvalue()
+
+
+def positioned_pptx() -> bytes:
+    slide = """<?xml version="1.0"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="0B1F17"/></a:solidFill></p:bgPr></p:bg>
+    <p:spTree>
+      <p:sp>
+        <p:spPr>
+          <a:xfrm><a:off x="457200" y="274638"/><a:ext cx="8229600" cy="1143000"/></a:xfrm>
+          <a:solidFill><a:srgbClr val="C2410C"/></a:solidFill>
+        </p:spPr>
+        <p:txBody>
+          <a:p><a:r><a:rPr sz="3200"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>面团 AI 办公</a:t></a:r></a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>"""
+    presentation = """<?xml version="1.0"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldSz cx="12192000" cy="6858000"/>
+</p:presentation>"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/presentation.xml", presentation)
+        archive.writestr("ppt/slides/slide2.xml", slide.replace("面团 AI 办公", "第二页"))
+        archive.writestr("ppt/slides/slide10.xml", slide.replace("面团 AI 办公", "第十页"))
+    return buf.getvalue()
+
+
+def test_slide_preview_keeps_position_and_numeric_order():
+    """⚠ 2026-09-22 预览只有正文，右边是文档卡片。位置没了，舞台摆不出这一页。
+
+    删掉 shapes 或改回文件名排序，本条变红。
+    """
+    preview = office_preview_payload(positioned_pptx(), "deck.pptx")
+    assert preview is not None
+    assert preview["slideWidth"] == 12192000
+    assert [slide["text"] for slide in preview["slides"]] == ["第二页", "第十页"]
+    shape = preview["slides"][0]["shapes"][0]
+    assert shape["x"] == 457200 and shape["y"] == 274638
+    assert shape["w"] == 8229600 and shape["h"] == 1143000
+    assert shape["fontSize"] == 32 and shape["color"] == "#FFFFFF"
+    assert shape["fill"] == "#C2410C"
+    assert preview["slides"][0]["background"] == "#0B1F17"
 
 
 def test_leaf_office_path_and_preview():
@@ -171,8 +219,10 @@ def test_collect_office_artifacts_puts_zip_not_scripts(tmp_path, monkeypatch):
         store=store,
         owner_id="alice",
         original=SimpleNamespace(projectId=project.projectId),
+        result={},
     )
     _RuntimeTask._collect_office_artifacts(task)
+    assert task.result["officeFiles"] == ["deck.pptx"]
     office = ProjectOfficeArtifactStore(store)
     paths = [item["path"] for item in office.list(project.projectId, owner_id="alice")]
     assert paths == ["deck.pptx"]
@@ -311,8 +361,10 @@ def test_collect_skips_script_even_when_it_arrives_first(tmp_path, monkeypatch):
         store=store,
         owner_id="alice",
         original=SimpleNamespace(projectId=project.projectId),
+        result={},
     )
     _RuntimeTask._collect_office_artifacts(task)
+    assert task.result["officeFiles"] == ["deck.pptx"]
     paths = [
         item["path"]
         for item in ProjectOfficeArtifactStore(store).list(project.projectId, owner_id="alice")
@@ -423,6 +475,10 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
         body = preview.json()
         assert body["kind"] == "slides"
         assert "封面" in body["slides"][0]["text"]
+        page = client.get(url + f"/artifacts/{meta['artifactId']}/preview?render=browser")
+        assert page.status_code == 200
+        assert page.headers["content-type"].startswith("application/json")
+        assert "<!DOCTYPE html>" not in page.text
         download = client.get(url + f"/artifacts/{meta['artifactId']}")
         assert download.status_code == 200
         assert download.content == pptx
@@ -434,5 +490,66 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
             assert packed.read("artifacts/面团启动.pptx") == pptx
         viewer["id"] = "mallory"
         assert client.get(url + "/artifacts").status_code == 404
+    store.close()
+    sessions._engine.dispose()
+
+
+def test_preview_route_does_not_paint_the_office_file():
+    """预览路由不许把办公文件画成一页。接回 office_preview_html，本条变红。"""
+    src = (ROOT / "routes" / "project_sources.py").read_text(encoding="utf-8")
+    body = _fn_body(src, "preview_office_artifact")
+    assert "office_preview_html" not in body
+    assert "text/html" not in body
+
+
+def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
+    """已入库的纯正文，读预览时按文件字节补坐标。仍然是 JSON，不是宿主画的页。
+
+    ⚠ 2026-09-22 启动会那份预览先入库时还没有坐标。删掉读时补位置，本条变红。
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NODE_ENV", "development")
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    monkeypatch.setattr("config.settings.settings.NODE_ENV", "development")
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
+    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'session.db'}")
+    monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
+    monkeypatch.setattr(route, "get_project_store", lambda: store)
+    state = V5SessionState(
+        sessionId="office-browser", ownerId="alice",
+        goal={"text": "做个PPT"},
+        controlTranscript=approved_plan_rows("做PPT", deliverable_kind=OFFICE_FILE),
+    )
+    assert persistence.save_session_record(state, server_write=True)["ok"]
+    project = create_session_project(
+        store, state.sessionId, owner_id="alice",
+        approval_ref=approved_reference(state), template_id="react-vite")
+    meta = ProjectOfficeArtifactStore(store).put(
+        project.projectId, owner_id="alice", path="面团启动.pptx", data=positioned_pptx())
+    stale = {"kind": "slides", "slides": [{"text": "第二页"}, {"text": "第十页"}]}
+    raw = json.dumps(stale, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    store._q(
+        "update wb_project_office_preview set content=$1 where artifact_id=$2",
+        [base64.b64encode(raw).decode("ascii"), meta["artifactId"]],
+    )
+    stored = json.loads(base64.b64decode(store._q(
+        "select content from wb_project_office_preview where artifact_id=$1",
+        [meta["artifactId"]],
+    )[0]["content"]))
+    assert "shapes" not in stored["slides"][0]
+    viewer = User(id="alice", is_superuser=True)
+    app = FastAPI()
+    app.include_router(route.router, prefix="/api/sliderule")
+    app.dependency_overrides[require_user] = lambda: viewer
+    url = f"/api/sliderule/projects/{project.projectId}/artifacts/{meta['artifactId']}/preview"
+    with TestClient(app) as client:
+        preview = client.get(url)
+        assert preview.headers["content-type"].startswith("application/json")
+        assert preview.json()["slides"][0]["shapes"][0]["x"] == 457200
+        page = client.get(url + "?render=browser")
+        assert page.status_code == 200
+        assert page.headers["content-type"].startswith("application/json")
+        assert page.json()["slides"][0]["shapes"][0]["x"] == 457200
+        assert "<!DOCTYPE html>" not in page.text
     store.close()
     sessions._engine.dispose()

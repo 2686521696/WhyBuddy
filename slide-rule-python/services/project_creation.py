@@ -18,7 +18,12 @@ from services.control_checkpoint import current_checkpoint
 from services.project_acceptance import TASK_ACCEPTANCE_PROFILE
 from services.deliverable_kind import (
     OFFICE_FILE,
+    WORKSPACE_README,
+    WORKSPACE_TEMPLATE_VERSION,
+    idle_office_exec_allows_source_write,
     office_workspace_files,
+    operation_left_on_lease,
+    orch_trace,
     plan_deliverable_kind,
 )
 from services.project_authority import approved_reference, assert_session_authorized, has_generated_application
@@ -33,9 +38,6 @@ TEMPLATE_FILES = (
     "public/_whybuddy/editor.js",
 )
 TASK_TEMPLATE_VERSION = "whybuddy-react-vite-tasks-1"
-#: 办公计划的内部版本。不进 CreateArguments.templateId——模型仍可传
-#: react-vite*，host 按批准计划覆盖。
-WORKSPACE_TEMPLATE_VERSION = "whybuddy-workspace-1"
 TASK_TEMPLATE_FILES = (
     "package.json", "package-lock.json", "tsconfig.json", "index.html", "README.md",
     "database.mjs", "server.mjs", "src/main.tsx", "src/style.css", "tests/application.test.mjs",
@@ -117,10 +119,71 @@ def sync_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
     raise ProjectConflict("project_reference_sync_conflict")
 
 
+def _ensure_office_tree(store: ProjectStore, project: Project, *, owner_id: str,
+                        approval_ref: str) -> Project:
+    """办公计划的源码树必须是当前这份 README。
+
+    ⚠ 2026-09-22 Z8NPKNM14C：进程里的 WORKSPACE_README 已是 309 字节，
+      落库的仍是上一版 78 字 / 150 字节（sha 5edc1d7e）。工具回执照样
+      ok。这里读回正文，不对就改这一份 README，不把已经写上的脚本抹掉。
+      树里还有 package.json，说明建成了 Vite，整树换成空工作区。
+    """
+    wanted = office_workspace_files()
+    current = store.get_revision(project.projectId, owner_id=owner_id)
+    stored = store.read_files(project.projectId, current.revision, owner_id=owner_id)
+    readme = stored.get("README.md") or ""
+    orch_trace(
+        "office-tree",
+        template=current.templateVersion,
+        storedBytes=len(readme.encode()),
+        wantedBytes=len(WORKSPACE_README.encode()),
+        files=sorted(stored),
+    )
+    vite = "package.json" in stored or "package-lock.json" in stored
+    if (
+        readme == WORKSPACE_README
+        and current.templateVersion == WORKSPACE_TEMPLATE_VERSION
+        and not vite
+    ):
+        return project
+    files = dict(wanted) if vite else {**stored, "README.md": WORKSPACE_README}
+    lease = store.acquire_lease(
+        project.projectId, owner_id=owner_id,
+        lease_owner="office-tree-" + uuid.uuid4().hex, ttl_seconds=120,
+    )
+    try:
+        current = store.get_revision(project.projectId, owner_id=owner_id)
+        store.commit_revision(
+            project.projectId, owner_id=owner_id,
+            expected_revision=current.revision, files=files,
+            template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref=approval_ref,
+            spec_revision=None if vite else current.specRevision,
+            lease_generation=lease.generation, lease_owner=lease.leaseOwner,
+        )
+    finally:
+        store.release_lease(
+            project.projectId, owner_id=owner_id,
+            lease_owner=lease.leaseOwner, generation=lease.generation,
+        )
+    project = store.get_project(project.projectId, owner_id=owner_id)
+    current = store.get_revision(project.projectId, owner_id=owner_id)
+    stored = store.read_files(project.projectId, current.revision, owner_id=owner_id)
+    if stored.get("README.md") != WORKSPACE_README:
+        raise ValueError("project_workspace_readme_mismatch")
+    return project
+
+
 def _source_for_create(state: V5SessionState, template_id: str) -> tuple[dict[str, str], str, str | None]:
     """批准计划决定电脑形状。模型传来的 react-vite* 对办公计划无效。"""
     if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
-        return office_workspace_files(), WORKSPACE_TEMPLATE_VERSION, None
+        files = office_workspace_files()
+        orch_trace(
+            "create-source",
+            kind=OFFICE_FILE,
+            template=WORKSPACE_TEMPLATE_VERSION,
+            readmeBytes=len(files["README.md"].encode()),
+        )
+        return files, WORKSPACE_TEMPLATE_VERSION, None
     files, version = (
         load_project_template() if template_id == "react-vite"
         else load_project_template(template_id)
@@ -162,7 +225,8 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
             lease = store.acquire_lease(existing.projectId, owner_id=owner_id,
                 lease_owner="adopt-plan-" + uuid.uuid4().hex, ttl_seconds=120)
             try:
-                if lease.sandboxId or lease.processRefs:
+                prior = operation_left_on_lease(store, lease, owner_id)
+                if (lease.sandboxId or lease.processRefs) and not idle_office_exec_allows_source_write(lease, prior):
                     raise ProjectConflict("project_runtime_reconciliation_required")
                 load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
                 current = store.get_revision(existing.projectId, owner_id=owner_id)
@@ -176,5 +240,9 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
             finally:
                 store.release_lease(existing.projectId, owner_id=owner_id,
                     lease_owner=lease.leaseOwner, generation=lease.generation)
+    if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
+        existing = _ensure_office_tree(
+            store, existing, owner_id=owner_id, approval_ref=approval_ref,
+        )
     sync_session_project(store, session_id, owner_id=owner_id, approval_ref=approval_ref)
     return store.get_project(existing.projectId, owner_id=owner_id)

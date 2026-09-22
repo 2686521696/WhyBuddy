@@ -238,7 +238,24 @@ class ProjectOfficeArtifactStore:
             payload = json.loads(base64.b64decode(rows[0]["content"], validate=True))
         except (ValueError, json.JSONDecodeError):
             return None
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        # ⚠ 2026-09-22 已入库的预览只有正文。读的时候按文件字节补位置，
+        #   不必等下一轮生成才从文档卡片变成幻灯片舞台。补失败就用旧的。
+        slides = payload.get("slides")
+        laid_out = (
+            isinstance(slides, list)
+            and any(isinstance(item, dict) and item.get("shapes") for item in slides)
+        )
+        if payload.get("kind") == "slides" and not laid_out:
+            try:
+                _meta, data = self.get_bytes(project_id, artifact_id, owner_id=owner_id)
+                fresh = office_preview_payload(data, meta["path"])
+                if isinstance(fresh, dict) and fresh.get("kind") == "slides":
+                    return fresh
+            except Exception:
+                return payload
+        return payload
 
     def _ensure_preview(self, artifact_id: str, data: bytes, path: str) -> None:
         present = self.store._q(
