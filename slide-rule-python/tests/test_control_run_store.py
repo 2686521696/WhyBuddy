@@ -48,20 +48,24 @@ def claim(store, *, worker="worker-1", lease=30):
     return store.claim(run["runId"], worker, lease)
 
 
-def test_leased_submit_is_not_claimable_by_another_worker(store):
-    """⚠ 2026-09-22 RFZYDAVHG9：queued 窗口里另一个 worker 把 run 领走。
+def test_submitted_run_stays_claimable_by_any_worker(store):
+    """入队的 run 必须还在 list_runnable 里，而且别的 worker 领得走。
 
-    带 claim_worker 插入后，list_runnable 不许再看见它。
+    ⚠ 2026-09-22 RFZYDAVHG9 的修法是 submit 时就写上租约（status=running、
+      lease_expires_at=now+60），让 queued 那一拍抢不走。2026-09-23 revert：
+      list_runnable 的条件是 `lease_expires_at<=now`，写死租约等于**接单
+      进程一崩，这一发冻满一个租约周期没人接得了**——崩溃恢复那三条
+      （test_restart_after_recorded_failure_does_not_resample）就是死在
+      `claim(run_id, 另一个 worker, …)` 返回 None 上。
+
+    让 submit 插入时带上 lease_owner / lease_expires_at，本条三句都变红。
     """
-    record = store.submit(
-        "session-leased", "alice", "idem-leased", {"message": "做PPT"},
-        claim_worker="local-worker", claim_seconds=60,
-    )
-    assert record["status"] == "running"
-    assert record["leaseOwner"] == "local-worker"
-    assert record["generation"] == 1
-    runnable = [item["runId"] for item in store.list_runnable()]
-    assert record["runId"] not in runnable
+    record = store.submit("session-leased", "alice", "idem-leased", {"message": "做PPT"})
+    assert (record["status"], record["leaseOwner"], record["leaseExpiresAt"]) == ("queued", None, 0.0)
+    assert record["runId"] in [item["runId"] for item in store.list_runnable()]
+    # 接单进程当场没了，换一个 worker 立刻接手——不等租约过期。
+    taken = store.claim(record["runId"], "another-worker", 30)
+    assert taken is not None and taken["leaseOwner"] == "another-worker"
 
 
 def test_submission_is_idempotent_and_data_is_detached(store):

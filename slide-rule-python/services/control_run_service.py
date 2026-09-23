@@ -332,18 +332,14 @@ class ControlRunService:
         # 六字段 POST 没有业务目标 / runtimeKind。不盖进去，durable goal
         # 就会把「批准计划并执行」当成目标，kind 永远停在 conversation。
         stamped = stamp_control_goal_payload(payload, state)
-        # ⚠ 2026-09-22 RFZYDAVHG9：submit 先落 queued，claim 是下一次 SQL。
-        #   共享库上的另一个 worker 在这两拍之间把 run 领走。
-        #   租约必须跟插入在同一次 submit 里写上，公开指针时已经是 running。
-        own = rollout_readiness().get("configured", False) and not self._stopping
-        record = await asyncio.to_thread(
-            self.store.submit, session_id, owner_id, idempotency_key, stamped,
-            claim_worker=self.worker_id if own else None,
-            claim_seconds=self.lease_seconds if own else None)
-        if (own and record.get("leaseOwner") == self.worker_id
-                and record.get("status") == "running"
-                and record["runId"] not in self._tasks):
-            self._tasks[record["runId"]] = asyncio.create_task(self._produce(record))
+        # ⚠ 2026-09-22 RFZYDAVHG9 的修法是让 submit 自己 claim（插入时就写租约），
+        #   再直接 `create_task(self._produce(record))`。2026-09-23 revert：
+        #     · 接单进程一崩，这一发冻满一个租约周期没人能接（崩溃恢复判据红）；
+        #     · 这条路径绕过 _scan 的 `available = max_workers - len(self._tasks)`，
+        #       N 个并发 POST 就是 N 条并发模型循环，不是 max_workers 条。
+        #   领单只走 _scan → store.claim 这一条路。
+        record = await asyncio.to_thread(self.store.submit, session_id, owner_id,
+                                        idempotency_key, stamped)
         self._wake.set()
         return record
 
@@ -691,13 +687,6 @@ class ControlRunService:
             if checkpoint is None:
                 await port.save({"schemaVersion": 1, "phase": "entry"})
             tools = ProjectTools(self.project_store, self.project_supervisor, record["ownerId"])
-            from services.deliverable_kind import orch_trace as _orch_trace
-            _orch_trace(
-                "service-turn",
-                session=str((record.get("payload") or {}).get("sessionId") or "")[:40],
-                fn=getattr(run_control_turn, "__code__", None)
-                and run_control_turn.__code__.co_filename,
-            )
             async with aclosing(run_control_turn(record["payload"],
                     authorized_owner_id=record["ownerId"], project_tools=tools)) as stream:
                 async for event in stream:

@@ -23,10 +23,15 @@ from services.control_run_service import (
 from models.v5_state import V5SessionState
 
 
-def test_accepting_worker_claims_before_the_scanner(monkeypatch):
-    """⚠ 2026-09-22：POST 落在本进程，执行却被共享库上的另一个 worker 抢走。
+def test_submit_leaves_the_run_claimable_by_another_worker(monkeypatch):
+    """submit 只入队。别的 worker 必须还能领走，领单只走 _scan → claim。
 
-    rollout 开着时 submit 必须自己 claim。把 claim 从 submit 里拿掉，本条变红。
+    ⚠ 2026-09-22 RFZYDAVHG9 的修法是 submit 自己 claim（插入时写租约）+
+      直接 create_task。2026-09-23 revert：接单进程一崩，list_runnable
+      只捞 lease_expires_at<=now，这一发冻满一个租约周期没人接得了；
+      而且那条路径绕过 _scan 的 max_workers。
+
+    把 claim_worker / create_task 加回 submit，本条两句断言都变红。
     """
     import services.control_run_service as mod
 
@@ -35,16 +40,13 @@ def test_accepting_worker_claims_before_the_scanner(monkeypatch):
     monkeypatch.setattr(mod, "validate_control_turn_body", lambda _payload: None)
     monkeypatch.setattr(mod, "stamp_control_goal_payload", lambda payload, _state: payload)
 
-    claimed = {}
+    seen = {}
 
     class Store:
-        def submit(self, *_a, claim_worker=None, claim_seconds=None, **_k):
-            claimed["worker"] = claim_worker
-            claimed["lease"] = claim_seconds
-            return {
-                "runId": "ctr-race", "generation": 1, "status": "running",
-                "leaseOwner": claim_worker,
-            }
+        def submit(self, *_a, **kwargs):
+            seen["kwargs"] = kwargs
+            return {"runId": "ctr-race", "generation": 0, "status": "queued",
+                    "leaseOwner": None, "leaseExpiresAt": 0.0}
 
     service = ControlRunService.__new__(ControlRunService)
     service.store = Store()
@@ -54,22 +56,18 @@ def test_accepting_worker_claims_before_the_scanner(monkeypatch):
     service.lease_seconds = 30
     service._tasks = {}
     service._wake = asyncio.Event()
-    produced = {}
 
-    async def _produce(record):
-        produced["runId"] = record["runId"]
+    async def _produce(_record):  # pragma: no cover — 跑到就是回归
+        raise AssertionError("submit 不许自己开生产者，领单走 _scan")
 
     service._produce = _produce
 
-    async def _go():
-        record = await service.submit({"sessionId": "sr-race"}, "alice", "idem-1")
-        await service._tasks["ctr-race"]
-        return record
-
-    record = asyncio.run(_go())
-    assert record["runId"] == "ctr-race"
-    assert claimed == {"worker": "local-worker", "lease": 30}
-    assert produced["runId"] == "ctr-race"
+    record = asyncio.run(service.submit({"sessionId": "sr-race"}, "alice", "idem-1"))
+    assert record["status"] == "queued"
+    # 租约留空才进得了 list_runnable（where lease_expires_at<=now）。
+    assert (record["leaseOwner"], record["leaseExpiresAt"]) == (None, 0.0)
+    assert seen["kwargs"] == {}, "submit 不许给 store 传 claim_* 参数"
+    assert service._tasks == {}
 
 
 def test_complete_with_provider_failure_stamps_idle_snapshot():
