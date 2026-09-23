@@ -460,3 +460,43 @@ def test_project_create_tool_description_does_not_advertise_tasks_as_the_real_ap
     assert "only for a task-management web app" in desc
     assert "Office files" in desc
     assert "do not pick react-vite-tasks" in desc
+
+
+def test_office_tree_reset_keeps_what_the_model_wrote(project_setup):
+    """看见 package.json 换回空工作区，但模型自己写的东西必须留下。
+
+    ⚠ 2026-09-23 review：上一版是 `files = dict(wanted) if vite else …`，
+      整棵树只剩 README。模型在空工作区里 `npm i pptxgenjs` 落一个
+      package.json 是正常的，下一次 project_create 就把它写好的
+      generate_deck.py 一起删了。
+
+    判据直接跑产线的 create_session_project，不重抄摘取逻辑。
+    把它改回 `dict(wanted)`，本条变红。
+    """
+    store, _ = project_setup
+    state, ref = _approved("sess-office-keep", kind=OFFICE_FILE)
+    store.create_project(
+        state.sessionId, owner_id="alice",
+        files={
+            # 脚手架：该摘掉
+            "package.json": "{}",
+            "package-lock.json": "{}",
+            "index.html": "<html></html>",
+            "public/_whybuddy/editor.js": "//",
+            # 模型自己写的：必须留着
+            "generate_deck.py": "from pptx import Presentation\n",
+            "assets/logo.svg": "<svg/>",
+        },
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref=ref,
+    )
+    project = create_session_project(
+        store, state.sessionId, owner_id="alice",
+        approval_ref=ref, template_id="react-vite",
+    )
+    files = store.read_files(project.projectId, owner_id="alice")
+    assert files["generate_deck.py"] == "from pptx import Presentation\n"
+    assert files["assets/logo.svg"] == "<svg/>"
+    assert files["README.md"] == WORKSPACE_README
+    for gone in ("package.json", "package-lock.json", "index.html",
+                 "public/_whybuddy/editor.js"):
+        assert gone not in files, gone

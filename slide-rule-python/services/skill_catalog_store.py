@@ -113,6 +113,9 @@ def skill_seed_category(slug: str) -> str:
     return str(_SEED_CATEGORY.get(str(slug or "").strip()) or "")
 
 
+#: 种子正文解出来的 SkillInfo。进程级，只装仓库里那几份，封顶。
+#: ⚠ 2026-09-23 review：上一版无上限、不按版本 key、永不失效。
+_LOCAL_INFO_CACHE_MAX = 32
 _local_info_cache: dict[str, SkillInfo] = {}
 
 
@@ -146,6 +149,8 @@ def local_seed_skill_info(slug: str) -> SkillInfo | None:
     except Exception:
         return None
     if info is not None:
+        if len(_local_info_cache) >= _LOCAL_INFO_CACHE_MAX:
+            _local_info_cache.pop(next(iter(_local_info_cache)), None)
         _local_info_cache[name] = info
     return info
 
@@ -307,13 +312,19 @@ class SkillCatalogStore:
     def installed_skill_infos(self, owner_id: str) -> list[SkillInfo]:
         infos: list[SkillInfo] = []
         for pkg in self.list_installed(owner_id):
-            slug = str(pkg.get("slug") or "")
-            info = local_seed_skill_info(slug)
+            # ⚠ 2026-09-21 XSGAMK9PYZ：这里每发都从 OSS unpack 一遍，失败
+            #   被吞成空目录，点名的技能 skill() 直接 skill_not_found。
+            #   仓库里的种子包是兜底。
+            #
+            # ⚠ 2026-09-23 review：上一版把种子放在**前面**，于是仓库里那份
+            #   永久遮住用户在商店里装的版本——兜底写成了覆盖。顺序反过来：
+            #   装的那份优先，取不到才用种子。
+            try:
+                info = self.skill_info(pkg)
+            except Exception:
+                info = None
             if info is None:
-                try:
-                    info = self.skill_info(pkg)
-                except Exception:
-                    info = None
+                info = local_seed_skill_info(str(pkg.get("slug") or ""))
             if info is not None:
                 infos.append(info)
         return infos

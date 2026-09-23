@@ -346,3 +346,61 @@ def test_reload_and_error_park_are_on_the_live_dispatch():
     canned_in_fail = loop.find("_canned(", fail_at, generic_at)
     assert 0 <= fail_at < park_at < generic_at < park2_at
     assert canned_in_fail == -1, "LlmError 分支又走回了 _canned"
+
+
+def test_skill_cache_holds_only_what_was_opened_and_is_capped():
+    """会话缓存只留「真的 skill() 打开过」的那几份，并且封顶。
+
+    ⚠ 2026-09-23 review：上一版 `_skill_infos_for_turn` 把**整份已装目录**
+      连正文一起 `_remember_skill_infos` 进会话。种子包平均 ~6KB，装 20 个
+      就是 ~120KB 每轮落库、只增不删。
+
+    把 `_remember_skill_infos(state, merged)` 加回 `_skill_infos_for_turn`
+    的收尾，或把 `_SKILL_CACHE_MAX` 去掉，本条变红。
+    """
+    from models.v5_state import V5SessionState
+    from services import rehearsal_control as control
+    from services.control_skills import SkillInfo
+
+    def info(name, body_chars):
+        return SkillInfo(name=name, description=f"{name} 一句话",
+                         path=f".sliderule/skills/{name}/SKILL.md", body="正" * body_chars)
+
+    state = V5SessionState(sessionId="sr-cache", ownerId="alice", goal={"text": "做PPT"})
+    for index in range(control._SKILL_CACHE_MAX + 4):
+        control._remember_skill_infos(state, [info(f"skill-{index}", 100)])
+
+    rows = state.controlSkillCache or []
+    assert len(rows) == control._SKILL_CACHE_MAX, rows
+    # 淘汰最旧的，留最近打开的。
+    assert [row["name"] for row in rows][-1] == f"skill-{control._SKILL_CACHE_MAX + 3}"
+    assert "skill-0" not in {row["name"] for row in rows}
+
+    # 一份大正文不许把窗口撑爆。
+    state.controlSkillCache = None
+    control._remember_skill_infos(state, [info("huge", control._SKILL_CACHE_MAX_CHARS)])
+    control._remember_skill_infos(state, [info("next", 10)])
+    total = sum(len(row["body"]) for row in state.controlSkillCache or [])
+    assert total <= control._SKILL_CACHE_MAX_CHARS, total
+
+
+def test_skill_cache_is_the_first_thing_slimmed_not_the_evidence():
+    """落库超预算时先削缓存，不许拿闭环证据去给它腾地方（§7）。
+
+    去掉 persistence._next_slim 里的 skill_cache 那一档，本条变红。
+    """
+    from models.v5_state import V5SessionState
+    from services import persistence
+
+    state = V5SessionState(
+        sessionId="sr-slim", ownerId="alice", goal={"text": "做PPT"},
+        controlSkillCache=[{"name": "office-skills", "description": "办公",
+                            "path": "p", "body": "正" * 1000}],
+        specFirstPages={"p1": "<html></html>"},
+    )
+    slimmed, flag = persistence._next_slim(state)
+    assert flag == "skill_cache", flag
+    assert slimmed.controlSkillCache is None
+    # 证据还在：缓存削完才轮到页面。
+    assert slimmed.specFirstPages == state.specFirstPages
+    assert persistence._next_slim(slimmed)[1] != "skill_cache"

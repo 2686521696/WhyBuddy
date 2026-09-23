@@ -118,6 +118,15 @@ def _next_slim(state: V5SessionState) -> Optional[Tuple[V5SessionState, str]]:
     仍超预算时才裁旧尾——当轮闭环留下，旧轮历史丢掉，总比整包写不进去、
     当轮版本指针被钉死强。
     """
+    # ⚠ 2026-09-23 review：controlSkillCache 是「本会话 skill() 打开过的正文」，
+    #   丢了再调一次 skill 就回来——**最该先削的那一档**。上一版它根本不在
+    #   梯子上，于是 700KB 一顶到，先被削掉的是版本页 / 页面 / replay /
+    #   capabilityRuns，也就是拿闭环证据去给一份缓存腾地方（§7 反了）。
+    if getattr(state, "controlSkillCache", None):
+        try:
+            return state.model_copy(update={"controlSkillCache": None}), "skill_cache"
+        except Exception:  # noqa: BLE001 — 降级自己不许把主写入路径带崩
+            return None
     versions_slim = _strip_version_pages(state)
     if versions_slim is not None:
         return versions_slim, "version_pages"

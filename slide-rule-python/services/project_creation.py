@@ -146,7 +146,20 @@ def _ensure_office_tree(store: ProjectStore, project: Project, *, owner_id: str,
         and not vite
     ):
         return project
-    files = dict(wanted) if vite else {**stored, "README.md": WORKSPACE_README}
+    # ⚠ 2026-09-23 review：上一版是 `dict(wanted) if vite else …`，也就是
+    #   一看见 package.json 就把**整棵树**换成只剩 README。可模型在空工作区里
+    #   `npm i pptxgenjs` 写出一个 package.json 是完全正常的，下一次
+    #   project_create 就把它已经写好的脚本全删了。只摘掉脚手架那几个已知
+    #   文件名，模型自己写的一律留着。
+    if vite:
+        scaffold = set(TEMPLATE_FILES) | set(TASK_TEMPLATE_FILES)
+        files = {
+            name: body for name, body in stored.items()
+            if name not in scaffold and not name.startswith("public/_whybuddy/")
+        }
+        files.update(wanted)
+    else:
+        files = {**stored, "README.md": WORKSPACE_README}
     lease = store.acquire_lease(
         project.projectId, owner_id=owner_id,
         lease_owner="office-tree-" + uuid.uuid4().hex, ttl_seconds=120,

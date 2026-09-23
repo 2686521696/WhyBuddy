@@ -387,3 +387,43 @@ def test_control_lists_skill_and_loads_body(monkeypatch):
     result = next(ev for ev in events if ev["type"] == "control_tool_result")
     assert result["ok"] is True
     assert "跑 scripts/hello.py" in result["skill_message"]
+
+
+def test_installed_package_wins_over_the_repo_seed(catalog, monkeypatch):
+    """装的那份优先，仓库种子只是兜底。
+
+    ⚠ 2026-09-21 XSGAMK9PYZ：installed_skill_infos 每发都从 OSS unpack，
+      失败被吞成空目录 → 点名的技能 skill_not_found。种子兜底是对的。
+
+    ⚠ 2026-09-23 review：上一版把 `local_seed_skill_info(slug)` 放在
+      `self.skill_info(pkg)` **前面**，于是仓库里那份永久遮住用户在商店里
+      装的版本——兜底写成了覆盖。把两句换回去，本条第一段变红。
+    """
+    import hashlib
+
+    from services import skill_catalog_store as mod
+    from services.control_skills import SkillInfo
+    from services.skill_blob_store import blob_put
+
+    seed = SkillInfo(name="demo", description="仓库种子那一份",
+                     path=".sliderule/skills/demo/SKILL.md", body="种子正文", enabled=True)
+    monkeypatch.setattr(mod, "local_seed_skill_info", lambda slug: seed if slug == "demo" else None)
+
+    digest = hashlib.sha256(_zip_bytes(COMPLETE)).hexdigest()
+    blob_put("skills/demo/1.0.0.zip", _zip_bytes(COMPLETE))
+    pkg = catalog.upsert_package(
+        slug="demo", name="Demo", description="用来测开箱的完整包",
+        version="1.0.0", oss_key="skills/demo/1.0.0.zip", sha256=digest, license="MIT",
+    )
+    catalog.install(owner_id="alice", skill_id=pkg["id"])
+
+    infos = {info.name: info for info in catalog.installed_skill_infos("alice")}
+    assert "demo" in infos
+    assert infos["demo"].body != "种子正文", "装的那份必须赢过仓库种子"
+
+    # 反向：OSS 取不到时，种子必须顶上来——否则目录又成了空的。
+    monkeypatch.setattr(
+        mod.SkillCatalogStore, "skill_info",
+        lambda self, pkg: (_ for _ in ()).throw(RuntimeError("oss down")))
+    fallback = {info.name: info for info in catalog.installed_skill_infos("alice")}
+    assert fallback["demo"].body == "种子正文"

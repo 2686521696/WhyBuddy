@@ -658,18 +658,28 @@ def _task_text_for_recall(state: V5SessionState) -> str:
 
 
 def _recall_belongs_to_task(query: str, note: str) -> bool:
-    """空查询按目标滤时，2 字滑窗太松。要 3 字中文或长度≥3 的词。"""
-    q = str(query or "")
+    """记忆是不是真的搭这一句。3 字中文滑窗 / 长度≥3 的词 / 整句原样。
+
+    ⚠ recall_memory 自己的匹配很松：query=「设计偏好」能把「待办清单偏好」
+      捞回来（2026-09-21 XSGAMK9PYZ，整段待办倒进 PPT 那一轮）。2 字滑窗
+      同样松，所以按目标兜底时要 3 字。
+
+    ⚠ 2026-09-23 review：只留 3 字滑窗时，**两个字的查询一个词条都凑不出来**
+      （`range(max(0, 2-2))` 是空的）→ 恒 False。真机那一发是
+      recall(query="角色") 配记忆「角色叫主管不叫经理」，跨会话记忆整条
+      查不到（test_换一个会话还查得到_这才叫跨会话）。所以整句原样命中
+      也算一条词条——问「角色」就该拿到讲角色的那条。
+    """
+    q = str(query or "").strip()
     text = str(note or "")
     if not q or not text:
         return False
-    terms: list[str] = [w.lower() for w in q.split() if len(w) >= 3 and w.isascii()]
+    terms: list[str] = [q]
+    terms.extend(w.lower() for w in q.split() if len(w) >= 3 and w.isascii())
     cjk = "".join(ch for ch in q if "一" <= ch <= "鿿")
     terms.extend(cjk[i : i + 3] for i in range(max(0, len(cjk) - 2)))
-    if not terms:
-        return False
     blob = text.lower()
-    return any((t in blob) if t.isascii() else (t in text) for t in terms)
+    return any((t.lower() in blob) if t.isascii() else (t in text) for t in terms)
 
 
 def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
@@ -1168,20 +1178,43 @@ def _skill_infos_from_cache(state: V5SessionState) -> list:
     return out
 
 
+#: 会话缓存里最多留几份技能正文，以及正文合计上限。
+#:
+#: ⚠ 2026-09-23 review：上一版把**所有已装技能**的 SKILL.md 全文写进
+#:   controlSkillCache，每轮落库、只增不删。种子包平均 ~6KB，装 20 个
+#:   就是 ~120KB 挂在会话状态上；而 persistence 的 700KB 预算一顶到，
+#:   降级梯子先削 version_pages / 页面 / replay / capabilityRuns——
+#:   **先扔证据，留这份缓存**。缓存是增强类，证据是闭环类（§7），
+#:   顺序反了。现在只留「真的 skill() 打开过」的那几份，并封顶。
+_SKILL_CACHE_MAX = 6
+_SKILL_CACHE_MAX_CHARS = 80_000
+
+
 def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
+    """把**打开过**的技能正文留在会话里。别拿它当已装目录的镜像。"""
     by_name = {info.name: info for info in _skill_infos_from_cache(state)}
     for info in infos:
         if getattr(info, "name", None) and getattr(info, "body", None):
+            by_name.pop(info.name, None)  # 重新打开的排到队尾，先淘汰最旧的
             by_name[info.name] = info
-    state.controlSkillCache = [
-        {
+    rows: list[dict[str, str]] = []
+    total = 0
+    # 从最近打开的往回收，撞上限就停——旧的那几份丢了还能再 skill()。
+    for info in reversed(list(by_name.values())):
+        body = info.body or ""
+        # 撞上限就停。单份正文自己就超预算时**不收**——会话状态是有
+        # 700KB 落库预算的，而丢了再 skill() 一次就回来。
+        if len(rows) >= _SKILL_CACHE_MAX or total + len(body) > _SKILL_CACHE_MAX_CHARS:
+            break
+        rows.append({
             "name": info.name,
             "description": info.description,
             "path": info.path,
-            "body": info.body,
-        }
-        for info in by_name.values()
-    ]
+            "body": body,
+        })
+        total += len(body)
+    rows.reverse()
+    state.controlSkillCache = rows
 
 
 def _skill_infos_for_turn(state: V5SessionState) -> list:
@@ -1232,10 +1265,10 @@ def _skill_infos_for_turn(state: V5SessionState) -> list:
         if info is not None:
             by_name[info.name] = info
             live.append(info)
-    merged = list(by_name.values())
-    if live or wanted:
-        _remember_skill_infos(state, merged)
-    return merged
+    # ⚠ 2026-09-23 review：这里原来 `_remember_skill_infos(state, merged)`，
+    #   把整份已装目录（连正文）写进会话缓存。列目录不是「打开过」——
+    #   写缓存只发生在 skill() 真的成功那一处（见 _dispatch_tool）。
+    return list(by_name.values())
 
 
 def _mentioned_skill_infos(state: V5SessionState) -> list:
@@ -6063,19 +6096,29 @@ async def _dispatch_tool(
             return
         query = str(args.get("query") or "").strip()
         goal_text = _task_text_for_recall(state)
-        if not query:
-            # ⚠ 2026-09-21 真机 PPT：空查询把账号里待办清单偏好整段倒回来。
+        # ⚠ 2026-09-21 真机 PPT：**空查询**把账号里待办清单偏好整段倒回来。
+        #   YKEDKJDJ5R 又补了一条：state.goal 也空时闸不响，照样 dump。
+        #   所以兜底查询和任务过滤是同一件事的两半，只在这一支里生效。
+        #
+        # ⚠ 2026-09-23 review：上一版把任务过滤写在了**两支之外**，模型
+        #   显式 recall(query="角色") 的结果也要拿任务文本再滤一遍。真机
+        #   那一发任务是「报销系统」、记忆是「角色叫主管不叫经理」，
+        #   3 字滑窗一个都不搭 → count=0、「没有相关的记忆。」跨会话记忆
+        #   整条失效（test_换一个会话还查得到_这才叫跨会话）。
+        #   显式查询是模型自己划的范围，recall_memory 已经按它匹配过了。
+        fell_back = not query
+        if fell_back:
             query = goal_text
-        rows = recall_memory(scope_id=owner, query=query)
-        # ⚠ 2026-09-21 YKEDKJDJ5R：state.goal 空时上一版闸不响，最近一条
-        #   待办偏好照样倒出来。没有当前任务文本就交空，不许 dump 最近记忆。
-        if not goal_text:
-            rows = []
-        else:
-            rows = [
-                row for row in rows
-                if _recall_belongs_to_task(goal_text, str(row.get("text") or ""))
-            ]
+        rows = recall_memory(scope_id=owner, query=query) if query else []
+        # 兜底那一支按**任务文本**滤（否则等于 dump 整个账号）；模型自己
+        # 划了范围的那一支按**查询**滤——记忆得真的讲到他问的那件事，
+        # 而不是「和当前任务同一个话题」。后者会把「问角色 / 做报销系统」
+        # 这种正常的跨话题追问整条毙掉。
+        against = goal_text if fell_back else query
+        rows = [
+            row for row in rows
+            if _recall_belongs_to_task(against, str(row.get("text") or ""))
+        ] if against else []
         orch_trace("recall", count=len(rows), taskChars=len(goal_text))
         yield {
             "type": "control_tool_result",
