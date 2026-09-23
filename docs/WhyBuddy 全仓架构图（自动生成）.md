@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1079 个模块"]
+    ts_client["ts/client<br/>1081 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
     ts_scripts["ts/scripts<br/>67 个模块"]
     ts_server["ts/server<br/>588 个模块"]
@@ -30,8 +30,8 @@ flowchart TB
     py_middlewares["py/middlewares<br/>2 个模块"]
     py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>16 个模块"]
-    py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>272 个模块"]
+    py_scripts["py/scripts<br/>40 个模块"]
+    py_services["py/services<br/>273 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>16 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -59,7 +59,7 @@ flowchart TB
   py_routes -->|10| py_config
   py_routes -->|9| py_middlewares
   py_routes -->|6| py_models
-  py_routes -->|161| py_services
+  py_routes -->|164| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
