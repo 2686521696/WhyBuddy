@@ -26,6 +26,8 @@ from config.settings import settings
 from models.project_runtime import Project, ProjectOperation, ProjectRevision, RuntimeEvent, RuntimeInstance, WorkspaceLease
 from services.project_manifest import build_manifest, canonical_json, content_hash
 from services.sql_gateway import HttpSqlGateway, _sql_engine_config, configure_sqlite_journal, http_api_credentials
+# 叶子层（architecture.toml util）：只洗文件名、拼路径，谁都能顶层 import。
+from services.session_uploads import MAX_UPLOAD_BYTES, MAX_UPLOADS, sanitize_filename
 
 MAX_SOURCE_HISTORY_BYTES = 64 * 1024 * 1024
 MAX_REVISIONS = 200
@@ -137,7 +139,18 @@ _DDL = (
     "create index if not exists wb_project_operation_project on wb_project_operation(project_id)",
     "create table if not exists wb_project_preview_snapshot (project_id varchar(80) primary key, revision varchar(80) not null, source varchar(40) not null, sha256 varchar(64) not null, size_bytes integer not null, content text not null, captured_at varchar(64) not null)",
     "create table if not exists wb_session_upload (session_id varchar(240) not null, owner_id varchar(240) not null, name varchar(255) not null, sha256 varchar(64) not null, size_bytes integer not null, content text not null, primary key(session_id, name))",
+    "create table if not exists wb_session_upload_chunk (session_id varchar(240) not null, name varchar(255) not null, seq integer not null, content text not null, primary key(session_id, name, seq))",
 )
+
+#: 一行里放多少原字节。
+#:
+#: ⚠ 2026-09-23 review：上传原本整份 base64 塞进**一个** SQL 参数。线上工程库
+#:   走 HttpSqlGateway → db-api，而 db-api 按 content-length 卡请求体
+#:   （deploy/postgres-https-api/app.py `DB_API_MAX_BODY_BYTES`，默认 4MB，
+#:   超了直接 413）。15MB 上限编码后约 20MB，于是大约 3MB 以上的文件在线上
+#:   一律存不进去——本地 sqlite 没有这道门，判据全绿。
+#:   1MB 原字节 → base64 约 1.33MB，再包一层 JSON 仍远在 4MB 之下。
+SESSION_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 MAX_PREVIEW_SNAPSHOT_BYTES = 2 * 1024 * 1024
@@ -1104,8 +1117,11 @@ class ProjectStore:
         return data
 
     def put_session_upload(self, session_id: str, *, owner_id: str, name: str, data: bytes) -> dict:
-        from services.session_uploads import MAX_UPLOAD_BYTES, MAX_UPLOADS, sanitize_filename
+        """原件按块落库，元数据最后写。
 
+        顺序是刻意的：先删旧块、再写新块、**最后**写那一行 sha256/size。中途
+        断掉时读路径按 sha256 对不上就报 corrupt，不会把半份文件当成原件。
+        """
         session_id = _required(session_id, "session_id_required")
         owner_id = _required(owner_id, "owner_id_required")
         safe = sanitize_filename(name)
@@ -1128,18 +1144,29 @@ class ProjectStore:
             if int(count[0]["total"] or 0) >= MAX_UPLOADS:
                 raise ValueError("upload_limit")
         digest = hashlib.sha256(payload).hexdigest()
-        encoded = base64.b64encode(payload).decode("ascii")
+        self._q(
+            "delete from wb_session_upload_chunk where session_id=$1 and name=$2",
+            [session_id, safe],
+        )
+        for seq, offset in enumerate(range(0, len(payload), SESSION_UPLOAD_CHUNK_BYTES)):
+            piece = payload[offset:offset + SESSION_UPLOAD_CHUNK_BYTES]
+            self._q(
+                "insert into wb_session_upload_chunk(session_id,name,seq,content) "
+                "values($1,$2,$3,$4)",
+                [session_id, safe, seq, base64.b64encode(piece).decode("ascii")],
+            )
+        # content 列留空串：原件在分块表里。老行（整份 base64）读路径仍认。
         if existing:
             self._q(
                 "update wb_session_upload set sha256=$1,size_bytes=$2,content=$3 "
                 "where session_id=$4 and name=$5",
-                [digest, len(payload), encoded, session_id, safe],
+                [digest, len(payload), "", session_id, safe],
             )
         else:
             self._q(
                 "insert into wb_session_upload"
                 "(session_id,owner_id,name,sha256,size_bytes,content) values($1,$2,$3,$4,$5,$6)",
-                [session_id, owner_id, safe, digest, len(payload), encoded],
+                [session_id, owner_id, safe, digest, len(payload), ""],
             )
         return {"name": safe, "sha256": digest, "sizeBytes": len(payload)}
 
@@ -1167,13 +1194,30 @@ class ProjectStore:
         if not rows:
             raise ProjectNotFound("session_upload_not_found")
         try:
-            data = base64.b64decode(rows[0]["content"], validate=True)
+            if rows[0]["content"]:
+                # 分块之前落的老行：整份 base64 在这一列。
+                data = base64.b64decode(rows[0]["content"], validate=True)
+            else:
+                seqs = self._q(
+                    "select seq from wb_session_upload_chunk "
+                    "where session_id=$1 and name=$2 order by seq",
+                    [session_id, name],
+                )
+                parts = []
+                # 一次取一块：一行响应也不许长成整份文件那么大。
+                for row in seqs:
+                    chunk = self._q(
+                        "select content from wb_session_upload_chunk "
+                        "where session_id=$1 and name=$2 and seq=$3",
+                        [session_id, name, row["seq"]],
+                    )
+                    parts.append(base64.b64decode(chunk[0]["content"], validate=True))
+                data = b"".join(parts)
         except Exception as exc:
             raise ProjectStoreUnavailable("session_upload_corrupt") from exc
         if len(data) != int(rows[0]["size_bytes"] or 0) or hashlib.sha256(data).hexdigest() != rows[0]["sha256"]:
             raise ProjectStoreUnavailable("session_upload_corrupt")
         return data
-
 
 _cached_store: ProjectStore | None = None
 _cached_signature: str | None = None

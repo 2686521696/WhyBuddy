@@ -106,8 +106,7 @@ class ProjectOfficeArtifactStore:
     def _require_project(self, project_id: str, owner_id: str) -> None:
         self.store.get_project(project_id, owner_id=owner_id)
 
-    def put(self, project_id: str, *, owner_id: str, path: str, data: bytes,
-            preview_pdf: bytes | None = None) -> dict:
+    def put(self, project_id: str, *, owner_id: str, path: str, data: bytes) -> dict:
         self._require_project(project_id, owner_id)
         rel = source_path(str(path or "").replace("\\", "/").lstrip("/"))
         if not is_office_artifact_path(rel):
@@ -124,7 +123,7 @@ class ProjectOfficeArtifactStore:
             [project_id, rel],
         )
         if existing and existing[0]["sha256"] == digest:
-            self._ensure_preview(existing[0]["id"], payload, rel, preview_pdf=preview_pdf)
+            self._ensure_preview(existing[0]["id"], payload, rel)
             return self._row(existing[0]["id"])
         if existing and existing[0]["sha256"] != digest:
             # 文件字节变了，旧的 HTML/PDF 预览还指着上一份。
@@ -168,7 +167,7 @@ class ProjectOfficeArtifactStore:
                 "(id,project_id,path,sha256,size_bytes,created_at) values($1,$2,$3,$4,$5,$6)",
                 [artifact_id, project_id, rel, digest, len(payload), captured],
             )
-        self._ensure_preview(artifact_id, payload, rel, preview_pdf=preview_pdf)
+        self._ensure_preview(artifact_id, payload, rel)
         return self._row(artifact_id)
 
     def _row(self, artifact_id: str) -> dict:
@@ -284,15 +283,11 @@ class ProjectOfficeArtifactStore:
              base64.b64encode(pdf).decode("ascii")],
         )
 
-    def _ensure_preview(self, artifact_id: str, data: bytes, path: str,
-                        preview_pdf: bytes | None = None) -> None:
-        # ⚠ 2026-09-22 沙盒里的 soffice 转出的 PDF 才是预览。主机上的
-        #   try_host_pdf 只是没配办公镜像时的退路。已有 HTML 时，后到的
-        #   PDF 要换上，否则同一份文件永远停在自制表格。
-        pdf = accepted_preview_pdf(preview_pdf)
-        if pdf is not None:
-            self._write_pdf_preview(artifact_id, pdf)
-            return
+    def _ensure_preview(self, artifact_id: str, data: bytes, path: str) -> None:
+        # ⚠ 2026-09-23 review：这里原本先收一份 `preview_pdf`（沙盒里 soffice
+        #   转的），但同一批提交里预览改成浏览器端 @silurus/ooxml 画原字节，
+        #   沙盒转 PDF 那条路（render_office_pdf）一个调用者都没有，这个参数
+        #   也就从来没人传——删掉。主机上有 soffice 时 try_host_pdf 仍是退路。
         present = self.store._q(
             "select artifact_id from wb_project_office_preview where artifact_id=$1",
             [artifact_id],

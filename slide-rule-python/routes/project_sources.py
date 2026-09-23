@@ -219,6 +219,11 @@ def _office_disposition(name: str, suffix: str) -> str:
     return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{safe}'
 
 
+def _session_record_not_found(result: dict) -> bool:
+    """跟 load_authorized_session 用同一个判法（§4：两处认「找不到」不许各说各话）。"""
+    return result.get("reason") == "not_found" or result.get("error") == "not_found"
+
+
 @router.post("/sessions/{session_id}/uploads")
 async def put_session_upload(session_id: str, request: Request, viewer: CurrentUser,
                              name: str = ""):
@@ -235,6 +240,16 @@ async def put_session_upload(session_id: str, request: Request, viewer: CurrentU
             load_authorized_session(safe_session, owner_id=owner_id)
         except ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail="project_not_found") from exc
+    elif not _session_record_not_found(loaded):
+        # ⚠ 2026-09-23 review：上一版只有 `if loaded.get("ok")` 这一支。会话库
+        #   **读不到**（网关 5xx、超时）跟「会话还没落库」走了同一条路——鉴权
+        #   整个跳过，文件照样收下。新会话放行是有意的（第一句话之前就可能
+        #   先挂附件）；库挂了不许当成新会话。
+        raise HTTPException(status_code=503, detail="project_session_store_unavailable")
+    # 先看声明的长度再读正文：request.body() 会把整份缓冲进内存。
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="upload_too_large")
     data = await request.body()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="upload_too_large")

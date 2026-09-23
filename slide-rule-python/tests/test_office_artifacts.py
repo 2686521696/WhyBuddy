@@ -486,35 +486,10 @@ def test_collect_stores_the_file_and_does_not_render_a_sandbox_pdf(tmp_path, mon
     blobs._engine.dispose()
 
 
-def test_later_sandbox_pdf_replaces_homemade_preview(tmp_path, monkeypatch):
-    """同一份字节先入库了 HTML，沙盒 PDF 后到必须换上。"""
-    store, blobs = _project_setup(tmp_path, monkeypatch)
-    sid = "sess-art-pdf-upgrade"
-    state = V5SessionState(
-        sessionId=sid, ownerId="alice",
-        goal={"text": "做个PPT"},
-        controlTranscript=approved_plan_rows("做PPT", deliverable_kind=OFFICE_FILE),
-    )
-    assert persistence.save_session_record(state, server_write=True)["ok"]
-    project = create_session_project(
-        store, sid, owner_id="alice",
-        approval_ref=approved_reference(state), template_id="react-vite")
-    pptx = minimal_pptx()
-    office = ProjectOfficeArtifactStore(store)
-    meta = office.put(project.projectId, owner_id="alice", path="deck.pptx", data=pptx)
-    first = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
-    assert first is None or first.get("kind") != "pdf"
-    pdf = b"%PDF-1.4\n%later\n"
-    office.put(
-        project.projectId, owner_id="alice", path="deck.pptx", data=pptx, preview_pdf=pdf)
-    second = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
-    assert second["kind"] == "pdf"
-    assert base64.b64decode(second["content"]) == pdf
-    store.close()
-    blobs._engine.dispose()
 
+def test_garbage_host_pdf_never_becomes_the_preview(tmp_path, monkeypatch):
+    from services import project_office_artifacts as office_module
 
-def test_garbage_preview_pdf_does_not_replace_html(tmp_path, monkeypatch):
     store, blobs = _project_setup(tmp_path, monkeypatch)
     sid = "sess-art-pdf-garbage"
     state = V5SessionState(
@@ -529,70 +504,19 @@ def test_garbage_preview_pdf_does_not_replace_html(tmp_path, monkeypatch):
     pptx = minimal_pptx()
     office = ProjectOfficeArtifactStore(store)
     meta = office.put(project.projectId, owner_id="alice", path="deck.pptx", data=pptx)
-    before = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
-    office.put(
-        project.projectId, owner_id="alice", path="deck.pptx", data=pptx, preview_pdf=b"not-a-pdf")
-    after = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
-    assert after == before
+    assert office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")["kind"] == "slides"
+    # ⚠ 2026-09-23：这条原本从 `put(preview_pdf=…)` 喂垃圾，那个参数产线从来
+    #   没人传（沙盒转 PDF 那条路已删）。PDF 真正会进来的地方是主机上的
+    #   try_host_pdf——垃圾就从那里喂，而且喂给一份**新**文件，不能先有旧预览兜着。
+    monkeypatch.setattr(office_module, "try_host_pdf", lambda _data, _path: b"not-a-pdf")
+    fresh = office.put(project.projectId, owner_id="alice", path="deck2.pptx", data=minimal_pptx("第二份"))
+    after = office.get_preview(project.projectId, fresh["artifactId"], owner_id="alice")
+    assert after is not None and after.get("kind") != "pdf", after
     store.close()
     blobs._engine.dispose()
 
 
-def test_office_pdf_script_says_when_soffice_is_missing(tmp_path):
-    """脚本本体要报 soffice 不在，不许靠主机上的 which。"""
-    import subprocess
-    import sys
 
-    from services.e2b_workspace_provider import _OFFICE_PDF_SCRIPT
-
-    src = tmp_path / "a.pptx"
-    src.write_bytes(b"PK\x03\x04")
-    proc = subprocess.run(
-        [sys.executable, "-I", "-S", "-c", _OFFICE_PDF_SCRIPT],
-        input=json.dumps({"root": str(tmp_path), "path": "a.pptx"}),
-        text=True, capture_output=True, timeout=30,
-    )
-    assert proc.returncode == 0
-    assert json.loads(proc.stdout) == {"ok": False, "reason": "soffice_missing"}
-
-
-def test_render_office_pdf_reads_the_sandbox_reply_and_rejects_a_bad_path():
-    from services.e2b_workspace_provider import E2BWorkspaceProvider
-
-    pdf = b"%PDF-1.4\n%ok\n"
-    reply = json.dumps({"ok": True, "pdf": base64.b64encode(pdf).decode()})
-
-    class Proc:
-        def send_stdin(self, data):
-            self.data = data
-
-        def close_stdin(self):
-            pass
-
-        def wait(self):
-            return SimpleNamespace(exit_code=0, stdout=reply)
-
-    class Commands:
-        def run(self, *args, **kwargs):
-            return Proc()
-
-    class Sandbox:
-        commands = Commands()
-
-    class Fake:
-        def _sandbox(self, handle):
-            return Sandbox()
-
-    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "名单.xlsx") == pdf
-    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "../名单.xlsx") is None
-    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "generate.py") is None
-
-
-def test_preview_pdf_cap_matches_the_artifact_cap():
-    from services.e2b_workspace_provider import OFFICE_PREVIEW_PDF_MAX
-    from services.project_office_artifacts import MAX_OFFICE_ARTIFACT_BYTES
-
-    assert OFFICE_PREVIEW_PDF_MAX == MAX_OFFICE_ARTIFACT_BYTES
 
 
 @pytest.fixture

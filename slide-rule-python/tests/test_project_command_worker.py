@@ -526,3 +526,32 @@ def test_office_sandbox_without_template_env_stays_on_the_default_image(command_
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.status == "completed"
     assert provider.templates == [None]
+
+
+
+def test_upload_that_cannot_be_mounted_is_named_in_the_receipt_not_fatal(command_setup):
+    """活路径：真监督器、真执行器、真回执。
+
+    ⚠ 2026-09-23 review：上一版 provider 没有 write_bytes 时直接抛
+      `session_upload_mount_unavailable`，这个会话里**所有**命令都起不来。
+      现在命令照跑，放不进去的原件在模型看得见的回执里点名。
+    这里的假 provider 故意没有 write_bytes——正是那个会让整条命令崩掉的条件。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+    from services.project_tools import operation_snapshot
+
+    store, _, provider, worker, _ = command_setup
+    assert not hasattr(provider, "write_bytes")
+    project = store.create_project(
+        "session-upload-mount", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    store.put_session_upload("session-upload-mount", owner_id="alice",
+                             name="报价表.xlsx", data=b"PK\x03\x04sheet")
+    op = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="ls-1", command="shell", script="ls")
+    done = eventually(lambda: state(store, op, "stopped"))
+    assert done.status == "completed", (done.status, done.result)
+    snap = operation_snapshot(store.snapshot_operation(op.operationId, owner_id="alice"))
+    assert snap["uploadsSkipped"] == ["报价表.xlsx"], snap

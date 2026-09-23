@@ -112,6 +112,9 @@ class ProjectRuntimeSupervisor:
         self._lock = threading.Lock()
         self._workers: dict[str, threading.Thread] = {}
         self._stdin: dict[str, list[dict]] = {}
+        #: sandbox_id → {上传文件名: sha256}。同一台沙盒里已经放好的原件不再重推。
+        #: 进程重启后丢了也没关系：写入是幂等的，最多多推一次。
+        self._mounted_uploads: dict[str, dict[str, str]] = {}
         self._scanner: threading.Thread | None = None
 
     @property
@@ -841,17 +844,53 @@ class _RuntimeTask:
         """Copy session uploads onto the workspace root before the command runs.
 
         OpenHands copy_to's the live runtime. This sandbox is created here.
+
+        ⚠ 2026-09-23 review：上一版任何一步失败都直接抛——provider 没有
+          write_bytes、库读一份上传失败、某一行 sha256 对不上——结果是这个会话
+          里**所有**命令都起不来，连 `ls` 也不行，跟那份文件有没有关系无关。
+          而且每条命令都把全部上传（最多 8 × 15MB）从库里读一遍、推一遍。
+
+          现在按文件 fail-open：放不进去的记进 `uploadsSkipped`，随回执交给
+          模型——**不是**静默吞掉（§7：可以不挡路，不许装作放好了）。同一台
+          沙盒里 sha256 没变的原件不再重推。
         """
-        rows = self.store.list_session_uploads(self.original.sessionId, owner_id=self.owner_id)
+        try:
+            rows = self.store.list_session_uploads(self.original.sessionId, owner_id=self.owner_id)
+        except Exception:
+            logger.warning("session upload listing failed", exc_info=True)
+            self.result["uploadsSkipped"] = ["(上传清单读不到)"]
+            return
         if not rows:
             return
         writer = getattr(self.provider, "write_bytes", None)
         if writer is None:
-            raise WorkspaceProviderError("session_upload_mount_unavailable")
+            self.result["uploadsSkipped"] = [str(row["name"]) for row in rows][:8]
+            return
+        sandbox_id = str(getattr(self.handle, "sandbox_id", "") or "")
+        with self.supervisor._lock:
+            mounted = dict(self.supervisor._mounted_uploads.get(sandbox_id, {}))
+        skipped: list[str] = []
         for row in rows:
-            data = self.store.read_session_upload(
-                self.original.sessionId, row["name"], owner_id=self.owner_id)
-            writer(self.handle, row["name"], data)
+            name = str(row["name"])
+            if sandbox_id and mounted.get(name) == row["sha256"]:
+                continue
+            try:
+                data = self.store.read_session_upload(
+                    self.original.sessionId, name, owner_id=self.owner_id)
+                writer(self.handle, name, data)
+            except Exception:
+                logger.warning("session upload mount failed name=%s", name, exc_info=True)
+                skipped.append(name)
+                continue
+            mounted[name] = row["sha256"]
+        if sandbox_id:
+            with self.supervisor._lock:
+                # 只留最近这些台沙盒的账：它们用完就销毁，账不必永远记着。
+                if len(self.supervisor._mounted_uploads) >= 64 and sandbox_id not in self.supervisor._mounted_uploads:
+                    self.supervisor._mounted_uploads.pop(next(iter(self.supervisor._mounted_uploads)))
+                self.supervisor._mounted_uploads[sandbox_id] = mounted
+        if skipped:
+            self.result["uploadsSkipped"] = skipped[:8]
 
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。

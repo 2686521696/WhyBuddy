@@ -138,6 +138,11 @@ def operation_snapshot(snapshot):
     files = saved.get("officeFiles")
     if isinstance(files, list) and files:
         result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+    # 用户原件没放进沙盒时必须让模型看见——否则它会去沙盒里找一份不存在的文件，
+    # 或者照样说「已经处理了你的报价表」。
+    skipped = saved.get("uploadsSkipped")
+    if isinstance(skipped, list) and skipped:
+        result["uploadsSkipped"] = [str(item)[:240] for item in skipped[:8] if isinstance(item, str)]
     if operation.kind == "runtime.patch":
         for name in ("revision", "parentRevision", "runtimeOperationId", "synchronized", "sourcePublished"):
             if name in saved and isinstance(saved[name], (str, bool)):

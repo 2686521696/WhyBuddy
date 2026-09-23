@@ -183,6 +183,8 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
 from services.project_tools import command_receipt_from
+from services.project_store import get_project_store
+from services.session_uploads import upload_fact, workspace_path
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
 from services.scope_authority import (
@@ -3707,9 +3709,6 @@ def _session_upload_fact(session_id: str, owner_id: str) -> str | None:
     if not session_id or not owner_id:
         return None
     try:
-        from services.project_store import get_project_store
-        from services.session_uploads import upload_fact, workspace_path
-
         rows = get_project_store().list_session_uploads(session_id, owner_id=owner_id)
     except Exception:
         return None
