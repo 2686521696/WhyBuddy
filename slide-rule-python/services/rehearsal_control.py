@@ -3861,6 +3861,8 @@ def _system_prompt(state: V5SessionState) -> str:
             "与源码修改由原运行者串行执行。用 project_verification 读取真实断言；缺浏览器或预览为 blocked，"
             "源码或批准改变使旧证据 stale。失败后按断言修源码再申请新检查；用例通过只代表列出的验收范围。"
             "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
+            "project_verify 的幂等键若已被别的请求占用，服务端仍会排上一次检查并交回新的 operationId。"
+            "operation_idempotency_conflict 不是验收结论，也不是登录失败。"
             "构建通过和服务就绪均不是业务验收；私有预览、验证结果和对外发布分别查看服务端真实状态。"
         )
         if isinstance(readiness, dict):

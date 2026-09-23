@@ -395,10 +395,20 @@ class ProjectTools:
                 parent = self.store.get_operation(parsed.runtimeOperationId, owner_id=self.owner_id)
                 if parent.projectId != project.projectId or parent.sessionId != session_id:
                     raise ProjectNotFound("project_operation_not_found")
-                operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,
-                    expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
-                    idempotency_key=parsed.idempotencyKey,
-                    acceptance_requirements=approved_acceptance_requirements(authority))
+                requirements = approved_acceptance_requirements(authority)
+                try:
+                    operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,
+                        expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
+                        idempotency_key=parsed.idempotencyKey,
+                        acceptance_requirements=requirements)
+                except ProjectConflict as exc:
+                    # ⚠ 2026-09-23 待办应用：开工那把钥匙又被拿来申请验收，
+                    #   回 operation_idempotency_conflict。模型改口「换一个唯一键」
+                    #   再交，钥匙还是撞的，独立浏览器一次都没排上。登录 401 是
+                    #   应用自己的门。钥匙被占只说明名字冲突，验收请求还在。
+                    if str(exc) != "operation_idempotency_conflict":
+                        raise
+                    operation = self._verify_despite_reused_key(parent, parsed, requirements)
                 return {"ok": True, **self._snapshot(operation.operationId)}
             if name in {"project_start", "project_exec"}:
                 if name == "project_start" and is_office_file_plan(latest_control_plan(authority)):
@@ -491,6 +501,25 @@ class ProjectTools:
         except Exception:
             # 缩略图是增强项：落库失败不许拖垮 browser_view。
             pass
+
+    def _verify_despite_reused_key(self, parent, parsed, requirements):
+        """同一把钥匙已经绑了别的请求时，仍然把这次验收排上。
+
+        相同钥匙、相同请求走 submit 的幂等返回，进不了这里。未结束的同版本
+        检查直接交回，避免再开一台浏览器。否则换一把主机钥匙排一次。
+        """
+        inflight = [
+            child for child in self.store.list_runtime_verifications(
+                parent.operationId, owner_id=self.owner_id)
+            if child.expectedRevision == parsed.expectedRevision and child.status not in _TERMINAL
+        ]
+        if inflight:
+            return inflight[-1]
+        return self.supervisor.submit_verification(
+            parent.operationId, owner_id=self.owner_id,
+            expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
+            idempotency_key="verify-" + uuid.uuid4().hex,
+            acceptance_requirements=requirements)
 
     def _snapshot(self, operation_id):
         source = self.store.snapshot_operation(operation_id, owner_id=self.owner_id)

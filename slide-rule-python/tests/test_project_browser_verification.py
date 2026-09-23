@@ -85,6 +85,41 @@ def verify(live, *, key="verify-1", revision=None):
     return result["operationId"]
 
 
+def test_verify_key_taken_by_start_still_queues_a_browser_check(live):
+    """开工钥匙再拿来验收，不能停在 operation_idempotency_conflict。
+
+    ⚠ 2026-09-23 待办应用：模型复用 runtime.start 的钥匙，工具回冲突，
+    独立浏览器没排上。删掉 project_verify 里对 _verify_despite_reused_key
+    的调用，本条回到 error。登录不在这条判据里。
+    """
+    taken = live.store.get_operation(live.started["operationId"], owner_id="alice").idempotencyKey
+    result = live.tools.execute("project_verify", {"approvalRef": live.approval,
+        "expectedRevision": live.parent().runtime.revision,
+        "runtimeOperationId": live.started["operationId"], "idempotencyKey": taken}, live.state)
+    assert result.get("error") != "operation_idempotency_conflict"
+    assert result["ok"] and result["kind"] == "runtime.verify", result
+    assert result["operationId"] != live.started["operationId"]
+    saved = live.store.get_operation(result["operationId"], owner_id="alice")
+    assert saved.kind == "runtime.verify" and saved.idempotencyKey != taken
+    assert saved.input["runtimeOperationId"] == live.started["operationId"]
+
+
+def test_identical_verify_retry_returns_the_same_operation(live):
+    assert verify(live, key="verify-same") == verify(live, key="verify-same")
+
+
+def test_reused_key_while_a_check_is_running_does_not_start_a_second_one(live, monkeypatch):
+    browser, _ = install_browser(live, monkeypatch)
+    browser.release.clear()
+    first = verify(live, key="start")
+    assert browser.entered.wait(5)
+    assert verify(live, key="start") == first
+    children = live.store.list_runtime_verifications(
+        live.started["operationId"], owner_id="alice", include_terminal=True)
+    assert [item.operationId for item in children] == [first]
+    browser.release.set()
+
+
 def verdict(live, operation_id):
     records = live.supervisor.verification_store
     eventually(lambda: (row := records.for_operation(operation_id, owner_id="alice"))
