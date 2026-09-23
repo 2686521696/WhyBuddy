@@ -1573,8 +1573,6 @@ async def control_turn_stream(
     """M1 薄控制面。产品新烧唯一点火 HTTP。无 Node twin（catch-all 转发）。"""
     import json
 
-    from services.deliverable_kind import orch_trace
-    orch_trace("http-turn", session=str((payload or {}).get("sessionId") or "")[:40])
     _auth(x_internal_key)
     _require_login(viewer)
     from services.rehearsal_control import run_control_turn, validate_control_turn_body, reserve_control_turn

@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1077 个模块"]
+    ts_client["ts/client<br/>1079 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
     ts_scripts["ts/scripts<br/>67 个模块"]
     ts_server["ts/server<br/>588 个模块"]
@@ -48,8 +48,8 @@ flowchart TB
   ts_services -->|23| ts_shared
   py_app -->|1| py_config
   py_app -->|1| py_models
-  py_app -->|16| py_routes
-  py_app -->|23| py_services
+  py_app -->|17| py_routes
+  py_app -->|28| py_services
   py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models

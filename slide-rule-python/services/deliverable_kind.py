@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import html
 import io
+import json
+import os
 import re
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping
 
 WEB_APP = "web-app"
@@ -91,25 +95,23 @@ def idle_office_exec_allows_source_write(lease, operation) -> bool:
 
 
 def orch_trace(event: str, **fields: Any) -> None:
-    """真机编排轨迹。会话捕获的 stdout 只留开头 20KB，闸门 print 会丢。
+    """真机编排轨迹。**默认关**，设 `ORCH_TRACE=<路径>` 才写。
 
-    ⚠ 2026-09-22 sr-20260922041808-Z8NPKNM14C：启动行印了
-      readmeBytes=309、officeSeed=11022，同一进程 project_create 仍是
-      旧 README 150 字节（sha 5edc1d7e），skill(office-skills) 仍
-      skill_not_found，bash 仍 lockfile。print 落在被截掉的那一段。
-      失败必须写文件，不能只 print。
+    ⚠ 2026-09-22 sr-20260922041808-Z8NPKNM14C：启动行印了 readmeBytes=309、
+      officeSeed=11022，同一进程 project_create 仍是旧 README。
+      会话捕获的 stdout 只留开头 20KB，闸门 print 落在被截掉的那一段——
+      所以失败要写文件，不能只 print。
+
+    ⚠ 2026-09-23 review：上一版**无条件**往 `<repo>/tmp/live-office-ppt/orch.log`
+      追加，而 http-turn / dispatch / recall / service-turn 每一发都写一行，
+      没有轮转、没有上限。查真机那几天的临时手段不该跟着镜像上线。
+      现在只认 ORCH_TRACE：不设就直接返回，一个字节都不落。
     """
+    path_text = os.environ.get("ORCH_TRACE")
+    if not path_text:
+        return
     try:
-        import json
-        import os
-        from datetime import datetime, timezone
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parents[2]
-        path = Path(
-            os.environ.get("ORCH_TRACE")
-            or (root / "tmp" / "live-office-ppt" / "orch.log")
-        )
+        path = Path(path_text)
         path.parent.mkdir(parents=True, exist_ok=True)
         row = {
             "t": datetime.now(timezone.utc).isoformat(timespec="seconds"),

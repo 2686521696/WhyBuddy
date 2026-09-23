@@ -110,6 +110,14 @@ from services.workflow_validate import dry_run_registered_calendars as _dry_run_
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_capability_executor import _llm_generate_enabled
+# 启动自报家门用的那几个模块。函数体 import 一样算架构边（CLAUDE.md），
+# 而 app 本来就在顶上 import routes/services，放这儿不多一条边。
+import routes.sliderule_full as _routes
+import services.control_run_service as _crs
+import services.project_creation as _pc
+import services.project_runtime_worker as _prw
+import services.rehearsal_control as _rc
+from services import deliverable_kind as _deliverable_kind
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
@@ -387,47 +395,30 @@ async def lifespan(app: FastAPI):
     #   实际 import 到的档，不能只看仓库里的 control_budget.py。
     print(startup_budget_line())
     # ⚠ 2026-09-22 AFFWP4GMZR：进程启动时间晚于源码 mtime，建出来的办公区
-    #   README 仍是旧的 150 字节，skill 种子和 bash 跳过 lockfile 都没发生。
-    #   启动必须印出这一进程 import 到的文件和正文长度，不能只看仓库。
-    from services import deliverable_kind as _deliverable_kind
-    from services.skill_catalog_store import local_seed_skill_info
-
-    _office = local_seed_skill_info("office-skills")
-    import services.rehearsal_control as _rc
-    import services.project_creation as _pc
-    import inspect as _inspect
-    _dispatch_src = _inspect.getsource(_rc._dispatch_tool)
-    _turn_src = _inspect.getsource(_rc.run_control_turn)
-    import services.control_run_service as _crs
-    print(
-        f"[startup] turnFnSame={_crs.run_control_turn is _rc.run_control_turn} "
-        f"turnTrace={'session_id[:40]' in _turn_src} "
-        f"serviceFile={_crs.__file__}"
-    )
-    import routes.sliderule_full as _routes
-    print(f"[startup] routeFile={_routes.__file__}")
-    import services.project_runtime_worker as _prw
-    _sandbox_reuse = (
-        "keepSandbox" in _inspect.getsource(_prw._RuntimeTask.finish)
-        and "keepSandbox" in _inspect.getsource(_prw._RuntimeTask.run)
-    )
-    print(
-        f"[startup] orchestration file={_deliverable_kind.__file__} "
-        f"readmeBytes={len(_deliverable_kind.WORKSPACE_README.encode())} "
-        f"officeSeed={0 if _office is None else len(_office.body or '')} "
-        f"control={_rc.__file__} "
-        f"taskChars={'taskChars' in _dispatch_src} "
-        f"ensure={'def _ensure_office_tree' in _inspect.getsource(_pc)} "
-        f"sandboxReuse={_sandbox_reuse} worker={_prw.__file__}"
-    )
-    _deliverable_kind.orch_trace(
-        "startup",
-        control=_rc.__file__,
-        taskChars="taskChars" in _dispatch_src,
-        readmeBytes=len(_deliverable_kind.WORKSPACE_README.encode()),
-        sandboxReuse=_sandbox_reuse,
-        worker=_prw.__file__,
-    )
+    #   README 仍是旧的。启动要亮这一进程**实际 import 到的**那几个文件。
+    #
+    # ⚠ 2026-09-23 review：上一版在这里裸跑 `inspect.getsource(_rc._dispatch_tool)`、
+    #   `getsource(_prw._RuntimeTask.finish)`，再 grep `'taskChars' in ...`、
+    #   `"keepSandbox" in ...`。两处塌了：
+    #     · 没有 try/except —— 谁把 `_dispatch_tool` 改个名，lifespan 抛
+    #       AttributeError，**整个进程起不来**。观测是增强类，必须 fail-open（§7）；
+    #     · 断言的是源码字面量，改个变量名就静默印 False（§2 盯语义别盯字面）。
+    #   留下的只有「import 到了哪个文件」这一件事——它便宜、不会骗人、
+    #   也不用把 services.skill_catalog_store 拖进 app 的依赖（那是架构闸
+    #   上那条 `app -> services.skill_catalog_store` 新违规的来源）。
+    try:
+        print(
+            "[startup] modules"
+            f" control={_rc.__file__}"
+            f" service={_crs.__file__} turnFnSame={_crs.run_control_turn is _rc.run_control_turn}"
+            f" route={_routes.__file__}"
+            f" worker={_prw.__file__}"
+            f" creation={_pc.__file__}"
+            f" orchestration={_deliverable_kind.__file__}"
+            f" readmeBytes={len(_deliverable_kind.WORKSPACE_README.encode())}"
+        )
+    except Exception as _report_error:  # noqa: BLE001 — 启动自报家门不许把进程带崩
+        print(f"[startup] modules unavailable: {type(_report_error).__name__}", flush=True)
     print("[startup] session archive: payloads deferred until first request")
     _warm_storage_backends()
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see

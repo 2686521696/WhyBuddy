@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **355** 个，模块 **355** 个
-- 内部依赖边 **1175** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1086** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1185** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1096** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -53,8 +53,8 @@ flowchart TB
   core["core<br/>74 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|161| util
-  flow -->|132| core
-  flow -->|163| util
+  flow -->|133| core
+  flow -->|165| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -74,8 +74,8 @@ flowchart TB
   scripts["scripts<br/>39 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
-  app -->|16| routes
-  app -->|23 · 其中 3 条边来自函数体 import| services
+  app -->|17| routes
+  app -->|28 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -179,11 +179,11 @@ flowchart LR
   capability_engine -->|1| spec_first
   control -->|handoff 7| drive
   control -->|1| evidence
-  control -->|3| identity
+  control -->|4| identity
   control -->|9| llm_gateway
   control -->|3| model_core
   control -->|9| persist
-  control -->|30| platform
+  control -->|31| platform
   control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
@@ -200,15 +200,15 @@ flowchart LR
   drive -->|2| run_control
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
-  entrypoint -->|1| control
+  entrypoint -->|3| control
   entrypoint -->|2| drive
-  entrypoint -->|11| http_routes
+  entrypoint -->|12| http_routes
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|2| persist
-  entrypoint -->|6| platform
-  entrypoint -->|4| runtime
+  entrypoint -->|3| persist
+  entrypoint -->|7| platform
+  entrypoint -->|5| runtime
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
   entrypoint -->|2| workspace
@@ -254,7 +254,7 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|36| platform
+  persist -->|37| platform
   run_control -->|1| platform
   runtime -->|2| identity
   runtime -->|11| persist

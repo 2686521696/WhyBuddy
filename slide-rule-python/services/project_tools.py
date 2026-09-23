@@ -45,13 +45,12 @@ from services.deliverable_kind import (
     is_office_artifact_path, is_office_file_plan,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
+from services.control_skills import catalog_skill_slug
+from services.skill_catalog_store import installed_skill_infos, local_seed_skill_info
 
 
 def _skill_body_for_catalog_path(path: str, owner_id: str | None) -> str | None:
     """技能目录标签读不到工程文件时，交种子正文，不许变成 project_file_not_found。"""
-    from services.control_skills import catalog_skill_slug
-    from services.skill_catalog_store import installed_skill_infos, local_seed_skill_info
-
     slug = catalog_skill_slug(path)
     if not slug:
         return None
