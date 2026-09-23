@@ -88,13 +88,22 @@ def source_archive(*, include_preview: bool = True) -> bytes:
 
     Ignored files, secrets and mutable application/session data are never selected.
     """
-    paths = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "slide-rule-python", "project-templates/react-vite", "project-templates/react-vite-tasks"],
+    # ⚠ 2026-09-23：这份清单里原来没有 `skills/`，而 `skill_catalog_store`
+    #   在**模块顶层**就 `_GITHUB_SEEDS = load_github_seeds()` 读
+    #   `skills/seeds/index.json`。于是打出来的包**根本起不来**：
+    #     app.py → routes.sliderule_full → … → skill_catalog_store
+    #       → FileNotFoundError: skills/seeds/index.json
+    #   种子包是产线数据，不是测试夹具——`local_seed_skill_info` 在真机上
+    #   读 `skills/seeds/<slug>.zip` 当商店目录拉不到时的兜底。整个 skills/
+    #   才 4.2MB，一起带上。
+    paths = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "slide-rule-python", "project-templates/react-vite", "project-templates/react-vite-tasks", "skills"],
         cwd=ROOT, check=True, capture_output=True).stdout.decode().split("\0")
     selected = [path for path in paths if path and (
         (path.startswith("slide-rule-python/") and path.endswith(".py") and "/tests/" not in path)
         or path.startswith("slide-rule-python/services/data/")
         or path == "slide-rule-python/requirements.txt" or path.startswith("project-templates/react-vite/")
-        or path.startswith("project-templates/react-vite-tasks/"))]
+        or path.startswith("project-templates/react-vite-tasks/")
+        or path.startswith("skills/"))]
     selected += ["scripts/fixtures/project-product-backend.py", "server/project-verification/browser-runner.mjs"]
     if include_preview:
         selected += ["dist/project-preview/gateway.cjs", "dist/project-preview/agent.cjs", "dist/project-preview/ws-LICENSE.txt"]

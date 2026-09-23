@@ -99,12 +99,23 @@ def test_filtered_http_response_is_accounted_and_never_resampled(env, monkeypatc
             finally:
                 await second.shutdown()
         else:
-            [stop] = [e for e in saved["events"] if e.get("stopReason")]
+            # ⚠ 2026-09-23：这里原来是 `[stop] = […]`（只许有一个带停因的事件）。
+            #   2026-09-21 349E2KVH7G 之后停因**同时**挂在 control_text 和
+            #   complete 上——真机那趟就是 control_text 带了 llm_unavailable、
+            #   complete 却还是裸的 idle，刷新出来是假绿灯。所以「只有一个」
+            #   恰恰是当时那个病。现在改成：两边都得有，而且必须是同一份。
+            carriers = [e for e in saved["events"] if e.get("stopReason")]
+            assert {e["type"] for e in carriers} == {"control_text", "complete"}, carriers
+            assert len({(e["stopReason"], e["stoppedBy"]) for e in carriers}) == 1, carriers
+            [stop] = [e for e in carriers if e["type"] == "control_text"]
             assert stop["stopReason"] == "llm_unavailable" and stop["stoppedBy"] == "provider"
             assert stop["providerFinishReason"] == "content_filter"
             assert "内容过滤" in stop["text"] and "未自动重试" in stop["text"]
             assert "工程源码" in stop["text"]
             assert "开始推演" not in stop["text"] and "没点火" not in stop["text"]
+            # complete 上的相位也不许再是 idle（那正是刷新出来的假绿灯）。
+            [done] = [e for e in carriers if e["type"] == "complete"]
+            assert (done.get("state") or {}).get("runtimePhase") != "idle", done.get("state")
         assert len(model_calls) == 2 and len(requests) == 1
 
     asyncio.run(run())

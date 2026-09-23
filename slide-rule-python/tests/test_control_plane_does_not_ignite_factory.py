@@ -138,9 +138,19 @@ def test_control_plane_failure_canned_no_helper(harness):
     #   而"这条路不走停因表了"照样红。
     from services.rehearsal_control import ControlStopReason, _STOP_TABLE
 
+    # ⚠ 2026-09-23：这两条原来是 `in texts`（整句相等）。2026-09-22 FFR6 之后
+    #   产线在罐头后面缀了异常类型名——「这一轮没跑完…（RuntimeError）」，
+    #   于是相等判据打空，而它守的事一个字没变。改成按**这句话是不是这条线的
+    #   底子**来判（§2：盯语义，别盯某句话的字面）。
+    said = " ".join(t or "" for t in texts)
     # RuntimeError 不是网关故障，不许借「连不上」那张嘴（2026-09-08）。
-    assert _STOP_TABLE[ControlStopReason.UNKNOWN][1] in texts
-    assert _STOP_TABLE[ControlStopReason.LLM_UNAVAILABLE][1] not in texts
+    assert _STOP_TABLE[ControlStopReason.UNKNOWN][1] in said, texts
+    assert _STOP_TABLE[ControlStopReason.LLM_UNAVAILABLE][1] not in said, texts
+    # 正向：说清是哪一类异常（FFR6：模型下一轮得知道是哪一种）。
+    assert "RuntimeError" in said, texts
+    # 反向：只给类型名，不许把异常正文/栈塞进用户话里。
+    assert "control llm exploded" not in said, texts
+    assert "Traceback" not in said, texts
     assert "control_handoff_factory" not in event_types(events)
     # 顺带钉住这次修复：别再回到"叫用户说一个要做的应用"
     assert not any("说一个要做的应用" in (t or "") for t in texts)

@@ -81,14 +81,22 @@ def test_execute_之后立刻把_operationId_补进开场():  # noqa: RUF001
     raw = Path(__file__).resolve().parents[1].joinpath(
         "services", "rehearsal_control.py"
     ).read_text(encoding="utf-8")
-    src = re.sub(r'""".*?"""', "", raw, flags=re.S)
+    src = re.sub(r'''""".*?"""''', "", raw, flags=re.S)
     src = re.sub(r"#.*", "", src)
-    execute_at = src.find("adapter.execute")
-    wait_at = src.find("time.monotonic() + 15.0")
-    assert execute_at != -1 and wait_at != -1 and execute_at < wait_at
-    chunk = src[execute_at:wait_at]
-    assert "tool_start_event" in chunk
-    assert "operation_id" in chunk
+    # ⚠ 2026-09-23：锚点原来是 `adapter.execute` 和字面量
+    #   `time.monotonic() + 15.0`。那 15 秒后来抽成了
+    #   `_project_tool_wait_seconds()`（前台 shell 按 timeout 走，其余仍回 15），
+    #   字面量没了 → `wait_at == -1`，判据静静打空。守的事一个字没变：
+    #   **拿到 operationId 和开始等待之间，必须再 yield 一发带 id 的 start。**
+    #   所以锚点改成那两件事本身。
+    id_at = src.find('body.get("operationId")')
+    wait_at = src.find("time.monotonic() + wait_seconds")
+    assert id_at != -1 and wait_at != -1 and id_at < wait_at, (id_at, wait_at)
+    chunk = src[id_at:wait_at]
+    assert "tool_start_event" in chunk, chunk
+    assert "operation_id=str(operation_id)" in chunk, chunk
+    # 反向：补 id 这一发不许挪到等待**之后**（等满才订得上 PTY = 整屏空白）。
+    assert chunk.index("tool_start_event") < chunk.index("_project_tool_wait_seconds"), chunk
 
 
 def test_non_tool_events_are_ignored():

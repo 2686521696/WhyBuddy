@@ -201,9 +201,18 @@ def test_loop_uses_fresh_round_budget_and_microcompact():
     serial = _fn_body(strip_python(CONTROL_SRC), "_run_control_turn_serial")
     assert "_run_control_turn_body" in serial
     assert "'model'" in serial and "'tools'" in serial
-    kernel = _fn_body(strip_python(CONTROL_SRC.parent / "project_tools.py"), "_kernel_runtime")
-    assert "_command_pointer" in kernel
-    assert "_command_log_excerpt" in kernel
+    # ⚠ 2026-09-23：这两条原来直接在 `_kernel_runtime` 体内 grep
+    #   `_command_pointer` / `_command_log_excerpt`。d08c4df9 把那两句抽成了
+    #   `command_receipt_from(...)`（理由见它的头注：分发处等完之后不许拿裸
+    #   snapshot 盖掉 excerpt），于是判据在一次**改名**上打空——而它守的事
+    #   一个字没变。§3 要的是「真的接在链路上」，不是某个标识符出现过。
+    #   现在分两段钉：kernel 走的是回执助手，助手自己是那两件东西搭的。
+    tools_src = strip_python(CONTROL_SRC.parent / "project_tools.py")
+    kernel = _fn_body(tools_src, "_kernel_runtime")
+    assert "command_receipt_from" in kernel, kernel
+    receipt = _fn_body(tools_src, "command_receipt_from")
+    assert "_command_pointer" in receipt, receipt
+    assert "_command_log_excerpt" in receipt, receipt
 
 
 def test_command_pointer_excerpt_is_log_tail_not_error_code(setup):

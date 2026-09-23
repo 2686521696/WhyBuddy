@@ -198,6 +198,12 @@ def test_packaged_product_smoke_runs_real_lifespan_and_account_boundary(tmp_path
         assert "slide-rule-python/services/data/product_archetypes.json" in names
         assert "project-templates/react-vite-tasks/database.mjs" in names
         assert "project-templates/react-vite-tasks/public/_whybuddy/editor.js" in names
+        # ⚠ 2026-09-23：skill_catalog_store 在模块顶层就读种子目录
+        #   （`_GITHUB_SEEDS = load_github_seeds()`），少了它整个 app 起不来。
+        #   种子 zip 也是产线数据：local_seed_skill_info 拿它当商店拉不到时的兜底。
+        assert "skills/seeds/index.json" in names
+        assert "skills/seeds/office-skills.zip" in names
+        assert "skills/sliderule.zip" in names
         assert not any("/node_modules/" in name or "/dist/" in name or name.endswith("tasks.sqlite") for name in names)
         assert not any(Path(name).name == ".env" or name.startswith("slide-rule-python/data/") for name in names)
         archive.extractall(tmp_path, filter="data")
