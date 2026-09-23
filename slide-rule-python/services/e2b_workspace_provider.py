@@ -27,6 +27,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
+from services.deliverable_kind import office_artifact_suffix
 from services.project_manifest import build_manifest
 from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import (
@@ -36,6 +37,46 @@ from services.project_workspace_artifacts import (
 from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
+# 与 project_office_artifacts.MAX_OFFICE_ARTIFACT_BYTES 同一上限。
+# 那边是 persist，workspace 组件不能 import 它。
+OFFICE_PREVIEW_PDF_MAX = 8 * 1024 * 1024
+# 在沙盒里把办公文件转成 PDF。没有 soffice 就打印原因，退出码仍是 0，
+# 调用方 fail-open，不许把一次成功的 bash 打成失败。
+_OFFICE_PDF_SCRIPT = r'''
+import base64, json, shutil, subprocess, sys, tempfile
+from pathlib import Path
+try:
+    req = json.load(sys.stdin)
+    root = Path(req["root"]).resolve()
+    rel = str(req["path"]).replace("\\", "/").lstrip("/")
+    parts = rel.split("/")
+    if not rel or any(part in ("", ".", "..") for part in parts):
+        raise ValueError("path")
+    src = (root / rel).resolve()
+    if root not in src.parents or not src.is_file():
+        raise ValueError("path")
+    binary = shutil.which("soffice") or shutil.which("libreoffice")
+    if not binary:
+        print(json.dumps({"ok": False, "reason": "soffice_missing"}))
+    else:
+        with tempfile.TemporaryDirectory(prefix="wb_office_") as folder:
+            subprocess.run(
+                [binary, "--headless", "--norestore", "--convert-to", "pdf",
+                 "--outdir", folder, str(src)],
+                check=False, capture_output=True, timeout=60,
+            )
+            pdfs = list(Path(folder).glob("*.pdf"))
+            if not pdfs:
+                print(json.dumps({"ok": False, "reason": "no_pdf"}))
+            else:
+                data = pdfs[0].read_bytes()
+                if not data.startswith(b"%PDF"):
+                    print(json.dumps({"ok": False, "reason": "not_pdf"}))
+                else:
+                    print(json.dumps({"ok": True, "pdf": base64.b64encode(data).decode("ascii")}))
+except Exception:
+    print(json.dumps({"ok": False, "reason": "render_failed"}))
+'''
 MAX_OUTPUT_BYTES = 32 * 1024
 MAX_SYNC_PAYLOAD_BYTES = 64 * 1024 * 1024
 MAX_CONSOLE_CHUNK = 8192
@@ -663,6 +704,47 @@ class E2BWorkspaceProvider:
                 continue
             out.append({"path": path, "data": data})
         return out
+
+    def render_office_pdf(self, handle, path: str) -> bytes | None:
+        """同一沙盒里 soffice 转 PDF。没有二进制、转失败、字节不合法都返回 None。"""
+        rel = str(path or "").replace("\\", "/").lstrip("/")
+        if not rel or any(part in ("", ".", "..") for part in rel.split("/")):
+            return None
+        if office_artifact_suffix(rel) is None:
+            return None
+        try:
+            payload = json.dumps({"root": PROJECT_ROOT, "path": rel}, separators=(",", ":"))
+            process = self._sandbox(handle).commands.run(
+                _python(_OFFICE_PDF_SCRIPT), cwd="/home/user",
+                background=True, stdin=True, timeout=90,
+            )
+            process.send_stdin(payload)
+            process.close_stdin()
+            reply = process.wait()
+        except Exception:
+            return None
+        if getattr(reply, "exit_code", None) != 0:
+            return None
+        stdout = getattr(reply, "stdout", None)
+        limit = (OFFICE_PREVIEW_PDF_MAX + 2) // 3 * 4 + 256
+        if not isinstance(stdout, str) or len(stdout.encode()) > limit:
+            return None
+        try:
+            value = json.loads(stdout)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(value, dict) or value.get("ok") is not True:
+            return None
+        raw = value.get("pdf")
+        if not isinstance(raw, str):
+            return None
+        try:
+            data = base64.b64decode(raw, validate=True)
+        except (ValueError, TypeError):
+            return None
+        if not data.startswith(b"%PDF") or len(data) > OFFICE_PREVIEW_PDF_MAX:
+            return None
+        return data
 
     def read_application_data(self, handle):
         value = self._artifact_io(handle, "read-data")

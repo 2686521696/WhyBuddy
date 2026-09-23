@@ -33,6 +33,7 @@ from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
     OFFICE_START_NOT_APPLICABLE,
     is_office_artifact_path,
+    office_preview_html,
     office_preview_payload,
 )
 from services.identity_store import User
@@ -124,6 +125,74 @@ def test_slide_preview_keeps_position_and_numeric_order():
     assert shape["fontSize"] == 32 and shape["color"] == "#FFFFFF"
     assert shape["fill"] == "#C2410C"
     assert preview["slides"][0]["background"] == "#0B1F17"
+
+
+def def_rpr_cover_pptx() -> bytes:
+    """封面标题的白字在 defRPr 上，run 里没有 rPr。同一框里还有一行浅蓝副题。"""
+    slide = """<?xml version="1.0"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:sp><p:spPr>
+      <a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/></a:xfrm>
+      <a:solidFill><a:srgbClr val="0F172A"/></a:solidFill>
+    </p:spPr></p:sp>
+    <p:sp><p:spPr>
+      <a:xfrm><a:off x="1188720" y="2011680"/><a:ext cx="6583680" cy="2377440"/></a:xfrm>
+      <a:noFill/>
+    </p:spPr><p:txBody><a:bodyPr/>
+      <a:p><a:pPr><a:defRPr sz="4400" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr></a:pPr>
+        <a:r><a:t>面团AI办公启动会</a:t></a:r></a:p>
+      <a:p><a:pPr><a:defRPr sz="1900"><a:solidFill><a:srgbClr val="93C5FD"/></a:solidFill></a:defRPr></a:pPr>
+        <a:r><a:t>开启企业智能办公新范式</a:t></a:r></a:p>
+    </p:txBody></p:sp>
+  </p:spTree></p:cSld>
+</p:sld>"""
+    presentation = """<?xml version="1.0"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldSz cx="12192000" cy="6858000"/>
+</p:presentation>"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("ppt/presentation.xml", presentation)
+        archive.writestr("ppt/slides/slide1.xml", slide)
+    return buf.getvalue()
+
+
+def test_def_rpr_keeps_each_line_color_and_size():
+    """⚠ 2026-09-22 启动会封面白字在 defRPr。只认 rPr 时标题画成近黑。
+
+    两行收成一个字号时，19pt 的副题不再出现。删掉 defRPr 或 lines，本条变红。
+    """
+    preview = office_preview_payload(def_rpr_cover_pptx(), "deck.pptx")
+    assert preview is not None
+    title = next(shape for shape in preview["slides"][0]["shapes"] if "面团AI办公启动会" in shape["text"])
+    assert title["color"] == "#FFFFFF" and title["fontSize"] == 44
+    assert title["lines"][0]["bold"] is True
+    assert title["lines"][1]["color"] == "#93C5FD" and title["lines"][1]["fontSize"] == 19
+    page = office_preview_html(preview)
+    assert page is not None
+    assert page.count("color:#93C5FD") == 2
+    assert page.count("3.52cqh") == 2
+    assert page.count("font-weight:700") == 2
+    assert page.count('class="mini"') == 1
+    assert ">面团AI办公启动会</button>" not in page
+
+
+def test_filmstrip_is_a_miniature_of_each_slide():
+    """⚠ 2026-09-22 底部是正文第一行截成的按钮，不是这一页的缩小。
+
+    缩略图和舞台不是同一份版式，或点过一页之后选中框不再跟着走，本条变红。
+    """
+    page = office_preview_html(office_preview_payload(positioned_pptx(), "deck.pptx"))
+    assert page is not None
+    assert page.count('class="mini"') == 2
+    assert page.count("left:3.750%") == 4
+    assert 'class="badge">1</span>' in page and 'class="badge">2</span>' in page
+    assert 'class="thumbs"' not in page
+    assert ">第二页</button>" not in page
+    assert "setAttribute('aria-current','true')" in page
+    assert "toggleAttribute('aria-current'" not in page
 
 
 def test_leaf_office_path_and_preview():
@@ -375,6 +444,157 @@ def test_collect_skips_script_even_when_it_arrives_first(tmp_path, monkeypatch):
     blobs._engine.dispose()
 
 
+def test_collect_stores_the_file_and_does_not_render_a_sandbox_pdf(tmp_path, monkeypatch):
+    """预览在浏览器里画字节。收集时再转 PDF，说明又走回 soffice。"""
+    store, blobs = _project_setup(tmp_path, monkeypatch)
+    sid = "sess-art-pdf"
+    state = V5SessionState(
+        sessionId=sid, ownerId="alice",
+        goal={"text": "做个表"},
+        controlTranscript=approved_plan_rows("做表", deliverable_kind=OFFICE_FILE),
+    )
+    assert persistence.save_session_record(state, server_write=True)["ok"]
+    project = create_session_project(
+        store, sid, owner_id="alice",
+        approval_ref=approved_reference(state), template_id="react-vite")
+    pptx = minimal_pptx()
+    seen = []
+
+    def render(_handle, path):
+        seen.append(path)
+        return b"%PDF-1.4\n%sandbox\n"
+
+    task = SimpleNamespace(
+        provider=SimpleNamespace(
+            collect_office_files=lambda _handle: [{"path": "名单.xlsx", "data": pptx}],
+            render_office_pdf=render,
+        ),
+        handle=object(),
+        store=store,
+        owner_id="alice",
+        original=SimpleNamespace(projectId=project.projectId),
+        result={},
+    )
+    _RuntimeTask._collect_office_artifacts(task)
+    assert seen == []
+    assert task.result["officeFiles"] == ["名单.xlsx"]
+    office = ProjectOfficeArtifactStore(store)
+    meta = office.list(project.projectId, owner_id="alice")[0]
+    preview = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
+    assert preview is None or preview.get("kind") != "pdf"
+    store.close()
+    blobs._engine.dispose()
+
+
+def test_later_sandbox_pdf_replaces_homemade_preview(tmp_path, monkeypatch):
+    """同一份字节先入库了 HTML，沙盒 PDF 后到必须换上。"""
+    store, blobs = _project_setup(tmp_path, monkeypatch)
+    sid = "sess-art-pdf-upgrade"
+    state = V5SessionState(
+        sessionId=sid, ownerId="alice",
+        goal={"text": "做个PPT"},
+        controlTranscript=approved_plan_rows("做PPT", deliverable_kind=OFFICE_FILE),
+    )
+    assert persistence.save_session_record(state, server_write=True)["ok"]
+    project = create_session_project(
+        store, sid, owner_id="alice",
+        approval_ref=approved_reference(state), template_id="react-vite")
+    pptx = minimal_pptx()
+    office = ProjectOfficeArtifactStore(store)
+    meta = office.put(project.projectId, owner_id="alice", path="deck.pptx", data=pptx)
+    first = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
+    assert first is None or first.get("kind") != "pdf"
+    pdf = b"%PDF-1.4\n%later\n"
+    office.put(
+        project.projectId, owner_id="alice", path="deck.pptx", data=pptx, preview_pdf=pdf)
+    second = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
+    assert second["kind"] == "pdf"
+    assert base64.b64decode(second["content"]) == pdf
+    store.close()
+    blobs._engine.dispose()
+
+
+def test_garbage_preview_pdf_does_not_replace_html(tmp_path, monkeypatch):
+    store, blobs = _project_setup(tmp_path, monkeypatch)
+    sid = "sess-art-pdf-garbage"
+    state = V5SessionState(
+        sessionId=sid, ownerId="alice",
+        goal={"text": "做个PPT"},
+        controlTranscript=approved_plan_rows("做PPT", deliverable_kind=OFFICE_FILE),
+    )
+    assert persistence.save_session_record(state, server_write=True)["ok"]
+    project = create_session_project(
+        store, sid, owner_id="alice",
+        approval_ref=approved_reference(state), template_id="react-vite")
+    pptx = minimal_pptx()
+    office = ProjectOfficeArtifactStore(store)
+    meta = office.put(project.projectId, owner_id="alice", path="deck.pptx", data=pptx)
+    before = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
+    office.put(
+        project.projectId, owner_id="alice", path="deck.pptx", data=pptx, preview_pdf=b"not-a-pdf")
+    after = office.get_preview(project.projectId, meta["artifactId"], owner_id="alice")
+    assert after == before
+    store.close()
+    blobs._engine.dispose()
+
+
+def test_office_pdf_script_says_when_soffice_is_missing(tmp_path):
+    """脚本本体要报 soffice 不在，不许靠主机上的 which。"""
+    import subprocess
+    import sys
+
+    from services.e2b_workspace_provider import _OFFICE_PDF_SCRIPT
+
+    src = tmp_path / "a.pptx"
+    src.write_bytes(b"PK\x03\x04")
+    proc = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", _OFFICE_PDF_SCRIPT],
+        input=json.dumps({"root": str(tmp_path), "path": "a.pptx"}),
+        text=True, capture_output=True, timeout=30,
+    )
+    assert proc.returncode == 0
+    assert json.loads(proc.stdout) == {"ok": False, "reason": "soffice_missing"}
+
+
+def test_render_office_pdf_reads_the_sandbox_reply_and_rejects_a_bad_path():
+    from services.e2b_workspace_provider import E2BWorkspaceProvider
+
+    pdf = b"%PDF-1.4\n%ok\n"
+    reply = json.dumps({"ok": True, "pdf": base64.b64encode(pdf).decode()})
+
+    class Proc:
+        def send_stdin(self, data):
+            self.data = data
+
+        def close_stdin(self):
+            pass
+
+        def wait(self):
+            return SimpleNamespace(exit_code=0, stdout=reply)
+
+    class Commands:
+        def run(self, *args, **kwargs):
+            return Proc()
+
+    class Sandbox:
+        commands = Commands()
+
+    class Fake:
+        def _sandbox(self, handle):
+            return Sandbox()
+
+    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "名单.xlsx") == pdf
+    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "../名单.xlsx") is None
+    assert E2BWorkspaceProvider.render_office_pdf(Fake(), object(), "generate.py") is None
+
+
+def test_preview_pdf_cap_matches_the_artifact_cap():
+    from services.e2b_workspace_provider import OFFICE_PREVIEW_PDF_MAX
+    from services.project_office_artifacts import MAX_OFFICE_ARTIFACT_BYTES
+
+    assert OFFICE_PREVIEW_PDF_MAX == MAX_OFFICE_ARTIFACT_BYTES
+
+
 @pytest.fixture
 def tools_setup(tmp_path, monkeypatch, project_actor):
     project_actor("alice")
@@ -565,6 +785,72 @@ def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
         assert page.headers["content-type"].startswith("text/html")
         assert "第二页" in page.text and "第十页" in page.text
         assert "left:" in page.text
+        assert page.text.count('class="mini"') == 2
+    store.close()
+    sessions._engine.dispose()
+
+
+def test_stored_shapes_without_color_are_repainted(tmp_path, monkeypatch):
+    """库里的 shapes 没有字色时，打开预览仍按文件字节重画。
+
+    ⚠ 2026-09-22 启动会预览已经有坐标，封面白字却在入库时丢掉。
+      有 shapes 就跳过重读，胶片条里的标题继续是近黑。本条变红说明又跳过了。
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NODE_ENV", "development")
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    monkeypatch.setattr("config.settings.settings.NODE_ENV", "development")
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
+    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'session.db'}")
+    monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
+    monkeypatch.setattr(route, "get_project_store", lambda: store)
+    state = V5SessionState(
+        sessionId="office-recolor", ownerId="alice",
+        goal={"text": "做个PPT"},
+        controlTranscript=approved_plan_rows("做PPT", deliverable_kind=OFFICE_FILE),
+    )
+    assert persistence.save_session_record(state, server_write=True)["ok"]
+    project = create_session_project(
+        store, state.sessionId, owner_id="alice",
+        approval_ref=approved_reference(state), template_id="react-vite")
+    data = def_rpr_cover_pptx()
+    meta = ProjectOfficeArtifactStore(store).put(
+        project.projectId, owner_id="alice", path="面团启动.pptx", data=data)
+    stale = {
+        "kind": "slides",
+        "slideWidth": 12192000,
+        "slideHeight": 6858000,
+        "slides": [{
+            "text": "面团AI办公启动会\n开启企业智能办公新范式",
+            "shapes": [{
+                "x": 1188720, "y": 2011680, "w": 6583680, "h": 2377440,
+                "text": "面团AI办公启动会\n开启企业智能办公新范式",
+            }],
+        }],
+    }
+    raw = json.dumps(stale, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    store._q(
+        "update wb_project_office_preview set content=$1 where artifact_id=$2",
+        [base64.b64encode(raw).decode("ascii"), meta["artifactId"]],
+    )
+    viewer = User(id="alice", is_superuser=True)
+    app = FastAPI()
+    app.include_router(route.router, prefix="/api/sliderule")
+    app.dependency_overrides[require_user] = lambda: viewer
+    url = f"/api/sliderule/projects/{project.projectId}/artifacts/{meta['artifactId']}/preview"
+    with TestClient(app) as client:
+        body = client.get(url).json()
+        title = next(shape for shape in body["slides"][0]["shapes"] if "面团AI办公启动会" in shape["text"])
+        assert title["lines"][1]["color"] == "#93C5FD"
+        page = client.get(url + "?render=browser")
+        assert page.status_code == 200
+        assert page.text.count('class="mini"') == 1
+        assert "color:#FFFFFF" in page.text and "color:#93C5FD" in page.text
+    kept = json.loads(base64.b64decode(store._q(
+        "select content from wb_project_office_preview where artifact_id=$1",
+        [meta["artifactId"]],
+    )[0]["content"]))
+    assert "lines" not in kept["slides"][0]["shapes"][0]
     store.close()
     sessions._engine.dispose()
 

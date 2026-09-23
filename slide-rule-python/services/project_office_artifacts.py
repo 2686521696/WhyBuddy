@@ -59,6 +59,16 @@ def decode_office_write(content: str, *, encoding: str | None) -> bytes:
     return data
 
 
+def accepted_preview_pdf(data: bytes | None) -> bytes | None:
+    """沙盒转出来的 PDF。不是 %PDF、或超过产物上限，就当没有。"""
+    if not isinstance(data, (bytes, bytearray)):
+        return None
+    blob = bytes(data)
+    if not blob.startswith(b"%PDF") or not 5 <= len(blob) <= MAX_OFFICE_ARTIFACT_BYTES:
+        return None
+    return blob
+
+
 def try_host_pdf(data: bytes, path: str) -> bytes | None:
     """有 soffice 才转。没有或失败返回 None——预览 fail-open。"""
     suffix = office_artifact_suffix(path)
@@ -96,7 +106,8 @@ class ProjectOfficeArtifactStore:
     def _require_project(self, project_id: str, owner_id: str) -> None:
         self.store.get_project(project_id, owner_id=owner_id)
 
-    def put(self, project_id: str, *, owner_id: str, path: str, data: bytes) -> dict:
+    def put(self, project_id: str, *, owner_id: str, path: str, data: bytes,
+            preview_pdf: bytes | None = None) -> dict:
         self._require_project(project_id, owner_id)
         rel = source_path(str(path or "").replace("\\", "/").lstrip("/"))
         if not is_office_artifact_path(rel):
@@ -113,8 +124,14 @@ class ProjectOfficeArtifactStore:
             [project_id, rel],
         )
         if existing and existing[0]["sha256"] == digest:
-            self._ensure_preview(existing[0]["id"], payload, rel)
+            self._ensure_preview(existing[0]["id"], payload, rel, preview_pdf=preview_pdf)
             return self._row(existing[0]["id"])
+        if existing and existing[0]["sha256"] != digest:
+            # 文件字节变了，旧的 HTML/PDF 预览还指着上一份。
+            self.store._q(
+                "delete from wb_project_office_preview where artifact_id=$1",
+                [existing[0]["id"]],
+            )
         if not self.store._q("select hash from wb_project_office_content where hash=$1", [digest]):
             self.store._q(
                 "insert into wb_project_office_budget(project_id,reserved_bytes) "
@@ -151,7 +168,7 @@ class ProjectOfficeArtifactStore:
                 "(id,project_id,path,sha256,size_bytes,created_at) values($1,$2,$3,$4,$5,$6)",
                 [artifact_id, project_id, rel, digest, len(payload), captured],
             )
-        self._ensure_preview(artifact_id, payload, rel)
+        self._ensure_preview(artifact_id, payload, rel, preview_pdf=preview_pdf)
         return self._row(artifact_id)
 
     def _row(self, artifact_id: str) -> dict:
@@ -240,14 +257,11 @@ class ProjectOfficeArtifactStore:
             return None
         if not isinstance(payload, dict):
             return None
-        # ⚠ 2026-09-22 已入库的预览只有正文。读的时候按文件字节补位置，
-        #   不必等下一轮生成才从文档卡片变成幻灯片舞台。补失败就用旧的。
-        slides = payload.get("slides")
-        laid_out = (
-            isinstance(slides, list)
-            and any(isinstance(item, dict) and item.get("shapes") for item in slides)
-        )
-        if payload.get("kind") == "slides" and not laid_out:
+        # ⚠ 2026-09-22 已入库的预览只有正文。后来启动会那份有了 shapes，
+        #   但封面白字在 defRPr 上，入库时被丢掉。有坐标就不再重读，
+        #   深蓝底上标题继续画成近黑。幻灯片每次按文件字节重算。
+        #   算失败才退回库里的 JSON，不把预览打成 500。
+        if payload.get("kind") == "slides":
             try:
                 _meta, data = self.get_bytes(project_id, artifact_id, owner_id=owner_id)
                 fresh = office_preview_payload(data, meta["path"])
@@ -257,22 +271,37 @@ class ProjectOfficeArtifactStore:
                 return payload
         return payload
 
-    def _ensure_preview(self, artifact_id: str, data: bytes, path: str) -> None:
+    def _write_pdf_preview(self, artifact_id: str, pdf: bytes) -> None:
+        self.store._q(
+            "delete from wb_project_office_preview where artifact_id=$1",
+            [artifact_id],
+        )
+        digest = hashlib.sha256(pdf).hexdigest()
+        self.store._q(
+            "insert into wb_project_office_preview"
+            "(artifact_id,kind,sha256,size_bytes,content) values($1,$2,$3,$4,$5)",
+            [artifact_id, "pdf", digest, len(pdf),
+             base64.b64encode(pdf).decode("ascii")],
+        )
+
+    def _ensure_preview(self, artifact_id: str, data: bytes, path: str,
+                        preview_pdf: bytes | None = None) -> None:
+        # ⚠ 2026-09-22 沙盒里的 soffice 转出的 PDF 才是预览。主机上的
+        #   try_host_pdf 只是没配办公镜像时的退路。已有 HTML 时，后到的
+        #   PDF 要换上，否则同一份文件永远停在自制表格。
+        pdf = accepted_preview_pdf(preview_pdf)
+        if pdf is not None:
+            self._write_pdf_preview(artifact_id, pdf)
+            return
         present = self.store._q(
             "select artifact_id from wb_project_office_preview where artifact_id=$1",
             [artifact_id],
         )
         if present:
             return
-        pdf = try_host_pdf(data, path)
+        pdf = accepted_preview_pdf(try_host_pdf(data, path))
         if pdf:
-            digest = hashlib.sha256(pdf).hexdigest()
-            self.store._q(
-                "insert into wb_project_office_preview"
-                "(artifact_id,kind,sha256,size_bytes,content) values($1,$2,$3,$4,$5)",
-                [artifact_id, "pdf", digest, len(pdf),
-                 base64.b64encode(pdf).decode("ascii")],
-            )
+            self._write_pdf_preview(artifact_id, pdf)
             return
         payload = office_preview_payload(data, path)
         if not payload:

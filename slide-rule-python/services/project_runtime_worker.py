@@ -885,6 +885,8 @@ class _RuntimeTask:
             payload = bytes(data)
             if not is_office_artifact_path(path) or not is_office_zip_bytes(payload):
                 continue
+            # ⚠ 2026-09-23 预览不再在沙盒里转 PDF。右侧用浏览器里的
+            #   @silurus/ooxml 画这份字节。soffice 的 PDF 曾被 Chrome 沙箱框屏蔽。
             try:
                 store.put(
                     self.original.projectId,

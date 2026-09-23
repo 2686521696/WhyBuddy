@@ -227,6 +227,18 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins,
+    // ⚠ 2026-09-23 报价表：依赖预构建把 @silurus/ooxml 收成一个 js，
+    //   旁边的 xlsx_parser_bg.wasm 请求落到 index.html（text/html）。
+    //   查看器失败，右侧只剩「这份文件画不出来」。排除后按包内真实 wasm 地址取。
+    optimizeDeps: {
+      exclude: [
+        "@silurus/ooxml",
+        "@silurus/ooxml/xlsx",
+        "@silurus/ooxml/pptx",
+        "@silurus/ooxml/docx",
+      ],
+    },
+    assetsInclude: ["**/*.wasm"],
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "client", "src"),

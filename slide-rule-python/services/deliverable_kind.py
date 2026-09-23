@@ -253,6 +253,72 @@ def _slide_size(archive: zipfile.ZipFile) -> tuple[int, int]:
     return wide, high
 
 
+def _text_style(node: Any) -> tuple[int | None, str | None, bool]:
+    size = _xml_int(node.attrib.get("sz"))
+    font_size = max(1, min(size // 100, 200)) if size else None
+    return font_size, _xml_srgb(node), str(node.attrib.get("b") or "") in {"1", "true"}
+
+
+def _paragraph_lines(paragraph: Any) -> list[dict[str, Any]]:
+    """一段里的字号和字色。run 上的 rPr 盖过段默认 defRPr。
+
+    ⚠ 2026-09-22 启动会封面的白字只写在 defRPr，run 里没有 rPr。
+      只认 rPr 时字色丢失，深蓝底上被画成近黑，标题直接看不见。
+      同一文本框里标题 44pt 白、副题 19pt 浅蓝，收成一个字号就会把副题裁掉。
+    """
+    default_size = default_color = None
+    default_bold = False
+    for node in paragraph.iter():
+        if _xml_local(node.tag) == "defRPr":
+            default_size, default_color, default_bold = _text_style(node)
+            break
+    lines: list[dict[str, Any]] = []
+    for node in list(paragraph):
+        if _xml_local(node.tag) != "r":
+            continue
+        size, color, bold = default_size, default_color, default_bold
+        parts: list[str] = []
+        for child in node.iter():
+            local = _xml_local(child.tag)
+            if local == "rPr":
+                run_size, run_color, run_bold = _text_style(child)
+                if run_size:
+                    size = run_size
+                if run_color:
+                    color = run_color
+                if run_bold:
+                    bold = True
+            elif local == "t" and child.text and child.text.strip():
+                parts.append(child.text.strip())
+        if not parts:
+            continue
+        item: dict[str, Any] = {"text": "".join(parts)}
+        if size:
+            item["fontSize"] = size
+        if color:
+            item["color"] = color
+        if bold:
+            item["bold"] = True
+        lines.append(item)
+    if lines:
+        return lines
+    parts = [
+        node.text.strip()
+        for node in paragraph.iter()
+        if _xml_local(node.tag) == "t" and node.text and node.text.strip()
+    ]
+    if not parts:
+        return []
+    item = {"text": "".join(parts)}
+    if default_size:
+        item["fontSize"] = default_size
+    if default_color:
+        item["color"] = default_color
+    if default_bold:
+        item["bold"] = True
+    return [item]
+
+
 def _shape_preview(shape: Any) -> dict[str, Any] | None:
     off = ext = None
     text_root = None
@@ -267,27 +333,17 @@ def _shape_preview(shape: Any) -> dict[str, Any] | None:
             text_root = node
         elif local == "spPr" and fill_root is None:
             fill_root = node
-    paragraphs = []
-    font_size = None
-    color = None
+    lines: list[dict[str, Any]] = []
+    anchor = None
     if text_root is not None:
-        for paragraph in text_root.iter():
-            if _xml_local(paragraph.tag) != "p":
-                continue
-            parts = []
-            for node in paragraph.iter():
-                local = _xml_local(node.tag)
-                if local == "t" and node.text and node.text.strip():
-                    parts.append(node.text.strip())
-                elif local == "rPr" and font_size is None:
-                    size = _xml_int(node.attrib.get("sz"))
-                    if size:
-                        font_size = max(1, min(size // 100, 200))
-                    if color is None:
-                        color = _xml_srgb(node)
-            if parts:
-                paragraphs.append("".join(parts))
-    text = "\n".join(paragraphs)
+        for node in text_root.iter():
+            if _xml_local(node.tag) == "bodyPr":
+                anchor = str(node.attrib.get("anchor") or "") or None
+                break
+        for node in text_root.iter():
+            if _xml_local(node.tag) == "p":
+                lines.extend(_paragraph_lines(node))
+    text = "\n".join(str(line.get("text") or "") for line in lines)
     fill = _xml_srgb(fill_root) if fill_root is not None else None
     x = _xml_int(off.attrib.get("x")) if off is not None else None
     y = _xml_int(off.attrib.get("y")) if off is not None else None
@@ -298,10 +354,15 @@ def _shape_preview(shape: Any) -> dict[str, Any] | None:
     if x is None or y is None or not w or not h:
         return {"text": text} if text else None
     item: dict[str, Any] = {"x": x, "y": y, "w": w, "h": h, "text": text}
-    if font_size:
-        item["fontSize"] = font_size
-    if color:
-        item["color"] = color
+    if lines:
+        item["lines"] = lines[:24]
+        first = lines[0]
+        if first.get("fontSize"):
+            item["fontSize"] = first["fontSize"]
+        if first.get("color"):
+            item["color"] = first["color"]
+    if anchor == "ctr":
+        item["anchor"] = "ctr"
     if fill:
         item["fill"] = fill
     return item

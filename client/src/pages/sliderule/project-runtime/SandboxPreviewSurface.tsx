@@ -36,8 +36,8 @@ import {
 } from "./preview-selection-bridge";
 import { ProjectDataPanel } from "./ProjectDataPanel";
 import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
-import { OfficeArtifactPane } from "./OfficeArtifactPane";
 import { PresentedOfficeFile } from "./PresentedOfficeFile";
+import { PreviewFileDownload } from "./PreviewFileDownload";
 import { PresentedSourcePage } from "./PresentedSourcePage";
 import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
@@ -55,6 +55,7 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   officePreviewStage,
+  latestOfficePresentationKey,
   presentedOfficeFile,
   presentedSourcePage,
   resolveComputerView,
@@ -612,6 +613,7 @@ export function SandboxPreviewSurface({
   });
   const descriptor = preview.snapshot?.descriptor;
   const [userPinned, setUserPinned] = useState<ComputerView | null>(null);
+  const [officeReload, setOfficeReload] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [frameReady, setFrameReady] = useState(false);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
@@ -639,6 +641,7 @@ export function SandboxPreviewSurface({
   const lastTool = computerNow.current?.tool ?? null;
   const presentedPath = presentedSourcePage(activityRows);
   const presentedOfficePath = presentedOfficeFile(activityRows);
+  const officePresentationKey = latestOfficePresentationKey(activityRows);
   const previewStage = officePreviewStage({
     office: isOfficeFileDeliverable(deliverableKind),
     htmlPath: presentedPath,
@@ -662,6 +665,7 @@ export function SandboxPreviewSurface({
         lastTool,
         hasConsole,
         deliverableKind,
+        presentedOffice: Boolean(presentedOfficePath),
       })
     : userPinned && userPinned !== "computer"
       ? userPinned
@@ -785,6 +789,12 @@ export function SandboxPreviewSurface({
   const bridge = useRef<ReturnType<typeof connectPreviewSelection> | null>(
     null
   );
+  useEffect(() => {
+    if (!officePresentationKey) return;
+    // 新的一次「打开这份办公文件」盖过刚才看代码时钉上的档。
+    setUserPinned(null);
+    setFocusId(null);
+  }, [officePresentationKey]);
   useEffect(() => {
     setUserPinned(null);
     setFocusId(null);
@@ -1042,12 +1052,16 @@ export function SandboxPreviewSurface({
                 entryUrl={officeFile ? null : preview.entryUrl}
                 canReload={
                   officeFile
-                    ? false
+                    ? true
                     : preview.entryUrl
                       ? preview.canOpen
                       : canWake
                 }
-                onReload={reloadPreview}
+                onReload={
+                  officeFile
+                    ? () => setOfficeReload(value => value + 1)
+                    : reloadPreview
+                }
                 onOpenExternal={() => void preview.openExternal()}
               />
             ) : tab === "computer" ? (
@@ -1076,6 +1090,12 @@ export function SandboxPreviewSurface({
             className="flex items-center justify-end justify-self-end gap-1"
             data-testid="project-computer-gears"
           >
+            {tab === "preview" && projectId ? (
+              <PreviewFileDownload
+                projectId={projectId}
+                path={presentedOfficePath}
+              />
+            ) : null}
             {tab === "source" || tab === "history" ? (
               <div
                 data-testid="project-source-tools-host"
@@ -1139,12 +1159,16 @@ export function SandboxPreviewSurface({
               entryUrl={officeFile ? null : preview.entryUrl}
               canReload={
                 officeFile
-                  ? false
+                  ? true
                   : preview.entryUrl
                     ? preview.canOpen
                     : canWake
               }
-              onReload={reloadPreview}
+              onReload={
+                officeFile
+                  ? () => setOfficeReload(value => value + 1)
+                  : reloadPreview
+              }
               onOpenExternal={() => void preview.openExternal()}
             />
           </div>
@@ -1152,6 +1176,12 @@ export function SandboxPreviewSurface({
           <span className="min-w-0" />
         )}
         <div className="flex items-center justify-end justify-self-end gap-1">
+          {tab === "preview" && projectId ? (
+            <PreviewFileDownload
+              projectId={projectId}
+              path={presentedOfficePath}
+            />
+          ) : null}
           {previewPickButton}
           <button
             type="button"
@@ -1334,7 +1364,11 @@ export function SandboxPreviewSurface({
         {previewStage === "page" && presentedPath && projectId ? (
           <PresentedSourcePage projectId={projectId} path={presentedPath} />
         ) : previewStage === "file" && presentedOfficePath && projectId ? (
-          <PresentedOfficeFile projectId={projectId} path={presentedOfficePath} />
+          <PresentedOfficeFile
+            projectId={projectId}
+            path={presentedOfficePath}
+            refreshKey={`${officePresentationKey ?? ""}:${officeReload}`}
+          />
         ) : previewStage === "idle" ? (
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
@@ -1423,9 +1457,6 @@ export function SandboxPreviewSurface({
           )}
         </ScaledStageFrame>
         )}
-        {officeFile && projectId ? (
-          <OfficeArtifactPane projectId={projectId} filesOnly />
-        ) : null}
       </div>
     </section>
   );

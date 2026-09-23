@@ -142,6 +142,7 @@
     "@radix-ui/react-use-controllable-state": "^1.2.3",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@silurus/ooxml": "^0.88.0",
     "@types/d3": "^7.4.3",
     "@types/dagre": "^0.7.54",
     "@types/dockerode": "^4.0.1",

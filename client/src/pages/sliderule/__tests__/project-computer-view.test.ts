@@ -176,6 +176,28 @@ describe("没点过：按干活 / 预览自动切", () => {
         deliverableKind: "office-file",
       })
     ).toBe("source");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "shell_exec",
+        deliverableKind: "office-file",
+        presentedOffice: true,
+      })
+    ).toBe("preview");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: true,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "shell_exec",
+        deliverableKind: "office-file",
+        presentedOffice: true,
+      })
+    ).toBe("computer");
   });
 });
 

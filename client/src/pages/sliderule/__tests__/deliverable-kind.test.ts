@@ -118,7 +118,9 @@ describe("办公文件不把 Vite 预览叫醒当交差", () => {
     ).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(surface).toMatch(/shouldAutoWakePreview\(\{[\s\S]*deliverableKind/);
     expect(surface).toMatch(/shouldAutoOpenPreview\(\{[\s\S]*deliverableKind/);
-    expect(surface).toMatch(/OfficeArtifactPane/);
+    expect(surface).toMatch(/PreviewFileDownload/);
+    expect(surface).toMatch(/path=\{presentedOfficePath\}/);
+    expect(surface).not.toMatch(/OfficeArtifactPane/);
     expect(surface).toMatch(/presentedSourcePage\(/);
     expect(surface).toMatch(/PresentedSourcePage/);
     expect(surface).not.toMatch(/render=browser/);

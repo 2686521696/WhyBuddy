@@ -105,10 +105,16 @@ export function resolveComputerView(input: {
   lastTool?: string | null;
   hasConsole?: boolean;
   deliverableKind?: string | null;
+  /** 已收回的办公文件被 make_manus_page 点过名。跑完要打开那一份，不跟队尾的 bash。 */
+  presentedOffice?: boolean;
 }): ComputerView {
   if (input.userPinned) return input.userPinned;
   const fromTool = input.lastTool ? computerViewForAction(input.lastTool) : null;
   if (input.live) return fromTool ?? "computer";
+  // ⚠ 2026-09-23 报价表改数量：make_manus_page 已经点了 items.xlsx，
+  //   队尾却是后写的命令/待办，右侧停在终端。人切到预览还是改之前的表。
+  //   没在跑、并且点过名，就打开预览。只跑了 bash、没点名，仍停在原档。
+  if (input.presentedOffice) return "preview";
   // ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：办公会话跑完被钉在终端，
   //   右边只剩 Vite 登录页。当时用「办公就回预览档」补上产物面。
   // ⚠ 2026-09-22 那一档又变成宿主把 pptx 画出来。预览档只跟控制面点的
@@ -326,6 +332,20 @@ export function presentedSourcePage(
 }
 
 /** make_manus_page 点名的已收回办公文件。没点名、点了 html、或失败，都不是。 */
+/** 最近一次成功点名的办公文件。同一路径改写后 id 会变，用来重画预览。 */
+export function latestOfficePresentationKey(
+  rows: readonly { id?: string; tool?: string; status?: string; detail?: string }[]
+): string | null {
+  const path = presentedOfficeFile(rows);
+  if (!path) return null;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (row?.tool !== "make_manus_page" || row.status !== "done") continue;
+    return `${row.id || i}:${path}`;
+  }
+  return path;
+}
+
 export function presentedOfficeFile(
   rows: readonly { tool?: string; status?: string; detail?: string }[]
 ): string | null {

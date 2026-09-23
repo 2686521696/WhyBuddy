@@ -46,5 +46,7 @@ export function workbenchContentSecurityPolicy(previewOriginTemplate) {
   // Internal fallback iframes E2B's published host (sandbox.get_host).
   // Only added when the dedicated preview suffix is already configured.
   const published = preview ? " https://*.e2b.app https://*.e2b.dev" : "";
-  return `default-src 'self'; frame-src 'self'${preview ? ` ${preview}` : ""}${published}; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;`;
+  // wasm-unsafe-eval：@silurus/ooxml 的解析器是 WASM。worker-src 的 blob/data
+  // 是它把解析丢进 Worker 的两种地址；不写的话 script-src 'self' 会把 Worker 拦住。
+  return `default-src 'self'; frame-src 'self'${preview ? ` ${preview}` : ""}${published}; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;`;
 }
