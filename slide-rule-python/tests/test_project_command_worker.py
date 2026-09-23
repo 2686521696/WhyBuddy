@@ -443,3 +443,41 @@ def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
     assert provider.created == 1 and "sandbox-1" in provider.handles
     assert store.get_lease(project.projectId, owner_id="alice").sandboxId == "sandbox-1"
     assert provider.commands == ["python3 build_deck.py", 'python3 -c "import pptx"']
+
+
+def test_submit_command_only_queues_it_does_not_start_a_worker(command_setup, monkeypatch):
+    """入队不是执行。submit_command 回来时不许已经有工人线程在跑。
+
+    ⚠ 2026-09-22 KM48CMNDPE 的修法是在 submit 里 acquire_lease + 起线程
+      （`_start_held`）。三处塌了：模型工具当场摸 provider、绕过
+      _scan_loop 的 max_workers、一条命令在跑时新命令由排队变成
+      workspace_lease_busy。2026-09-23 revert。
+
+    扫描线程是**唯一**的执行入口，这里把它的候选名单掐成空：submit 自己
+    还起了工人，就说明入队和执行又合成了一件事。把 `self._wake.set()`
+    换回 `self._start_held(operation, owner_id, lease)`，本条变红。
+    """
+    store, project, provider, worker, _url = command_setup
+    monkeypatch.setattr(store, "list_runnable_operations", lambda **_kwargs: [])
+    queued = submit(worker, project)
+    assert queued.status == "queued"
+    time.sleep(0.1)  # 扫描线程转几圈，正常路径这一发也不该被领走
+    with worker._lock:
+        assert worker._workers == {}, worker._workers
+    assert provider.handles == {}, "入队不许建沙盒"
+    assert store.get_operation(queued.operationId, owner_id="alice").status == "queued"
+    # 租约留给工人。入队顺手占掉，等于第二条新命令直接 workspace_lease_busy。
+    lease = store.acquire_lease(project.projectId, owner_id="alice",
+        lease_owner="other-worker", ttl_seconds=30)
+    store.release_lease(project.projectId, owner_id="alice",
+        lease_owner=lease.leaseOwner, generation=lease.generation)
+
+
+def test_second_command_while_one_is_queued_still_queues(command_setup, monkeypatch):
+    """一条命令还在队里，另一把钥匙的新命令仍然是排队，不是租约忙。"""
+    store, project, _provider, worker, _url = command_setup
+    monkeypatch.setattr(store, "list_runnable_operations", lambda **_kwargs: [])
+    first = submit(worker, project, command="check", key="command-1")
+    second = submit(worker, project, command="build", key="command-2")
+    assert first.operationId != second.operationId
+    assert (first.status, second.status) == ("queued", "queued")

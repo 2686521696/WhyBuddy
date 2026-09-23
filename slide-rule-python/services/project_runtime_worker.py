@@ -180,26 +180,19 @@ class ProjectRuntimeSupervisor:
             kind="runtime.exec", idempotencyKey=idempotency_key, requestHash="", expectedRevision=expected_revision,
             approvalRef=approval_ref, createdAt=_timestamp(), updatedAt=_timestamp())
         self.authorizer(self.store, candidate, owner_id)
-        # 同一把钥匙的重放不许抢租约。命令还在跑时先 acquire，会把
-        # 「钥匙冲突」盖成 workspace_lease_busy，重试也拿不回那次操作。
-        if self.store.operation_by_key(project_id, idempotency_key, owner_id=owner_id) is not None:
-            return self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
-                idempotency_key=idempotency_key, expected_revision=expected_revision,
-                approval_ref=approval_ref, input=payload)
-        # ⚠ 2026-09-22 KM48CMNDPE：操作一进共享库，另一个监督器先领走，
-        #   用旧代码把只有 README 的 bash 打成 lockfile。先占租约再插入，
-        #   公开时 list_runnable 已经看不见它。
-        lease = self.store.acquire_lease(project_id, owner_id=owner_id,
-            lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
-        try:
-            operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
-                idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
-                input=payload)
-        except Exception:
-            self.store.release_lease(project_id, owner_id=owner_id,
-                lease_owner=lease.leaseOwner, generation=lease.generation)
-            raise
-        self._start_held(operation, owner_id, lease)
+        # ⚠ 2026-09-23 review：上一版在这里 acquire_lease + 起线程直接跑
+        #   （KM48CMNDPE「别的监督器用旧代码领走」）。那把入队和执行合成了
+        #   一件事，三处塌了：
+        #     · 模型工具调用当场摸 provider —— 夹具里那条
+        #       `Model tools may only queue remote execution` 就是这个契约；
+        #     · 绕过 _scan_loop 的 max_workers，几发并发就是几个沙盒；
+        #     · 先占租约 → 一条命令在跑时来的**新**命令由「排队」变成
+        #       workspace_lease_busy。
+        #   跨版本抢单是部署顺序的事，不是把队列拆了换来的。这里只入队。
+        operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
+            idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
+            input=payload)
+        self._wake.set()
         return operation
 
     def enqueue_stdin(self, operation_id: str, *, owner_id: str, text: str,
@@ -307,21 +300,11 @@ class ProjectRuntimeSupervisor:
             self._wake.wait(self.poll_interval)
             self._wake.clear()
 
-    def _start_held(self, operation: ProjectOperation, owner_id: str, lease) -> None:
-        with self._lock:
-            if operation.operationId in self._workers:
-                return
-            worker = threading.Thread(target=self._execute,
-                args=(operation, owner_id, lease), name="project-operation", daemon=True)
-            self._workers[operation.operationId] = worker
-            worker.start()
-
-    def _execute(self, candidate: ProjectOperation, owner_id: str, held_lease=None) -> None:
-        context, lease = None, held_lease
+    def _execute(self, candidate: ProjectOperation, owner_id: str) -> None:
+        context, lease = None, None
         try:
-            if lease is None:
-                lease = self.store.acquire_lease(candidate.projectId, owner_id=owner_id,
-                    lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
+            lease = self.store.acquire_lease(candidate.projectId, owner_id=owner_id,
+                lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
             prior_id = lease.processRefs.get("operationId")
             if prior_id and prior_id != candidate.operationId:
                 prior = self.store.get_operation(prior_id, owner_id=owner_id)
