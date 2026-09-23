@@ -44,6 +44,9 @@ _WIRE = {
     ControlStopReason.TOKEN_BUDGET: ("token_budget", "runtime"),
     ControlStopReason.TOOL_ROUNDS: ("tool_rounds", "runtime"),
     ControlStopReason.STATIONARITY: ("stationarity", "runtime"),
+    # 2026-09-23 新加：连着 12 轮整轮只读、一次写入都没有。是我们的闸停的，
+    # 不是模型侧，所以 runtime。
+    ControlStopReason.NO_WRITES: ("no_writes", "runtime"),
     ControlStopReason.LLM_UNAVAILABLE: ("llm_unavailable", "provider"),
     ControlStopReason.UNKNOWN: ("unknown", "unknown"),
 }
