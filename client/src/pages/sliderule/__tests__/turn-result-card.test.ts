@@ -103,7 +103,10 @@ describe("有东西才出卡", () => {
   });
 
   it("正向：工程档这一轮写了源码且有落库版本 → 出卡，而且谈得上发布", () => {
-    const model = resultCardModel(turn({ steps: [chip("project_create")] }), {
+    // ⚠ 2026-09-23：夹具原来用 chip("project_create") 冒充「写了源码」。
+    //   建工程不是改工程（见 PROJECT_DELIVERY_TOOLS 头注那趟真机），
+    //   这条要的是真的写过，所以用 project_patch。
+    const model = resultCardModel(turn({ steps: [chip("project_patch")] }), {
       runtimeKind: "project",
       goalText: "工单系统",
       projectRevision: "prv-abc",
@@ -158,6 +161,49 @@ describe("有东西才出卡", () => {
     }
   });
 
+  it("反向：建完工程只读不写，不许画任务已完成（2026-09-23 真机）", () => {
+    // 管理员账号，待办清单话题，执行 10m 44s。页面上的轨迹原样是：
+    //   通知用户 · 创建工程 · 读取 2 次 · 读取 8 次 · 读取 6 次 · 读取 5 次
+    //            · 读取 5 次 · 读取 4 次 · 读取 4 次 · 读取 4 次
+    // 38 次读、project_patch / file_write 零次，src/style.css 还是模板那 2 行，
+    // 而结果卡点亮了「✓ 任务已完成 10m 44s」。
+    //
+    // 把 "project_create" 加回 PROJECT_DELIVERY_TOOLS → 本条红。
+    const readOnly = turn({
+      user: "创建一个真实工程模式的待办清单应用",
+      steps: [
+        chip("message_notify_user"),
+        chip("project_create"),
+        ...Array.from({ length: 8 }, () => chip("project_read")),
+      ],
+    });
+    expect(turnDeliveredProject(readOnly)).toBe(false);
+    expect(
+      resultCardModel(readOnly, {
+        runtimeKind: "project",
+        goalText: "创建一个真实工程模式的待办清单应用",
+        // ⚠ 版本是有的——工程真的建起来了。所以**只靠 revision 判完成**
+        //   正是这个病；判据必须让 revision 在场还是不出卡。
+        projectRevision: "prv-61e871592e3157c8a2a01f3cb35339c8",
+      })
+    ).toBeNull();
+  });
+
+  it("正向：同一轮里只要真写过一次，就还是出卡", () => {
+    // 反向那条不能把「读很多 + 写一次」也毙掉——读源码是正当动作。
+    const wrote = turn({
+      steps: [
+        chip("project_create"),
+        ...Array.from({ length: 8 }, () => chip("project_read")),
+        chip("project_patch"),
+      ],
+    });
+    expect(turnDeliveredProject(wrote)).toBe(true);
+    expect(
+      resultCardModel(wrote, { runtimeKind: "project", projectRevision: "prv-abc" })
+    ).not.toBeNull();
+  });
+
   it("反向：写了但失败的轮次不出卡，不许把红灯画成任务已完成", () => {
     expect(
       resultCardModel(turn({ steps: [chip("file_write", "failed")] }), {
@@ -186,7 +232,9 @@ describe("有东西才出卡", () => {
         hasOfficeArtifact: false,
       })
     ).toBeNull();
-    expect(turnDeliveredProject(created)).toBe(true);
+    // ⚠ 2026-09-23：这里原来是 `toBe(true)`——那时 project_create 还在
+    //   PROJECT_DELIVERY_TOOLS 里。建工程不是改工程，两条链现在一致。
+    expect(turnDeliveredProject(created)).toBe(false);
     expect(turnDeliveredOfficeFile(created)).toBe(false);
   });
 

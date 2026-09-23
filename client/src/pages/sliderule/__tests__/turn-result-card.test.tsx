@@ -33,7 +33,9 @@ function turnOf(over: Partial<UiTurn> = {}): UiTurn {
       {
         id: "c1",
         kind: "chip",
-        capabilityId: "project_create" as never,
+        // ⚠ 2026-09-23：原来是 project_create。建工程不是改工程，
+        //   它已经不算出货（见 turn-result-card.ts 的头注）。
+        capabilityId: "project_patch" as never,
         roleId: "system",
         label: "创建工程",
         realLlm: false,

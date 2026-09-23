@@ -32,9 +32,23 @@
 import type { UiTurn } from "./types";
 import { isOfficeFileDeliverable } from "./deliverable-kind";
 
-/** 这一轮真正改了工程才算出货。读状态 / 写计划 / 提问都不算。 */
+/** 这一轮真正**改了**工程才算出货。读状态 / 写计划 / 提问都不算。
+ *
+ * ⚠ 2026-09-23 真机（管理员账号，待办清单话题，10m 44s）：轨迹是
+ *   `创建工程 · 读取 2 次 · 读取 8 次 · 读取 6 次 · 读取 5 次 · 读取 5 次
+ *   · 读取 4 次 · 读取 4 次 · 读取 4 次` —— 建完模板之后 38 次读、
+ *   `project_patch` / `file_write` **零次**，src/style.css 还是模板那 2 行，
+ *   计划里的 SQLite 表 / todos API / 前端卡片一条没落地。
+ *   结果卡照样点亮「✓ 任务已完成」。
+ *
+ *   病根就是 `project_create` 曾经在这张名单里：**建工程不是改工程**。
+ *   同一个文件里办公那条链 2026-09-21 已经为同一个病修过
+ *   （见下面 OFFICE_DELIVERY_TOOLS 的头注「project_create 落的是空工作区，
+ *   不算」），web-app 这一半没跟——§4 只改一半的原形。
+ *
+ *   ⚠ 别再把它加回来。要判「工程建起来了」有 projectRevision，那是另一件事。
+ */
 const PROJECT_DELIVERY_TOOLS = new Set([
-  "project_create",
   "project_patch",
   "project_write",
   "project_str_replace",
