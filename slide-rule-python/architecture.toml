@@ -146,6 +146,8 @@ modules = [
   "services.deliverable_surface",
   # 批准计划上的交付物类别。只吃计划字典，不读会话、不读工程库 → 叶子。
   "services.deliverable_kind",
+  # 用户上传的原件：只洗净文件名、拼工作区路径。不读库、不碰沙盒 → 叶子。
+  "services.session_uploads",
   # 闸的体检：谁都不依赖（只吃「结论 + 指纹」两个字符串），所以是叶子。
   # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
   "services.gate_health",
@@ -893,6 +895,7 @@ modules = [
   "services.skill_blob_store",
   "services.control_skills",
   "services.deliverable_kind",
+  "services.session_uploads",
   "services.session_events",
   "services.workflow_registry",
   "services.workflow_journal",

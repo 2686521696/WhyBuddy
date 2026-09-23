@@ -3701,6 +3701,21 @@ async def _tool_fork(state: V5SessionState, new_name: str) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)[:200]}
 
 
+def _session_upload_fact(session_id: str, owner_id: str) -> str | None:
+    session_id = str(session_id or "").strip()
+    owner_id = str(owner_id or "").strip()
+    if not session_id or not owner_id:
+        return None
+    try:
+        from services.project_store import get_project_store
+        from services.session_uploads import upload_fact, workspace_path
+
+        rows = get_project_store().list_session_uploads(session_id, owner_id=owner_id)
+    except Exception:
+        return None
+    return upload_fact([workspace_path(str(row["name"])) for row in rows])
+
+
 def _system_prompt(state: V5SessionState) -> str:
     """给控制面模型的那一句。抄 grok：complete the request，不是答题手册。
 
@@ -3746,6 +3761,10 @@ def _system_prompt(state: V5SessionState) -> str:
             "没有点名就没有预览。应用运行失败不是办公文件的预览。Vite 页面不是办公文件。"
             "办公文件不以 project_verify 为交付证据。"
         )
+    upload_fact = _session_upload_fact(
+        getattr(state, "sessionId", ""), getattr(state, "ownerId", ""))
+    if upload_fact:
+        facts.append(upload_fact)
     mentioned = _mentioned_skill_infos(state)
     if mentioned:
         # ⚠ 点名 = 告诉模型去哪查。不是把 SKILL.md 倒进 system

@@ -571,6 +571,20 @@ class E2BWorkspaceProvider:
     def write_files(self, handle: WorkspaceHandle, files: dict[str, str]) -> None:
         self._write_files_at_root(handle, files, PROJECT_ROOT)
 
+    def write_bytes(self, handle: WorkspaceHandle, name: str, data: bytes) -> None:
+        """Binary user upload. Not a UTF-8 source file."""
+        from services.session_uploads import WORKSPACE_ROOT, sanitize_filename
+
+        safe = sanitize_filename(name)
+        if not safe or WORKSPACE_ROOT != PROJECT_ROOT:
+            raise ValueError("upload_name_invalid")
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            raise ValueError("upload_too_large")
+        try:
+            self._sandbox(handle).files.write(f"{PROJECT_ROOT}/{safe}", bytes(data))
+        except Exception as exc:
+            raise WorkspaceProviderError("session_upload_mount_failed") from exc
+
     def _artifact_io(self, handle, action, **values):
         try:
             payload = json.dumps({"action": action, "root": PROJECT_ROOT, **values})

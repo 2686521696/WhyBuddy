@@ -18,6 +18,9 @@ from services.deliverable_kind import (
     office_preview_csp,
     office_preview_html,
 )
+from services.project_creation import load_authorized_session
+from services.session_uploads import MAX_UPLOAD_BYTES, workspace_path
+from services import persistence
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
@@ -214,6 +217,38 @@ def _office_disposition(name: str, suffix: str) -> str:
     fallback = "office-file" + (suffix if suffix in _OFFICE_TYPES else "")
     safe = quote(name, safe="")
     return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{safe}'
+
+
+@router.post("/sessions/{session_id}/uploads")
+async def put_session_upload(session_id: str, request: Request, viewer: CurrentUser,
+                             name: str = ""):
+    """Store the original bytes. The exec worker copies them into the workspace."""
+    if not project_read_access(viewer):
+        raise HTTPException(status_code=503, detail="project_preview_not_enabled")
+    owner_id = str(viewer.id)
+    safe_session = str(session_id or "").strip()
+    if not safe_session or not owner_id:
+        raise HTTPException(status_code=422, detail="upload_name_invalid")
+    loaded = persistence.load_session_record(safe_session)
+    if loaded.get("ok"):
+        try:
+            load_authorized_session(safe_session, owner_id=owner_id)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail="project_not_found") from exc
+    data = await request.body()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="upload_too_large")
+    try:
+        stored = get_project_store().put_session_upload(
+            safe_session, owner_id=owner_id, name=name, data=data)
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="project_not_found") from exc
+    except ValueError as exc:
+        status = 413 if str(exc) == "upload_too_large" else 422
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    except ProjectStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="project_runtime_unavailable") from exc
+    return {**stored, "path": workspace_path(stored["name"])}
 
 
 @router.get("/projects/{project_id}/artifacts")

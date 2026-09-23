@@ -666,6 +666,7 @@ class _RuntimeTask:
             restore_application_data(self)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
+            self._mount_session_uploads()
             self.heartbeat.renew(mounted_revision=self.runtime.revision)
             self.check()
             if skip_install:
@@ -824,6 +825,22 @@ class _RuntimeTask:
             raise WorkspaceProviderError("project_command_failed", result=executed)
         self.check()
         self.finish("completed", "stopped", None)
+
+    def _mount_session_uploads(self) -> None:
+        """Copy session uploads onto the workspace root before the command runs.
+
+        OpenHands copy_to's the live runtime. This sandbox is created here.
+        """
+        rows = self.store.list_session_uploads(self.original.sessionId, owner_id=self.owner_id)
+        if not rows:
+            return
+        writer = getattr(self.provider, "write_bytes", None)
+        if writer is None:
+            raise WorkspaceProviderError("session_upload_mount_unavailable")
+        for row in rows:
+            data = self.store.read_session_upload(
+                self.original.sessionId, row["name"], owner_id=self.owner_id)
+            writer(self.handle, row["name"], data)
 
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。

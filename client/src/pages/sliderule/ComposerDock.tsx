@@ -53,6 +53,7 @@ import {
   applyChallengePrefillToComposer,
   CHALLENGE_PREFILL_EVENT,
 } from "./challenge-composer";
+import { uploadSessionFile, workspaceUploadNote } from "./session-uploads";
 
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
 interface AttachmentExtractOutcome {
@@ -391,6 +392,7 @@ export function ComposerDock({
   onAnswerAsk,
   onSubmitQuestionnaire,
   onDismissAsk,
+  sessionId,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -661,8 +663,25 @@ export function ComposerDock({
           snapshot,
           att => promiseMap.get(att.id) ?? null
         );
+        const placed = [];
+        const failed: string[] = [];
+        if (sessionId.trim()) {
+          for (const att of snapshot) {
+            if (!att.file) {
+              failed.push(att.name);
+              continue;
+            }
+            try {
+              placed.push(await uploadSessionFile(sessionId, att.file));
+            } catch {
+              failed.push(att.name);
+            }
+          }
+        }
+        const note = workspaceUploadNote(placed, failed);
         const head = text ? `${text}\n[附件: ${names}]` : `[附件: ${names}]`;
-        sendMessage(context ? `${head}\n\n${context}` : head);
+        const body = [head, context, note].filter(Boolean).join("\n\n");
+        sendMessage(body);
       })();
     } else {
       sendMessage();
@@ -675,6 +694,7 @@ export function ComposerDock({
     isRefining,
     pendingAsk,
     queuedTurns.length,
+    sessionId,
   ]);
 
   /* ─────────────────────────── `/` 命令选择器

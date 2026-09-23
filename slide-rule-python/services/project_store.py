@@ -136,6 +136,7 @@ _DDL = (
     "create index if not exists wb_project_revision_project on wb_project_revision(project_id)",
     "create index if not exists wb_project_operation_project on wb_project_operation(project_id)",
     "create table if not exists wb_project_preview_snapshot (project_id varchar(80) primary key, revision varchar(80) not null, source varchar(40) not null, sha256 varchar(64) not null, size_bytes integer not null, content text not null, captured_at varchar(64) not null)",
+    "create table if not exists wb_session_upload (session_id varchar(240) not null, owner_id varchar(240) not null, name varchar(255) not null, sha256 varchar(64) not null, size_bytes integer not null, content text not null, primary key(session_id, name))",
 )
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -1100,6 +1101,77 @@ class ProjectStore:
             raise ProjectStoreUnavailable("preview_snapshot_corrupt") from exc
         if len(data) != int(rows[0]["size_bytes"] or 0) or not data.startswith(_PNG_MAGIC):
             raise ProjectStoreUnavailable("preview_snapshot_corrupt")
+        return data
+
+    def put_session_upload(self, session_id: str, *, owner_id: str, name: str, data: bytes) -> dict:
+        from services.session_uploads import MAX_UPLOAD_BYTES, MAX_UPLOADS, sanitize_filename
+
+        session_id = _required(session_id, "session_id_required")
+        owner_id = _required(owner_id, "owner_id_required")
+        safe = sanitize_filename(name)
+        if not safe:
+            raise ValueError("upload_name_invalid")
+        if not isinstance(data, (bytes, bytearray)) or not data or len(data) > MAX_UPLOAD_BYTES:
+            raise ValueError("upload_too_large")
+        payload = bytes(data)
+        existing = self._q(
+            "select owner_id from wb_session_upload where session_id=$1 and name=$2",
+            [session_id, safe],
+        )
+        if existing and existing[0]["owner_id"] != owner_id:
+            raise ProjectNotFound("session_upload_not_found")
+        if not existing:
+            count = self._q(
+                "select count(*) as total from wb_session_upload where session_id=$1",
+                [session_id],
+            )
+            if int(count[0]["total"] or 0) >= MAX_UPLOADS:
+                raise ValueError("upload_limit")
+        digest = hashlib.sha256(payload).hexdigest()
+        encoded = base64.b64encode(payload).decode("ascii")
+        if existing:
+            self._q(
+                "update wb_session_upload set sha256=$1,size_bytes=$2,content=$3 "
+                "where session_id=$4 and name=$5",
+                [digest, len(payload), encoded, session_id, safe],
+            )
+        else:
+            self._q(
+                "insert into wb_session_upload"
+                "(session_id,owner_id,name,sha256,size_bytes,content) values($1,$2,$3,$4,$5,$6)",
+                [session_id, owner_id, safe, digest, len(payload), encoded],
+            )
+        return {"name": safe, "sha256": digest, "sizeBytes": len(payload)}
+
+    def list_session_uploads(self, session_id: str, *, owner_id: str) -> list[dict]:
+        session_id = _required(session_id, "session_id_required")
+        owner_id = _required(owner_id, "owner_id_required")
+        rows = self._q(
+            "select name,sha256,size_bytes from wb_session_upload "
+            "where session_id=$1 and owner_id=$2 order by name",
+            [session_id, owner_id],
+        )
+        return [
+            {"name": row["name"], "sha256": row["sha256"], "sizeBytes": int(row["size_bytes"])}
+            for row in rows
+        ]
+
+    def read_session_upload(self, session_id: str, name: str, *, owner_id: str) -> bytes:
+        session_id = _required(session_id, "session_id_required")
+        owner_id = _required(owner_id, "owner_id_required")
+        rows = self._q(
+            "select content,size_bytes,sha256 from wb_session_upload "
+            "where session_id=$1 and owner_id=$2 and name=$3",
+            [session_id, owner_id, name],
+        )
+        if not rows:
+            raise ProjectNotFound("session_upload_not_found")
+        try:
+            data = base64.b64decode(rows[0]["content"], validate=True)
+        except Exception as exc:
+            raise ProjectStoreUnavailable("session_upload_corrupt") from exc
+        if len(data) != int(rows[0]["size_bytes"] or 0) or hashlib.sha256(data).hexdigest() != rows[0]["sha256"]:
+            raise ProjectStoreUnavailable("session_upload_corrupt")
         return data
 
 
