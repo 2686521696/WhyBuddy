@@ -55,14 +55,23 @@ from services.action_stationarity import (
     result_fingerprint,
 )
 from sliderule_llm.control_client import ControlLlmResult
-from services.rehearsal_control import MAX_TOOL_ROUNDS, ControlStopReason
+from services.rehearsal_control import ControlStopReason
 
 pytest.importorskip("fastapi")
 
 
 @pytest.fixture
 def harness(monkeypatch):
+    """⚠ 2026-09-23：同 test_control_stops_when_it_spins_in_place 的头注——
+    把对话档钉回 control-v1（8 轮），别再靠早就不生效的 MAX_TOOL_ROUNDS。"""
+    from services import rehearsal_control as control
+    from services.control_budget import CONVERSATION_BUDGET_V1
+
+    monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V1)
     return ControlHarness(monkeypatch)
+
+
+ROUND_BUDGET = 8  # = CONVERSATION_BUDGET_V1.max_rounds
 
 
 def _confirmed(sid: str) -> None:
@@ -122,7 +131,7 @@ def test_一件打转被同轮另一件掩护时_照样掐得住(harness):
     assert stop["limit"] != MAX_CONSECUTIVE_IDENTICAL_PROBLEMATIC_CALLS
     assert stop["used"] == MAX_STAGNANT_REPEATS
     assert len(harness.llm_calls) == MAX_STAGNANT_REPEATS
-    assert len(harness.llm_calls) < MAX_TOOL_ROUNDS
+    assert len(harness.llm_calls) < ROUND_BUDGET
     # 打转不许点火。
     assert harness.helper_calls == []
 
@@ -176,7 +185,7 @@ def test_反向_每轮都在变的正常流量不许被误伤(harness):
     [stop] = [e for e in events
               if e.get("type") == "control_text" and e.get("stopReason")]
     assert stop["stopReason"] == ControlStopReason.TOOL_ROUNDS.value, stop
-    assert len(harness.llm_calls) == MAX_TOOL_ROUNDS
+    assert len(harness.llm_calls) == ROUND_BUDGET
 
 
 # ── 二、真机载荷：易变字段不许被算成进展（§一之二）────────────────────────
@@ -307,7 +316,7 @@ def test_停滞中断后重新起算_而且能被重新捅():
 
 def test_重复阈值必须够得着():
     """§一之二：阈值大于总轮数预算 = 真机上永不成立，而单测照样绿。"""
-    assert MAX_STAGNANT_REPEATS <= MAX_TOOL_ROUNDS
+    assert MAX_STAGNANT_REPEATS <= ROUND_BUDGET
     assert NUDGE_AFTER_STAGNANT_REPEATS < MAX_STAGNANT_REPEATS
     assert MAX_STAGNANT_REPEATS - NUDGE_AFTER_STAGNANT_REPEATS >= 1
 

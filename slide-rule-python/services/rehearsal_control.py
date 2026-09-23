@@ -97,11 +97,13 @@ from services.user_questions import (
     unanswered_text as unanswered_question_text,
 )
 from services.action_stationarity import (IdenticalToolCallRun, ReadOnlyStreak,
+    STOP_AFTER_READONLY_ROUNDS,
     StagnantCallLedger, call_signature, result_fingerprint, step_signature, step_tool_name)
 from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
 from services.control_budget import (
     ControlBudget,
     CONVERSATION_BUDGET,
+    CONVERSATION_BUDGET_V1,
     PROJECT_BUDGET,
     restore_budget,
 )
@@ -254,17 +256,23 @@ POST_SPEC_HOP_FALLBACK = POST_SPEC_USER
 class ControlStopReason(str, Enum):
     """控制面这一回合为什么没跑完。可穷举、每个都对应一句能据以行动的话。"""
 
-    #: 点火前墙钟到顶（MAX_WALL_SECONDS）。
+    #: 点火前墙钟到顶（`loop_budget.max_wall_seconds`）。
     WALL_CLOCK = "wall_clock"
-    #: 便宜轮 token 预算烧完（MAX_CHEAP_TOKENS）。
+    #: 便宜轮 token 预算烧完（`loop_budget.max_tokens`）。
     TOKEN_BUDGET = "token_budget"
-    #: 工具轮次到顶还没收敛（MAX_TOOL_ROUNDS）。抄 grok 的 MaxTurns。
+    #: 工具轮次到顶还没收敛（`loop_budget.max_rounds`，不是那个早就不生效
+    #: 的 MAX_TOOL_ROUNDS）。抄 grok 的 MaxTurns。
     TOOL_ROUNDS = "tool_rounds"
     #: 同一件工具、同一份实参连着调，捅过一次仍不改。抄 grok 的
     #: `TurnOutcome::StationarityEnded`。**跟 TOOL_ROUNDS 是两码事**：
     #: 「想了 8 轮没定下来」是在往前走但走不到头，「同一件事干了 4 遍」
     #: 是根本没在走。塌成同一句话，前端和日志就都看不出哪种。
     STATIONARITY = "stationarity"
+    #: 连着一大串整轮只读、一次写入都没有。**跟上面两种都是两码事**：
+    #: TOOL_ROUNDS 是「想了很多轮没定下来」，STATIONARITY 是「同一件事干了 N 遍」，
+    #: 这一种是「一直在往前走、但永远不落地」——每轮都换实参，前两道都不响。
+    #: 2026-09-23 加：轮次放开到 10_000 之后，这一种在真机上没有别的兜底了。
+    NO_WRITES = "no_writes"
     #: 控制面模型/网关不可用，或分发器自己抛了。
     LLM_UNAVAILABLE = "llm_unavailable"
     #: 归不了类的。**新原因先落这儿，直到有人给它起名字**——抄 grok 的
@@ -315,6 +323,14 @@ _STOP_TABLE: Dict[ControlStopReason, tuple] = {
     ControlStopReason.STATIONARITY: (
         StoppedBy.RUNTIME,
         "我在同一步上打转了，先停下没点火。再说一次，或者直接点「开始推演」。",
+    ),
+    # ⚠ 同上一条的理由：这一种**不是**「想得太久」也**不是**「打转」，
+    #   是我连着读了一大片却一次都没落地。实话就说这件事，并且给一条出路
+    #   （说清先改哪一处），不要让用户去猜「是不是我没说明白」。
+    ControlStopReason.NO_WRITES: (
+        StoppedBy.RUNTIME,
+        "我连着读了很多轮，一次写入都没有，先停下来。"
+        "告诉我先改哪一处、或者直接说「按你的判断改」，我就动手。",
     ),
     # ⚠ 2026-09-05 真机第 5 轮（汉字消除小游戏 sr-20260904220902）：
     #   用户把话说得清清楚楚——「做一个网页端的汉字连线消除小游戏：网格里随机
@@ -602,6 +618,7 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
             ControlStopReason.TOKEN_BUDGET: "本轮工程任务的模型调用额度已用完。",
             ControlStopReason.TOOL_ROUNDS: "本轮工程任务达到工具轮次上限。",
             ControlStopReason.STATIONARITY: "模型重复执行同一步，本轮工程任务已暂停。",
+            ControlStopReason.NO_WRITES: "模型连着多轮只读源码、一次都没写，本轮工程任务已暂停。",
         }.get(reason, "本轮工程任务未完成。")
         return (
             detail
@@ -1456,8 +1473,26 @@ async def _invoke_control_llm(
 #   结束，客户端报「推演中断」。host 终局只认 `complete`。
 _TERMINAL_EVENTS = ("complete",)
 
-MAX_TOOL_ROUNDS = 8
-MAX_CHEAP_TOKENS = 8000
+#: control-v1 那一档的存档数字（8 轮 / 8000 token / 90 秒 / 75 秒单发）。
+#:
+#: ⚠ 2026-09-23 review：这里原本是三个裸常量 `MAX_TOOL_ROUNDS = 8` /
+#:   `MAX_CHEAP_TOKENS = 8000` / `MAX_WALL_SECONDS = 90.0`，名字读起来像
+#:   活着的闸，**但一处都不强制执行**。真正生效的是 `loop_budget.max_rounds`
+#:   等（见本文件 `while _round < loop_budget.max_rounds`），档位由
+#:   `_loop_budget_for` 挑；2026-09-17 / 09-18 起工程档和对话档都是
+#:   10_000 轮 / 86400 秒。
+#:
+#:   代价是真的：`sliderule_llm/retry_budget.py` 按「一回合最多 8 次调用」
+#:   推出「最多 24 次重试」，差三个数量级；`action_stationarity` 里
+#:   「我们的控制面一回合最多 8 轮，所以 12 永远不成立」这句话也反了——
+#:   现在 12 轻松够得着。更贵的一笔：三条判据靠它断言循环会停，
+#:   真机轮数放开之后它们一路跑到 10_000 轮，整份测试套在 18% 卡死
+#:   （`test_control_nudges_reading_into_writing` 等，实测 0.58s → 挂死）。
+#:
+#:   唯一的读者是 `scripts/project-model-smoke.py` 的 legacyDefaults 报表。
+#:   数字不再在这里重抄一遍——直接指向登记过的 v1，省掉两处同步。
+#:   **不要照它推断真机上限。**
+LEGACY_V1_BUDGET = CONVERSATION_BUDGET_V1
 
 #: 点火前（还没进工程档）一整个回合的墙钟。
 #:
@@ -1476,12 +1511,14 @@ MAX_CHEAP_TOKENS = 8000
 #: ⚠ 2026-09-15 新开会话 `sr-20260915161915-B2601PBD1Q`：写计划前两发
 #:   分别想了 148s / 151s，墙钟 90 把计划掐在「没点火」。工程档的 600/900
 #:   根本轮不到。对话档当时改走 control-v2（180/240）。
-#: ⚠ 2026-09-18 对话档再开 control-v3（轮次/墙钟/token 跟工程档对齐），
-#:   下面两个常量仍是 **control-v1 存档** 的数字，不许原地改——改了旧
-#:   checkpoint 的 to_wire 对不上。
-MAX_WALL_SECONDS = 90.0
+#: ⚠ 2026-09-18 对话档再开 control-v3（轮次/墙钟/token 跟工程档对齐）。
+#:   上面这段说的是 **control-v1 存档**的 90 秒，数字登记在
+#:   `CONVERSATION_BUDGET_V1` 里（见 LEGACY_V1_BUDGET），不许原地改——
+#:   改了旧 checkpoint 的 to_wire 对不上。真机现在走的是 v3。
 
-#: 点火前 v1 **单发** HTTP 读超时。v2 见 CONVERSATION_BUDGET。
+#: 点火前 v1 **单发** HTTP 读超时。v2/v3 见 CONVERSATION_BUDGET。
+#: ⚠ 这一项**不进 to_wire**（见 ControlBudget.max_request_seconds 头注），
+#:   所以它不像上面三个那样能从 v1 的 wire 里读回来，仍留一个名字。
 MAX_REQUEST_SECONDS = 75.0
 INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
@@ -4810,7 +4847,7 @@ async def _control_llm_loop(
             #
             # 每一轮开头第一件事是问「模型是不是在原地打转」，问完才采样。
             # 我们原来是反过来的：先问模型，再看结果——所以「同一件事干了 8 遍」
-            # 只能等 MAX_TOOL_ROUNDS 兜底，还兜成一句「想得太久」的假话。
+            # 只能等轮次上限兜底，还兜成一句「想得太久」的假话。
             if not restoring_calls and identical_tool_calls.should_hard_stop():
                 tool_name, run_len, problematic = identical_tool_calls.telemetry()
                 print(
@@ -4874,8 +4911,18 @@ async def _control_llm_loop(
                 )
                 _push_system_reminder(messages, stagnant_calls.nudge_text())
 
-            # 第三道：一直在读、一次没写。**只捅不掐**——读源码是正当动作，
-            # 掐断会把「多读两轮再下手」的正常行为变成事故。
+            # 第三道：一直在读、一次没写。先捅两次（4 / 7），仍不写才掐（12）。
+            #
+            # ⚠ 2026-09-23 之前这道闸**只捅不掐**，写着「读源码是正当动作，
+            #   掐断会把『多读两轮再下手』的正常行为变成事故」。那句话当时成立，
+            #   因为一回合最多 8 轮——第二档 7 捅完就到头了，轮次上限自己兜底。
+            #   2026-09-17 / 09-18 放开到 10_000 轮之后那层兜底没了：打转闸只认
+            #   重复调用、压缩让 token 闸够不着、墙钟 24 小时，于是「一直在往前
+            #   走但永远不落地」可以烧到 10_000 轮（实测同一条判据 0.58s → 挂死）。
+            #   阈值 12 的标定见 action_stationarity.STOP_AFTER_READONLY_ROUNDS。
+            #
+            # ⚠ 判在**采样之前**（抄 grok 主循环的顺序）：先问「是不是又要空转一轮」，
+            #   再花钱。判在采样之后等于多付一发才停。
             if not restoring_calls and readonly_streak.take_nudge():
                 print(
                     f"[control] readonly_nudge rounds={readonly_streak.rounds} "
@@ -4885,6 +4932,35 @@ async def _control_llm_loop(
                 _push_system_reminder(messages, readonly_streak.nudge_text())
 
             offered = list_control_tools(state) if tools is None else list(tools)
+            # ⚠ **只在模型手上真有写工具时才掐。** 点火前那一档的目录里
+            #   （message_ask_user / search_evidence / write_plan / recall …）
+            #   `tool_writes` 判下来一件写工具都没有——那里的「只读」不是病，
+            #   是没得选。不加这个条件，一场正常的多轮对话攒到 12 就被停掉，
+            #   而且永远清不了零（没有工具能让它清零）。
+            #   这正是 §一之二 的镜像：护栏的**出路**必须在真机上存在。
+            can_write = any(
+                tool_writes(((item.get("function") or {}).get("name")))
+                for item in offered if isinstance(item, dict)
+            )
+            if not restoring_calls and can_write and readonly_streak.should_hard_stop():
+                used = readonly_streak.rounds
+                print(
+                    f"[control] readonly_stop rounds={used} round={_round}",
+                    flush=True,
+                )
+                # 先清零再落 checkpoint / state：跨回合累积的游标不清，
+                # 用户一说「继续」下一发读就又到 12，会话焊死在同一处。
+                readonly_streak.clear()
+                state.controlReadOnly = readonly_streak.to_state()
+                await checkpoint("budget_exhausted", _round)
+                async for event in _settle_runtime_cap(
+                    state,
+                    ControlStopReason.NO_WRITES,
+                    stop_wire(ControlStopReason.NO_WRITES,
+                              limit=STOP_AFTER_READONLY_ROUNDS, used=used),
+                ):
+                    yield event
+                return
             prior = _user_turn_before_need(state, user_text) or "你好"
             messages[:] = _repair_function_call_turn_order(
                 messages, fallback_user=prior

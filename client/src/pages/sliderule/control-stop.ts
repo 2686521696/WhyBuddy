@@ -34,6 +34,8 @@ const _UNIT: Record<ControlStopReason, string> = {
   token_budget: "token",
   tool_rounds: "轮",
   stationarity: "次",
+  // 12/12 的 12 是「连着多少轮整轮只读」。
+  no_writes: "轮只读",
   llm_unavailable: "",
   unknown: "",
 };

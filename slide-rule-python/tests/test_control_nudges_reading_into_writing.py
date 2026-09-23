@@ -37,9 +37,10 @@ from control_turn_support import ControlHarness, llm_tool, new_sid, seed_session
 from services.action_stationarity import (
     NUDGE_AFTER_READONLY_ROUNDS,
     NUDGE_AGAIN_AFTER_READONLY_ROUNDS,
+    STOP_AFTER_READONLY_ROUNDS,
     ReadOnlyStreak,
 )
-from services.rehearsal_control import MAX_TOOL_ROUNDS, ControlStopReason
+from services.rehearsal_control import ControlStopReason
 
 pytest.importorskip("fastapi")
 
@@ -47,6 +48,27 @@ pytest.importorskip("fastapi")
 @pytest.fixture
 def harness(monkeypatch):
     return ControlHarness(monkeypatch)
+
+
+@pytest.fixture
+def bounded_rounds(monkeypatch):
+    """把对话档钉回 control-v1（8 轮）。
+
+    ⚠ 2026-09-23：本文件里「一路跑到轮次上限」那几条原来**没有边界**——
+      它们靠的是 `MAX_TOOL_ROUNDS = 8`，而那个常量早就不生效了
+      （见 rehearsal_control.LEGACY_V1_BUDGET 头注）。真机轮数放开到
+      10_000 之后，这几条会跑满 10_000 轮：实测同一段判据在 v1 档
+      0.58 秒，在 v3 档挂死，整份测试套卡在 18%。
+      判据要验的是提醒贴在第几发、停因说的是不是实话，跟真实上限多大无关，
+      所以这里自己钉一个小的，**而且钉的是登记过的档**（control-v1）——
+      随手造一个新 profile 会让 restore_budget 在续跑时判成
+      invalid_control_budget_policy。
+    """
+    from services import rehearsal_control as control
+    from services.control_budget import CONVERSATION_BUDGET_V1
+
+    monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V1)
+    return CONVERSATION_BUDGET_V1
 
 
 def _confirmed(sid: str) -> None:
@@ -123,9 +145,20 @@ def test_提醒必须给一条能立刻执行的出路():
 
 
 def test_档位必须够得着():
-    """§一之二：档位大于一回合的轮数预算 = 真机上永不成立。"""
+    """§一之二：三档必须递增，而且都在一回合里够得着。
+
+    ⚠ 2026-09-23：这条原来写的是 `<= MAX_TOOL_ROUNDS`(8)——那个常量当时是
+      一回合的轮数预算，2026-09-17/18 放开到 10_000 之后它一处都不生效了
+      （见 rehearsal_control.LEGACY_V1_BUDGET 的头注）。拿一个不生效的数当
+      「够得着」的判据，等于什么都没判。现在判的是三档自身的序，外加
+      硬停那一档必须小于真正在跑的轮数预算。
+    """
+    from services.control_budget import CONVERSATION_BUDGET, PROJECT_BUDGET
+
     assert NUDGE_AFTER_READONLY_ROUNDS < NUDGE_AGAIN_AFTER_READONLY_ROUNDS
-    assert NUDGE_AGAIN_AFTER_READONLY_ROUNDS <= MAX_TOOL_ROUNDS
+    assert NUDGE_AGAIN_AFTER_READONLY_ROUNDS < STOP_AFTER_READONLY_ROUNDS
+    for budget in (CONVERSATION_BUDGET, PROJECT_BUDGET):
+        assert STOP_AFTER_READONLY_ROUNDS < budget.max_rounds, budget.profile
 
 
 # ── 二、活路径 ────────────────────────────────────────────────────────────
@@ -142,7 +175,7 @@ def _snapshots(harness, impl):
     return shots
 
 
-def test_活路径_连着只读时提醒真的进了下一发对话(harness):
+def test_活路径_连着只读时提醒真的进了下一发对话(harness, bounded_rounds):
     """变异：把 `readonly_streak.take_nudge()` 那段删掉 → 本条红。"""
     sid = new_sid("readonly-nudge")
     _confirmed(sid)
@@ -171,12 +204,19 @@ def test_活路径_连着只读时提醒真的进了下一发对话(harness):
     assert carriers == {"tool"}, carriers
 
 
-def test_反向_只读不许被掐断_这道闸只捅不掐(harness):
-    """**最重要的一条反向。** 读源码是正当动作；把它掐了，「需要多读几轮
-    才敢下手」的正常行为就变成了事故。
+def test_反向_点火前没有写工具_这道闸不许响(harness, bounded_rounds):
+    """**最重要的一条反向。** 点火前那一档目录里一件写工具都没有
+    （message_ask_user / search_evidence / write_plan / recall …，`tool_writes`
+    判下来全是读），所以那里的「只读」不是病，是没得选。
 
-    变异：给这道闸加一个 should_hard_stop 并接上 → 本条红
-    （停因会变成 stationarity，而且轮数到不了 MAX_TOOL_ROUNDS）。
+    ⚠ 2026-09-23：这条原来叫「这道闸只捅不掐」，断言它**永远**不停。
+      轮次放开到 10_000 之后「永不掐」等于没有兜底，所以加了硬停那一档
+      （STOP_AFTER_READONLY_ROUNDS）。但硬停必须先问一句「模型手上真有写
+      工具吗」——不加这个条件，一场正常的多轮对话攒到 12 就被停掉，而且
+      **永远清不了零**（没有任何工具能让它清零）。这是 §一之二 的镜像：
+      护栏的**出路**必须在真机上存在。
+
+    变异：把 `can_write` 那个条件从循环里删掉 → 本条红（停因变成 no_writes）。
     """
     sid = new_sid("readonly-nostop")
     _confirmed(sid)
@@ -191,12 +231,54 @@ def test_反向_只读不许被掐断_这道闸只捅不掐(harness):
              if e.get("type") == "control_text" and e.get("stopReason")]
     assert len(stops) == 1, stops
     assert stops[0]["stopReason"] == ControlStopReason.TOOL_ROUNDS.value, stops[0]
-    assert stops[0]["stopReason"] != ControlStopReason.STATIONARITY.value
-    # 走满预算才停 —— 证明这道闸没顺手把回合掐死。
-    assert len(harness.llm_calls) == MAX_TOOL_ROUNDS
+    assert stops[0]["stopReason"] != ControlStopReason.NO_WRITES.value
+    # 走满预算才停 —— 证明这道闸没在点火前顺手把回合掐死。
+    assert len(harness.llm_calls) == bounded_rounds.max_rounds
 
 
-# ── 三、通电 ──────────────────────────────────────────────────────────────
+def test_一写就清零_正常节奏攒不到硬停():
+    """写过就重新计数。没有这一条，「读三轮 → 写一次 → 再读三轮」这种
+    完全正常的节奏会被累加到 12 上，硬停就成了误伤。
+
+    ⚠ 判据直接喂 `step_is_read_only` 认的那个形状（一批 calls），不自己
+      另造一个「算不算写」的判断——那正是 tool_writes 头注记过的坑。
+    """
+    from services.rehearsal_control import step_is_read_only
+
+    streak = ReadOnlyStreak()
+    for _cycle in range(6):
+        for _read in range(3):
+            streak.observe(step_is_read_only([{"name": "project_read"}]))
+        assert not streak.should_hard_stop(), streak.rounds
+        streak.observe(step_is_read_only([{"name": "project_patch"}]))
+        assert streak.rounds == 0
+
+
+def test_停过之后游标清零_不许把会话焊死():
+    """硬停是**跨回合**游标。停完不清零，用户一说「继续」第一发读就又到 12。
+
+    变异：把循环里 `readonly_streak.clear()` 删掉 → 本条红。
+    """
+    import pathlib
+
+    from control_turn_support import strip_python
+
+    streak = ReadOnlyStreak()
+    for _ in range(STOP_AFTER_READONLY_ROUNDS):
+        streak.observe(True)
+    assert streak.should_hard_stop()
+    streak.clear()
+    assert streak.rounds == 0 and not streak.should_hard_stop()
+
+    # 通电：产线那一处停之前真的清了，而且清完写回了 state。
+    src = strip_python(
+        pathlib.Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
+    )
+    body = src[src.index("readonly_streak.should_hard_stop()"):]
+    body = body[:body.index("prior = _user_turn_before_need")]
+    assert "readonly_streak.clear()" in body, body[:600]
+    assert body.index("readonly_streak.clear()") < body.index("_settle_runtime_cap"), body[:600]
+    assert "state.controlReadOnly = readonly_streak.to_state()" in body
 
 
 def test_接在真链路上_不是摆着好看():

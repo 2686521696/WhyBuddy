@@ -14,7 +14,10 @@
 ## 改造前的洞
 
 `call_control_llm` 每次调用重试 3 次；一个控制面回合最多 8 次调用
-（MAX_TOOL_ROUNDS）→ **一回合最多 24 次重试**。而三道现有的闸：
+（当时一回合 8 轮）→ **一回合最多 24 次重试**。
+⚠ 2026-09-23：那个前提没了——轮数 2026-09-17/18 放开到 10_000，
+  同样的算法给出的是「一回合最多三万次重试」，所以这一层更要紧。
+而当时三道现有的闸：
 
     45s 墙钟    量单轮，而且 WRITE 交回后重置
     8000 token  重试不产生 token，烧再多也不涨
@@ -197,10 +200,22 @@ def test_墙钟窗口也是一道():
 def test_墙钟窗口必须大于控制面自己的墙钟():
     """⚠ 600s 看着像永远不会触发——不是。控制面 45s 墙钟在 WRITE 交回后会
     重置（工厂时间不计控制面），这一层从回合开头起算、从不重置。
-    但它必须**大于**单轮墙钟，否则单轮那道先响，这一层永远轮不到。"""
-    from services.rehearsal_control import MAX_WALL_SECONDS
+    但它必须**大于**单轮墙钟，否则单轮那道先响，这一层永远轮不到。
 
-    assert MAX_RETRY_WINDOW_SECONDS > MAX_WALL_SECONDS
+    ⚠ 2026-09-23：原来比的是 `rehearsal_control.MAX_WALL_SECONDS`(90)，那是
+      control-v1 的数字，而且那个常量一处都不生效了。这里改成明着比 v1
+      存档值——标定就是在那一档上做的。
+    ⚠ 真机现在走 control-v3：`065ed6a2` 特意把这个窗口跟墙钟**对齐**成
+      同一个 86400，所以两道是同时到顶，不是谁先谁后。留着这条是防有人把
+      墙钟调回 90 秒那一档而忘了这一层。
+    """
+    from services.rehearsal_control import LEGACY_V1_BUDGET
+    from services.control_budget import CONVERSATION_BUDGET, PROJECT_BUDGET
+
+    assert MAX_RETRY_WINDOW_SECONDS > LEGACY_V1_BUDGET.max_wall_seconds
+    # 反向：不许比真机那一档的墙钟还大——大了就又变成「永远轮不到」。
+    for budget in (CONVERSATION_BUDGET, PROJECT_BUDGET):
+        assert MAX_RETRY_WINDOW_SECONDS <= budget.max_wall_seconds, budget.profile
 
 
 # ── 三、反向：没开预算的路径一字不变 ─────────────────────────────────────

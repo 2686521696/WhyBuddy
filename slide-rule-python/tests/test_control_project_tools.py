@@ -299,3 +299,46 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
         assert not provider.handles
     finally:
         supervisor.shutdown()
+
+
+def test_连着只读到档就停_而且说的是实话(setup, monkeypatch):
+    """**活路径**：点火后目录里有写工具（project_create/patch/file_write），
+    这时「连着 12 轮只读、一次没写」才是病，到档必须停。
+
+    ⚠ 2026-09-14 真机（shots/build2）：工程动作 17/17，`project_patch` 零次，
+      人工连催 6 次不动手。当时靠一回合 8 轮兜底；2026-09-17/18 轮次放开到
+      10_000 之后那层兜底没了——打转闸只认重复调用（这里每轮换实参，不响）、
+      压缩让 token 闸够不着、墙钟 24 小时。
+
+    变异：把 `readonly_streak.should_hard_stop()` 那一块从循环里删掉 → 本条
+    永远跑不完（10_000 轮），这也正是它当初卡死整份测试套的形态。
+    """
+    from services.action_stationarity import STOP_AFTER_READONLY_ROUNDS
+    from services.rehearsal_control import ControlStopReason
+
+    harness = ControlHarness(monkeypatch)
+
+    def model(messages, **kwargs):
+        # ⚠ 只读工具回执，不许 json.loads 整批 role=tool——只读提醒
+        #   (`_push_system_reminder`) 也贴在 tool 上，是纯文本。
+        n = sum(1 for m in messages
+                if m["role"] == "tool" and str(m.get("content") or "").startswith("{"))
+        if not n:
+            # 先建工程：没有它目录里只有 project_create，读工具还没上桌。
+            return llm_tool("project_create", {"approvalRef": setup.ref}, "create")
+        # 之后每轮读一个**不同**的文件：打转闸认的是重复，这里不重复。
+        return llm_tool("project_read", {"path": "src/main.tsx", "offset": n, "limit": 80}, f"r{n}")
+
+    harness.llm_impl = model
+    events = post(setup.state)
+
+    stops = [e for e in events
+             if e.get("type") == "control_text" and e.get("stopReason")]
+    assert len(stops) == 1, stops
+    # 说实话：不是「想得太久」（TOOL_ROUNDS），也不是「打转」（STATIONARITY）。
+    assert stops[0]["stopReason"] == ControlStopReason.NO_WRITES.value, stops[0]
+    assert stops[0]["stoppedBy"] == "runtime"
+    assert (stops[0]["limit"], stops[0]["used"]) == (
+        STOP_AFTER_READONLY_ROUNDS, STOP_AFTER_READONLY_ROUNDS)
+    # project_create 是写，连胜从它之后才起算；两档提醒都发过了才停。
+    assert len(harness.llm_calls) == STOP_AFTER_READONLY_ROUNDS + 1

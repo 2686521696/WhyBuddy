@@ -50,7 +50,6 @@ from services.action_stationarity import (
     step_tool_name,
 )
 from services.rehearsal_control import (
-    MAX_TOOL_ROUNDS,
     ControlStopReason,
     _step_is_problematically_repeating,
     stop_text,
@@ -61,7 +60,23 @@ pytest.importorskip("fastapi")
 
 @pytest.fixture
 def harness(monkeypatch):
+    """⚠ 2026-09-23：这个夹具顺手把对话档钉回 control-v1（8 轮）。
+
+    本文件里几条「跑到轮次上限才停」的判据原来靠 `MAX_TOOL_ROUNDS = 8`，
+    而那个常量 2026-09-17/18 之后一处都不生效（见
+    rehearsal_control.LEGACY_V1_BUDGET 头注）。真机轮数是 10_000，这几条
+    会跑满 10_000 轮——整份测试套卡在 18% 就是这么来的。
+    钉的是**登记过的**档（control-v1），随手造一个 profile 会让
+    restore_budget 在续跑时判成 invalid_control_budget_policy。
+    """
+    from services import rehearsal_control as control
+    from services.control_budget import CONVERSATION_BUDGET_V1
+
+    monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V1)
     return ControlHarness(monkeypatch)
+
+
+ROUND_BUDGET = 8  # = CONVERSATION_BUDGET_V1.max_rounds，上面那个夹具钉的
 
 
 def _confirmed(sid: str) -> None:
@@ -125,7 +140,7 @@ def test_同一件读工具连着调_停成打转而不是轮次到顶(harness):
     assert stop_text(ControlStopReason.STATIONARITY) in _texts(events)
     # 变异咬这一条：把 should_hard_stop 那段删掉 → 走满 8 轮、停因变 tool_rounds。
     assert len(harness.llm_calls) == MAX_CONSECUTIVE_IDENTICAL_PROBLEMATIC_CALLS
-    assert len(harness.llm_calls) < MAX_TOOL_ROUNDS
+    assert len(harness.llm_calls) < ROUND_BUDGET
     # 打转不许点火。
     assert harness.helper_calls == []
 
@@ -195,7 +210,7 @@ def test_捅完改口就不再掐_中间那一档不是延迟版硬停(harness):
         s["stopReason"] != ControlStopReason.STATIONARITY.value for s in stops
     ), stops
     # 改口之后按正常预算跑到轮次到顶——证明捅一下没有顺手把回合掐死。
-    assert len(harness.llm_calls) == MAX_TOOL_ROUNDS
+    assert len(harness.llm_calls) == ROUND_BUDGET
 
 
 def test_实参会变的重复不算打转(harness):
@@ -212,7 +227,7 @@ def test_实参会变的重复不算打转(harness):
 
     [stop] = _stops(events)
     assert stop["stopReason"] == ControlStopReason.TOOL_ROUNDS.value, stop
-    assert len(harness.llm_calls) == MAX_TOOL_ROUNDS
+    assert len(harness.llm_calls) == ROUND_BUDGET
 
 
 # ── 二、阈值必须够得着（CLAUDE.md §一之二）────────────────────────────────
@@ -226,8 +241,8 @@ def test_硬停阈值必须够得着():
     才可能碰一次。护栏装在真跑的路上、条件恒假、单测还绿——正是本仓 §一之二
     那一夜连栽两次的形态。
     """
-    assert MAX_CONSECUTIVE_IDENTICAL_PROBLEMATIC_CALLS <= MAX_TOOL_ROUNDS
-    assert MAX_CONSECUTIVE_IDENTICAL_CALLS <= MAX_TOOL_ROUNDS
+    assert MAX_CONSECUTIVE_IDENTICAL_PROBLEMATIC_CALLS <= ROUND_BUDGET
+    assert MAX_CONSECUTIVE_IDENTICAL_CALLS <= ROUND_BUDGET
 
 
 def test_捅一下必须留出改口的余地():
@@ -240,7 +255,7 @@ def test_捅一下必须留出改口的余地():
     ):
         assert nudge < stop, (nudge, stop)
         assert stop - nudge >= 1
-        assert stop <= MAX_TOOL_ROUNDS
+        assert stop <= ROUND_BUDGET
 
 
 def test_紧档比宽档严():

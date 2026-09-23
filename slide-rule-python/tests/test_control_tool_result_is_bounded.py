@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.rehearsal_control import (  # noqa: E402
     CONTROL_TOOL_RESULT_MAX_CHARS,
-    MAX_CHEAP_TOKENS,
+    LEGACY_V1_BUDGET,
     bound_tool_result,
 )
 
@@ -94,16 +94,23 @@ def test_裁完还得是合法JSON():
 
 def test_八轮的量级对得上便宜预算():
     """上限不是拍脑袋：4000 字 ≈ 1000 token（grok 的 4 字节/token 口径），
-    八轮正好落在 MAX_CHEAP_TOKENS 上。
+    八轮正好落在 control-v1 的 cheap 预算上。
 
     ⚠ 判据盯的是**这条推理还成立**，不是盯 4000 这个数字本身——调上限时
       这条会提醒你顺带看一眼预算，而不是拦着不让改。
+
+    ⚠ 2026-09-23：原来比的是 `rehearsal_control.MAX_CHEAP_TOKENS`，那是
+      control-v1 的 8000，而且那个裸常量一处都不生效了（见 LEGACY_V1_BUDGET
+      头注）。这条标定本来就是在 v1「八轮 / 8000 token」那一档上做的，
+      所以明着用 v1 的数字。真机现在走 v3：预算是**上下文窗口** 20 万，
+      到 12 万先压缩——这条推理管的是「一轮回喂多大」，跟那一档无关。
     """
     rounds = 8
+    cheap_budget = LEGACY_V1_BUDGET.max_tokens
     approx_tokens = CONTROL_TOOL_RESULT_MAX_CHARS / 4 * rounds
-    assert approx_tokens <= MAX_CHEAP_TOKENS * 1.05, (
+    assert approx_tokens <= cheap_budget * 1.05, (
         f"单个结果 {CONTROL_TOOL_RESULT_MAX_CHARS} 字 × {rounds} 轮 "
-        f"≈ {approx_tokens:.0f} token，超过 cheap 预算 {MAX_CHEAP_TOKENS}"
+        f"≈ {approx_tokens:.0f} token，超过 cheap 预算 {cheap_budget}"
     )
 
 

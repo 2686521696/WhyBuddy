@@ -99,9 +99,12 @@ def usage_metrics(samples):
 
 
 def control_budget_metrics(control_module):
-    return {"legacyDefaults": {"profile": "control-v1", "maxRounds": control_module.MAX_TOOL_ROUNDS,
-        "maxTokens": control_module.MAX_CHEAP_TOKENS, "maxWallSeconds": control_module.MAX_WALL_SECONDS},
+    # 2026-09-23: legacyDefaults used to be re-typed here from three bare module
+    # constants (MAX_TOOL_ROUNDS / MAX_CHEAP_TOKENS / MAX_WALL_SECONDS) that
+    # enforced nothing. They are the registered control-v1 policy; read it.
+    return {"legacyDefaults": control_module.LEGACY_V1_BUDGET.to_wire(),
         "projectProfile": control_module.PROJECT_BUDGET.to_wire(),
+        "conversationProfile": control_module.CONVERSATION_BUDGET.to_wire(),
         "source": "current production profiles; each turn's persistedBudget.budgetPolicy is the actual pinned policy"}
 
 

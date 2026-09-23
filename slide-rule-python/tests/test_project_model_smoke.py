@@ -84,14 +84,22 @@ def test_filtered_provider_usage_is_recorded_without_double_counting_success():
 
 def test_budget_report_reads_current_production_values_without_overriding_them():
     project = {"profile": "fixture-project", "maxRounds": 15, "maxTokens": 40000, "maxWallSeconds": 120.0}
-    module = SimpleNamespace(MAX_TOOL_ROUNDS=9, MAX_CHEAP_TOKENS=4321, MAX_WALL_SECONDS=17.0,
-        PROJECT_BUDGET=SimpleNamespace(to_wire=lambda: dict(project)))
+    legacy = {"profile": "control-v1", "maxRounds": 9, "maxTokens": 4321, "maxWallSeconds": 17.0}
+    talk = {"profile": "fixture-talk", "maxRounds": 10000, "maxTokens": 200000, "maxWallSeconds": 86400.0}
+    module = SimpleNamespace(
+        LEGACY_V1_BUDGET=SimpleNamespace(to_wire=lambda: dict(legacy)),
+        PROJECT_BUDGET=SimpleNamespace(to_wire=lambda: dict(project)),
+        CONVERSATION_BUDGET=SimpleNamespace(to_wire=lambda: dict(talk)))
     report = smoke.control_budget_metrics(module)
-    assert report["legacyDefaults"] == {"profile": "control-v1", "maxRounds": 9, "maxTokens": 4321, "maxWallSeconds": 17.0}
+    assert report["legacyDefaults"] == legacy
     assert report["projectProfile"] == project
-    assert module.MAX_TOOL_ROUNDS == 9 and module.MAX_CHEAP_TOKENS == 4321 and module.MAX_WALL_SECONDS == 17.0
+    # ⚠ 2026-09-23：对话档也要报。它才是点火前真正生效的那一档——报表里
+    #   只有 legacy + project 时，「一回合最多 8 轮」那笔账没人对得上。
+    assert report["conversationProfile"] == talk
     report["projectProfile"]["maxTokens"] = 1
+    report["legacyDefaults"]["maxRounds"] = 1
     assert module.PROJECT_BUDGET.to_wire() == project
+    assert module.LEGACY_V1_BUDGET.to_wire() == legacy
 
 
 @pytest.mark.parametrize("finish", ["stop", "content_filter", "length"])

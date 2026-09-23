@@ -75,6 +75,7 @@ export const CONTROL_STOP_REASONS = [
   "token_budget",
   "tool_rounds",
   "stationarity",
+  "no_writes",
   "llm_unavailable",
   "unknown",
 ] as const;

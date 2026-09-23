@@ -46,15 +46,16 @@ from services.control_budget import (
     ControlBudget, restore_budget,
 )
 from services.project_creation import create_session_project
-from services.rehearsal_control import (MAX_CHEAP_TOKENS, MAX_REQUEST_SECONDS,
-    MAX_TOOL_ROUNDS, MAX_WALL_SECONDS)
+from services.rehearsal_control import LEGACY_V1_BUDGET, MAX_REQUEST_SECONDS
 from services.slide_rule_session import load_session, save_session
 from test_control_project_tools import post, setup  # noqa: F401
 
 pytest.importorskip("fastapi")
 
-LEGACY = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS,
-                       MAX_WALL_SECONDS, MAX_REQUEST_SECONDS)
+# ⚠ 2026-09-23：这里原本拿 rehearsal_control 里三个裸常量重搭一份 control-v1。
+#   那三个常量一处都不生效，而且跟 CONVERSATION_BUDGET_V1 里的数字重复了一遍
+#   （§4 成对的东西）。现在直接用登记过的那一份。
+LEGACY = LEGACY_V1_BUDGET
 
 
 def _timeouts(harness) -> list:
@@ -152,8 +153,9 @@ def test_老存档不许因为多了这个字段而失效():
     assert restore_budget(CONVERSATION_BUDGET_V2.to_wire(), LEGACY) is CONVERSATION_BUDGET_V2
     assert CONVERSATION_BUDGET_V2.request_timeout_ms() == 180_000
 
-    old_legacy = {"profile": "control-v1", "maxRounds": MAX_TOOL_ROUNDS,
-                  "maxTokens": MAX_CHEAP_TOKENS, "maxWallSeconds": MAX_WALL_SECONDS}
+    old_legacy = LEGACY.to_wire()
+    assert old_legacy == {"profile": "control-v1", "maxRounds": 8,
+                          "maxTokens": 8000, "maxWallSeconds": 90.0}
     assert restore_budget(old_legacy, LEGACY).request_timeout_ms() == 75_000
 
 
