@@ -47,7 +47,10 @@ export function PresentedOfficeFile({
     <iframe
       title="文件预览"
       data-testid="presented-office-file"
-      sandbox="allow-scripts"
+      /* 这一页（services/deliverable_kind.office_preview_html）自己不带脚本——
+         翻页是 radio + :checked，服务端也发 script-src 'none'。sandbox 留空
+         就是最小权限。⚠ 改那边加回脚本时，这里要一起改（§4 生成侧/消费侧）。 */
+      sandbox=""
       src={src}
       className="h-full min-h-0 w-full flex-1 border-0 bg-white"
     />

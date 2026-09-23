@@ -13,7 +13,11 @@ from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
 from services.project_office_artifacts import ProjectOfficeArtifactStore
-from services.deliverable_kind import office_artifact_suffix, office_preview_html
+from services.deliverable_kind import (
+    office_artifact_suffix,
+    office_preview_csp,
+    office_preview_html,
+)
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
@@ -256,9 +260,15 @@ def preview_office_artifact(project_id: str, artifact_id: str, request: Request,
         if request.query_params.get("render") == "browser":
             document = office_preview_html(preview)
             if document:
+                # ⚠ 2026-09-23 review：上一版这里是
+                #   `style-src 'unsafe-inline'; script-src 'unsafe-inline'`。
+                #   这一页是拿用户的 .pptx 生成的 HTML，又和产品同源——转义
+                #   漏一处就是同源执行。页面现在不带脚本，样式按实际发出去
+                #   的那份文档算 hash（office_preview_csp 只认这一份，不另外
+                #   拼一份字符串去 hash）。
                 return Response(document, media_type="text/html; charset=utf-8", headers={
                     "Cache-Control": "no-store",
                     "X-Content-Type-Options": "nosniff",
-                    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+                    "Content-Security-Policy": office_preview_csp(document),
                 })
         return preview
