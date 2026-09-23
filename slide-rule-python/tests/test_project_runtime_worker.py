@@ -24,11 +24,13 @@ class Provider:
         self.install_code = 0
         self.cleanup_error = False
         self.created = 0
+        self.templates = []
         self.renewed = threading.Event()
         self.contents = {}
 
     def create(self, *, workspace_id, **kwargs):
         self.created += 1
+        self.templates.append(kwargs.get("template"))
         handle = WorkspaceHandle(workspace_id, f"sandbox-{self.created}")
         self.handles[handle.sandbox_id] = handle
         return handle

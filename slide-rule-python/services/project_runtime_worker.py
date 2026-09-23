@@ -38,8 +38,10 @@ from services.vite_preview_hosts import injected_preview_dev_command
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.deliverable_kind import (
+    WORKSPACE_TEMPLATE_VERSION,
     is_office_artifact_path,
     is_office_zip_bytes,
+    office_e2b_template,
     orch_trace,
     skip_vite_dependency_install,
 )
@@ -653,7 +655,16 @@ class _RuntimeTask:
                 for orphan in self.provider.find_workspaces(workspace_id=self.lease.workspaceId):
                     self.heartbeat.check()
                     self.provider.destroy(orphan)
-                self.handle = self.provider.create(workspace_id=self.lease.workspaceId)
+                # ⚠ 2026-09-22 办公文件生在 E2B，预览却在主机上找 soffice。
+                #   只有 whybuddy-workspace-1 使用办公镜像。没配模板仍用默认
+                #   code-interpreter，不许因此拒绝开箱。网页工程不传这张镜像。
+                image = (
+                    office_e2b_template()
+                    if str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
+                    else None
+                )
+                self.handle = self.provider.create(
+                    workspace_id=self.lease.workspaceId, template=image)
             orch_trace(
                 "sandbox",
                 reused=reused,

@@ -481,3 +481,48 @@ def test_second_command_while_one_is_queued_still_queues(command_setup, monkeypa
     second = submit(worker, project, command="build", key="command-2")
     assert first.operationId != second.operationId
     assert (first.status, second.status) == ("queued", "queued")
+
+
+def test_office_sandbox_uses_the_office_image_and_vite_does_not(command_setup, monkeypatch):
+    """办公工作区才传 WHYBUDDY_OFFICE_E2B_TEMPLATE。网页工程传了就会起错镜像。
+
+    删掉 create(..., template=image)，或对所有工程都传这张镜像，本条变红。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+
+    monkeypatch.setenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", "whybuddy-office")
+    store, project, provider, worker, _ = command_setup
+    office = store.create_project(
+        "session-office-image", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        office.projectId, owner_id="alice", expected_revision=office.currentRevision,
+        approval_ref="plan-1", idempotency_key="office-image", command="shell",
+        script="python3 --version")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed"
+    assert provider.templates == ["whybuddy-office"]
+    vite = submit(worker, project, command="check", key="vite-image")
+    vite_done = eventually(lambda: state(store, vite, "stopped"))
+    assert vite_done.status == "completed"
+    assert provider.templates == ["whybuddy-office", None]
+
+
+def test_office_sandbox_without_template_env_stays_on_the_default_image(command_setup, monkeypatch):
+    """没配镜像不许拒绝开箱，也不许写死一个模板名。"""
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
+
+    monkeypatch.delenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", raising=False)
+    store, _, provider, worker, _ = command_setup
+    office = store.create_project(
+        "session-office-default-image", owner_id="alice",
+        files=office_workspace_files(),
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        office.projectId, owner_id="alice", expected_revision=office.currentRevision,
+        approval_ref="plan-1", idempotency_key="office-default-image", command="shell",
+        script="python3 --version")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed"
+    assert provider.templates == [None]

@@ -47,6 +47,8 @@ WORKSPACE_README = (
 #: 办公计划建成的电脑。不进 CreateArguments.templateId——模型仍可传
 #: react-vite*，host 按批准计划覆盖。
 WORKSPACE_TEMPLATE_VERSION = "whybuddy-workspace-1"
+#: 办公工作区的 E2B 镜像名。空 = 默认 code-interpreter，不在开箱时现装 LibreOffice。
+OFFICE_E2B_TEMPLATE_ENV = "WHYBUDDY_OFFICE_E2B_TEMPLATE"
 
 
 def normalize_deliverable_kind(raw: Any) -> str:
@@ -67,6 +69,20 @@ def is_office_file_plan(plan: Any) -> bool:
 def office_workspace_files() -> dict[str, str]:
     """办公计划的电脑：能写文件、能跑命令，不灌 Vite。"""
     return {"README.md": WORKSPACE_README}
+
+
+def office_e2b_template() -> str | None:
+    """办公工作区要起的 E2B 镜像。没配或名字不合法就返回 None。
+
+    ⚠ 2026-09-22 预览和下载不是同一张画：转换去主机上找 soffice，
+      文件却生在 E2B 里，默认 code-interpreter 没有 LibreOffice。
+      不在每次 bash 里 apt-get——默认沙盒内存不够，现装会把命令拖死。
+      网页工程不许走这张镜像。
+    """
+    value = os.getenv(OFFICE_E2B_TEMPLATE_ENV, "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value):
+        return None
+    return value
 
 
 def operation_left_on_lease(store, lease, owner_id: str):

@@ -766,6 +766,7 @@ modules = [
   "scripts.backfill_page_id_aliases",
   "scripts.backfill_session_owner",
   "scripts.block_selection_metrics",
+  "scripts.build_office_e2b_template",
   "scripts.connector_entity_ab",
   "scripts.content_quality_eval",
   "scripts.enrich_builtin_domain_models",
