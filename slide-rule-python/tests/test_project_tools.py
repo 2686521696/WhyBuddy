@@ -294,6 +294,44 @@ def test_patch_never_writes_into_active_or_unreconciled_workspace(setup, lease_s
     if lease_state == "expired-dispatch": assert remaining.processRefs == {"operationId": "unknown-dispatch"}
 
 
+def test_model_receipt_has_one_current_revision_not_the_parent():
+    """编排回执只有写入之后的版本。带上 parentRevision，模型会当成回退。
+
+    删掉 present_project_tool_result 里对 parentRevision 的丢弃，本条变红。
+    """
+    from pathlib import Path
+    from services.project_tools import present_project_tool_result
+
+    raw = {
+        "ok": True,
+        "revision": "prv-new",
+        "parentRevision": "prv-old",
+        "runtime": {"status": "stopped", "revision": "prv-mounted"},
+        "changedFiles": ["generate_handout.py"],
+    }
+    seen = present_project_tool_result(raw)
+    assert seen["revision"] == "prv-new"
+    assert "parentRevision" not in seen
+    assert "revision" not in seen["runtime"]
+    assert raw["parentRevision"] == "prv-old"
+    assert "hint" not in seen
+    assert "重新生成" not in str(seen)
+    assert "没有回退" not in str(seen)
+    # 反向：没调用时旧号还在，证明判据看的是呈现后的回执
+    assert "parentRevision" in raw
+
+    src = Path(__file__).resolve().parents[1].joinpath(
+        "services", "rehearsal_control.py"
+    ).read_text(encoding="utf-8")
+    start = src.index("Source CAS can succeed before session projection")
+    yield_at = src.index(
+        'yield {"type": "control_tool_result", "tool": name, **body}',
+        start,
+    )
+    live = src[start:yield_at]
+    assert "present_project_tool_result(body)" in live
+
+
 def test_finished_office_exec_keeps_sandbox_but_file_write_still_lands(setup):
     """⚠ 2026-09-22 BABCJGGB44：办公 bash 留下 sandboxId 后，file_write 被
     project_runtime_reconciliation_required 拦住。命令已经完成就不是还在跑的运行时。
@@ -338,6 +376,10 @@ def test_finished_office_exec_keeps_sandbox_but_file_write_still_lands(setup):
         lease_owner=lease.leaseOwner, generation=lease.generation, clear_runtime=False)
     written = execute(setup, "file_write", {"file": "build_deck.py", "content": "print(1)\n"})
     assert written["ok"], written
+    assert written.get("revision")
+    assert "parentRevision" not in written
+    assert "重新生成" not in str(written)
+    assert "没有回退" not in str(written)
     assert "print(1)" in setup.store.read_files(project["projectId"], owner_id="alice")["build_deck.py"]
     kept = setup.store.get_lease(project["projectId"], owner_id="alice")
     assert kept.sandboxId == "office-sandbox"

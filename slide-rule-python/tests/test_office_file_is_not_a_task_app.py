@@ -397,7 +397,9 @@ def test_office_prompt_is_a_fact_not_a_recipe():
     ))
     assert "办公文件" in text
     assert "react-vite-tasks 只用于任务管理网页" in text
-    assert "没有点名就没有预览" in text
+    assert "已经收回的办公文件" in text
+    assert "make_manus_page 只换看哪一份" in text
+    assert "没有点名就没有预览" not in text
     assert "应用运行失败不是办公文件的预览" in text
     assert "不能当幻灯片交差" not in text
     assert "空工作区" in text

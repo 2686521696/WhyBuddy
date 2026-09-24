@@ -281,6 +281,38 @@ def test_skill_loads_local_seed_when_catalog_is_empty(harness, monkeypatch):
     assert len(body) > 80
 
 
+def test_empty_catalog_still_loads_the_repo_office_seed(harness, monkeypatch):
+    """商店目录这一发是空的，@office-skills 仍必须打开仓库种子。
+
+    删掉 dispatch 里的 resolve_invoked_skill，本条变红。
+    """
+    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [])
+    sid = new_sid("skill-seed")
+    seed_session(sid, goal={"text": "整理成 Word", "status": "clear"})
+
+    n = {"i": 0}
+
+    def model(*_a, **_k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return llm_tool("skill", {"name": "office-skills"}, call_id="sk-empty")
+        return llm_text("先问用途")
+
+    harness.llm_impl = model
+    _, events = harness.post(six_fields(
+        sid, "@office-skills 将图片整理成 Word",
+        selectedSkills=["office-skills"], installedSkills=["office-skills"],
+    ))
+    results = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "skill"
+    ]
+    assert results, [e.get("type") for e in events]
+    assert results[0].get("ok") is True, results[0]
+    assert results[0].get("error") != "skill_not_found"
+    assert int(results[0].get("seedBytes") or 0) > 0
+
+
 def test_skill_survives_catalog_empty_after_plan_turn(harness, monkeypatch):
     """⚠ 2026-09-21 13ME64TF8Z：批准后新回合 skill_not_found。
 
@@ -334,10 +366,105 @@ def test_skill_survives_catalog_empty_after_plan_turn(harness, monkeypatch):
     assert "HOW TO MAKE PPT WITH PYTHON-PPTX" in str(results[0].get("skill_message") or "")
 
 
+def test_catalog_outage_still_opens_the_seed_and_says_why(harness, monkeypatch):
+    """商店抛错不是空目录。种子仍打开，回执写明目录没答上来。"""
+    def boom(_owner):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(control, "installed_skill_infos", boom)
+    sid = new_sid("skill-catalog-down")
+    seed_session(sid, goal={"text": "@office-skills 做个PPT", "status": "clear"})
+    n = {"i": 0}
+
+    def model(*_a, **_k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return llm_tool("skill", {"name": "office-skills"}, call_id="sk-down")
+        return llm_text("开始写计划")
+
+    harness.llm_impl = model
+    _, events = harness.post(six_fields(sid, "@office-skills 做个PPT"))
+    results = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "skill"
+    ]
+    assert results, [e.get("type") for e in events]
+    assert results[0].get("ok") is True, results[0]
+    assert results[0].get("catalogError") == "skill_catalog_unavailable"
+    assert results[0].get("error") != "skill_not_found"
+    assert "office-skills" in str(results[0].get("skill_message") or "")
+
+
+def test_unknown_name_during_catalog_outage_is_not_skill_not_found(harness, monkeypatch):
+    """目录没答上来时，不许把点名失败说成这个技能不存在。"""
+    def boom(_owner):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(control, "installed_skill_infos", boom)
+    sid = new_sid("skill-catalog-miss")
+    seed_session(sid, goal={"text": "做个东西", "status": "clear"})
+    n = {"i": 0}
+
+    def model(*_a, **_k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return llm_tool("skill", {"name": "not-a-real-skill"}, call_id="sk-miss")
+        return llm_text("目录没答上来")
+
+    harness.llm_impl = model
+    _, events = harness.post(six_fields(sid, "做个东西"))
+    results = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "skill"
+    ]
+    assert results, [e.get("type") for e in events]
+    assert results[0].get("ok") is False
+    assert results[0].get("error") == "skill_catalog_unavailable"
+    assert "available" not in results[0]
+
+
+def test_empty_catalog_that_answered_is_still_skill_not_found(harness, monkeypatch):
+    """商店答了空目录，点了一个没有种子的名字，这才是 skill_not_found。"""
+    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [])
+    sid = new_sid("skill-catalog-empty")
+    seed_session(sid, goal={"text": "做个东西", "status": "clear"})
+    n = {"i": 0}
+
+    def model(*_a, **_k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return llm_tool("skill", {"name": "not-a-real-skill"}, call_id="sk-empty-name")
+        return llm_text("没有这个技能")
+
+    harness.llm_impl = model
+    _, events = harness.post(six_fields(sid, "做个东西"))
+    results = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "skill"
+    ]
+    assert results, [e.get("type") for e in events]
+    assert results[0].get("error") == "skill_not_found"
+    assert "catalogError" not in results[0]
+
+
+def test_store_failure_is_not_swallowed_as_an_empty_catalog(monkeypatch):
+    """把 installed_skill_infos 的异常再收成 []，本条变红。"""
+    from services import skill_catalog_store as mod
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(mod, "get_skill_catalog_store", boom)
+    with pytest.raises(mod.SkillCatalogUnavailable):
+        mod.installed_skill_infos("alice")
+
+
 def test_reload_and_error_park_are_on_the_live_dispatch():
     body = _fn_body(strip_python(CONTROL_SRC), "_dispatch_tool")
     assert "_skills_loaded_this_turn" in body
     assert "alreadyLoaded" in body
+    assert "_skill_turn_catalog" in body
+    assert "classify_skill_catalog_result" in body
     loop = _fn_body(strip_python(CONTROL_SRC), "_control_llm_loop")
     fail_at = loop.find("except LlmError")
     park_at = loop.find("_park_control_error(", fail_at)
