@@ -445,6 +445,76 @@ def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
     assert provider.commands == ["python3 build_deck.py", 'python3 -c "import pptx"']
 
 
+def test_office_template_keeps_sandbox_after_package_json_appears(command_setup):
+    """⚠ 2026-09-24 MB5NJX8X2D：办公区补了 package.json 之后每条命令拆沙盒。
+
+    模板是 whybuddy-workspace-1 就留下沙盒，不许 npm ci。
+    把 skip 改回「看见 package.json 就 False」，created 变成 2，本条变红。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    project = store.create_project(
+        "session-office-pkg", owner_id="alice",
+        files={"README.md": "office\n", "package.json": "{}\n", "package-lock.json": "{}\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    first = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="one", command="shell", script="python3 build.py")
+    built = eventually(lambda: state(store, first, "stopped"))
+    assert built.status == "completed", built.result
+    assert built.result.get("keepSandbox") is True
+    assert built.result.get("officeScan") == "empty"
+    assert "npm ci" not in " ".join(provider.commands)
+    assert "template=whybuddy-workspace-1" in str(built.result.get("gate") or "")
+    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").expiresAt <= time.time())
+    second = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="two", command="shell", script="python3 build.py")
+    again = eventually(lambda: state(store, second, "stopped"))
+    assert again.status == "completed"
+    assert provider.created == 1
+
+
+def test_empty_office_scan_is_a_fact_and_failed_stderr_is_the_excerpt(command_setup):
+    """退出码 0 但没有合格 pptx：回执写扫描结果，不写禁令。
+    失败命令的 stderr 要进 excerpt，不能只剩错误码。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_tools import _command_log_excerpt, _command_pointer, operation_snapshot
+    from services.workspace_provider import ProcessResult
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    provider.command_code = 1
+
+    def process_result(handle, pid):
+        if pid == "44":
+            return ProcessResult(pid, stdout="", stderr="No module named pptx\n", exit_code=1)
+        return CommandProvider.process_result(provider, handle, pid)
+
+    provider.process_result = process_result
+    project = store.create_project(
+        "session-office-scan", owner_id="alice",
+        files={"README.md": "office\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="fail", command="shell",
+        script="python3 generate_pptx.py")
+    failed = eventually(lambda: state(store, operation, "failed"))
+    assert failed.status == "failed"
+    assert failed.result.get("officeScan") == "empty"
+    excerpt = _command_log_excerpt(store, operation.operationId, "alice")
+    assert "No module named pptx" in excerpt
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, excerpt)
+    assert "没有合格的办公文件" in receipt["hint"]
+    assert "base64" not in receipt["hint"]
+    assert receipt["excerpt"] != receipt.get("errorCode")
+
+
 def test_submit_command_only_queues_it_does_not_start_a_worker(command_setup, monkeypatch):
     """入队不是执行。submit_command 回来时不许已经有工人线程在跑。
 

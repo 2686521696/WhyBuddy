@@ -110,10 +110,12 @@ def test_leaf_defaults_unknown_to_web_app():
         template_version="whybuddy-react-vite-1",
         files={"package.json": "{}"},
     )
-    assert not skip_vite_dependency_install(
+    # ⚠ 2026-09-24 MB5NJX8X2D：办公模板上有了 lock，仍跳过 npm。
+    #   把模板判断挪回 package.json 后面，这条变红。
+    assert skip_vite_dependency_install(
         operation_kind="runtime.exec",
         template_version=WORKSPACE_TEMPLATE_VERSION,
-        files={**files, "package-lock.json": "{}"},
+        files={**files, "package.json": "{}", "package-lock.json": "{}"},
     )
     # ⚠ 13ME64TF8Z：revision 不是 workspace-1，树却是办公文件。
     assert skip_vite_dependency_install(

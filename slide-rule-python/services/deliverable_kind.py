@@ -156,14 +156,19 @@ def skip_vite_dependency_install(*, operation_kind: Any, template_version: Any,
       树是 README + generate_kickoff_pptx.py，没有 package.json。上一版
       只认 template_version==whybuddy-workspace-1，revision 上那格空或
       仍是 vite 时闸不响。Vite 工程必有 package.json，缺锁文件仍 fail-closed。
+
+    ⚠ 2026-09-24 sr-20260924153920-MB5NJX8X2D：办公区被锁文件闸打死之后，
+      模型补了 package.json 和 lock。上一版一看见这两个文件就返回 False，
+      于是每条命令拆沙盒、跑 npm ci。模板已经是 whybuddy-workspace-1 时，
+      包文件是模型自己放进来的脚本依赖，不是 Vite 开箱。
     """
     if str(operation_kind or "") != "runtime.exec":
         return False
+    if str(template_version or "") == WORKSPACE_TEMPLATE_VERSION:
+        return True
     names = {str(name) for name in files} if isinstance(files, Mapping) else set()
     if "package-lock.json" in names or "package.json" in names:
         return False
-    if str(template_version or "") == WORKSPACE_TEMPLATE_VERSION:
-        return True
     if not isinstance(files, Mapping):
         return False
     return True

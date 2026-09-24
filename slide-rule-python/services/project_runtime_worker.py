@@ -614,6 +614,17 @@ class _RuntimeTask:
             bare = "package.json" not in files and "package-lock.json" not in files
             if bare and self.original.kind == "runtime.exec":
                 skip_install = True
+            # ⚠ 2026-09-24 MB5NJX8X2D：办公模板上后来有了 package.json，
+            #   助手若仍返回 False，就会 npm ci 并拆掉沙盒。模板说了算。
+            if (
+                str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
+                and self.original.kind == "runtime.exec"
+            ):
+                skip_install = True
+            self.result["gate"] = (
+                f"template={revision.templateVersion} "
+                f"files={sorted(str(n) for n in files)} skip={bool(skip_install)}"
+            )[:300]
             orch_trace(
                 "exec-gate",
                 kind=self.original.kind,
@@ -867,8 +878,10 @@ class _RuntimeTask:
             items = collector(self.handle)
         except Exception:
             logger.warning("office artifact collect failed", exc_info=True)
+            self.result["officeScan"] = "failed"
             return
         if not isinstance(items, list) or not items:
+            self.result["officeScan"] = "empty"
             return
         try:
             store = ProjectOfficeArtifactStore(self.store)
@@ -901,6 +914,8 @@ class _RuntimeTask:
             if path not in kept:
                 kept.append(path)
             self.result["officeFiles"] = kept[:8]
+        if not self.result.get("officeFiles"):
+            self.result["officeScan"] = "empty"
 
     def _flush_stdin(self):
         pending = self.supervisor.peek_stdin(self.operation_id)
