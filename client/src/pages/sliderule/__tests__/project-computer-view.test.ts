@@ -12,9 +12,8 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   isComputerView,
+  hostPreviewChoice,
   officePreviewStage,
-  presentedOfficeFile,
-  presentedSourcePage,
   resolveComputerView,
   shouldAutoCreateProject,
   shouldAutoOpenPreview,
@@ -456,48 +455,91 @@ describe("档位名单", () => {
   });
 });
 
-describe("文件预览只认 Agent 点名的源码页", () => {
-  it("做成的 html 才是浏览器那一页", () => {
+describe("预览跟着已收回或已写好的文件走", () => {
+  it("点名只换看哪一份", () => {
     expect(
-      presentedSourcePage([
-        { tool: "file_write", status: "done", detail: "slides.html" },
-        { tool: "make_manus_page", status: "done", detail: "slides.html" },
-      ])
-    ).toBe("slides.html");
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: ["旧.pptx"],
+        rows: [
+          { tool: "file_write", status: "done", detail: "slides.html" },
+          { tool: "make_manus_page", status: "done", detail: "slides.html" },
+        ],
+      })
+    ).toEqual({ htmlPath: "slides.html", officePath: null });
+    expect(
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: ["面团.pptx", "附录.docx"],
+        rows: [
+          { tool: "make_manus_page", status: "done", detail: "面团.pptx" },
+        ],
+      })
+    ).toEqual({ htmlPath: null, officePath: "面团.pptx" });
+    expect(
+      hostPreviewChoice({
+        office: false,
+        rows: [{ tool: "make_manus_page", status: "done", detail: "notes.html" }],
+      })
+    ).toEqual({ htmlPath: "notes.html", officePath: null });
+    expect(
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: ["面团.pptx"],
+        rows: [
+          { tool: "make_manus_page", status: "done", detail: "slides.html" },
+          { tool: "make_manus_page", status: "failed", detail: "没有.pptx" },
+        ],
+      })
+    ).toEqual({ htmlPath: "slides.html", officePath: null });
   });
 
-  it("反向：pptx、失败、或只写了文件，宿主都不补一页", () => {
+  it("没点名时，办公会话呈现收回的文件，否则呈现写好的页面", () => {
     expect(
-      presentedSourcePage([
-        { tool: "make_manus_page", status: "done", detail: "deck.pptx" },
-      ])
-    ).toBeNull();
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: ["面团.pptx"],
+        rows: [
+          { tool: "bash", status: "done", detail: "python3 build.py" },
+          { tool: "file_write", status: "done", detail: "slides.html" },
+        ],
+      })
+    ).toEqual({ htmlPath: null, officePath: "面团.pptx" });
     expect(
-      presentedSourcePage([
-        { tool: "make_manus_page", status: "done", detail: "slides.html" },
-        { tool: "make_manus_page", status: "failed", detail: "slides.html" },
-      ])
-    ).toBeNull();
-    expect(
-      presentedSourcePage([
-        { tool: "file_write", status: "done", detail: "slides.html" },
-      ])
-    ).toBeNull();
-    expect(
-      presentedSourcePage([
-        { tool: "make_manus_page", status: "done", detail: "old.html" },
-        { tool: "make_manus_page", status: "done", detail: "deck.pptx" },
-      ])
-    ).toBeNull();
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: [],
+        rows: [{ tool: "file_write", status: "done", detail: "slides.html" }],
+      })
+    ).toEqual({ htmlPath: "slides.html", officePath: null });
   });
 
-  it("点名已收回的 pptx 才打开那一份，没点名不许拿应用失败来充", () => {
-    const named = [
-      { tool: "bash", status: "done", detail: "deck.pptx" },
-      { tool: "make_manus_page", status: "done", detail: "面团.pptx" },
-    ];
-    expect(presentedOfficeFile(named)).toBe("面团.pptx");
-    expect(presentedSourcePage(named)).toBeNull();
+  it("反向：网页工程不拿写过的 html 顶替运行页；什么都没有就不是文件", () => {
+    expect(
+      hostPreviewChoice({
+        office: false,
+        rows: [{ tool: "file_write", status: "done", detail: "index.html" }],
+      })
+    ).toEqual({ htmlPath: null, officePath: null });
+    expect(
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: [],
+        rows: [
+          { tool: "make_manus_page", status: "failed", detail: "slides.html" },
+          { tool: "bash", status: "done", detail: "面团.pptx" },
+        ],
+      })
+    ).toEqual({ htmlPath: null, officePath: null });
+    expect(
+      hostPreviewChoice({
+        office: true,
+        collectedOffice: ["面团.pptx"],
+        rows: [
+          { tool: "make_manus_page", status: "failed", detail: "没有.pptx" },
+        ],
+      }).officePath
+    ).toBe("面团.pptx");
     expect(
       officePreviewStage({ office: true, htmlPath: null, officePath: "面团.pptx" })
     ).toBe("file");
@@ -507,6 +549,5 @@ describe("文件预览只认 Agent 点名的源码页", () => {
     expect(
       officePreviewStage({ office: false, htmlPath: null, officePath: null })
     ).toBe("app");
-    expect(presentedOfficeFile([])).toBeNull();
   });
 });

@@ -105,15 +105,17 @@ export function resolveComputerView(input: {
   lastTool?: string | null;
   hasConsole?: boolean;
   deliverableKind?: string | null;
-  /** 已收回的办公文件被 make_manus_page 点过名。跑完要打开那一份，不跟队尾的 bash。 */
+  /**
+   * 宿主已经有一份可看的文件：收回的办公文件，或源码里的页面。
+   * 跑完要打开那一份，不跟队尾的 bash。还在跑就留在当前这一步。
+   */
   presentedOffice?: boolean;
 }): ComputerView {
   if (input.userPinned) return input.userPinned;
   const fromTool = input.lastTool ? computerViewForAction(input.lastTool) : null;
   if (input.live) return fromTool ?? "computer";
-  // ⚠ 2026-09-23 报价表改数量：make_manus_page 已经点了 items.xlsx，
-  //   队尾却是后写的命令/待办，右侧停在终端。人切到预览还是改之前的表。
-  //   没在跑、并且点过名，就打开预览。只跑了 bash、没点名，仍停在原档。
+  // ⚠ 2026-09-23 报价表改数量：文件已经在，队尾却是后写的命令，右侧停在终端。
+  //   没在跑、并且宿主有文件可看，就打开预览。只跑了 bash、什么都没收回，仍停在原档。
   if (input.presentedOffice) return "preview";
   // ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：办公会话跑完被钉在终端，
   //   右边只剩 Vite 登录页。当时用「办公就回预览档」补上产物面。
@@ -303,60 +305,86 @@ export function shouldAutoWakePreview(input: {
   return Boolean(input.lastTool && PREVIEW_ACTION_TOOLS.has(input.lastTool));
 }
 
+const SOURCE_WRITE_TOOLS = new Set([
+  "file_write",
+  "file_str_replace",
+  "write_file",
+  "search_replace",
+  "project_write",
+  "project_patch",
+  "project_str_replace",
+]);
+
+function isHtmlPath(path: string): boolean {
+  return /\.html?$/i.test(path);
+}
+
+function isOfficePath(path: string): boolean {
+  return /\.(pptx|docx|xlsx)$/i.test(path);
+}
+
 /**
- * 预览浏览器该打开的源码页。只认 Agent 已经做成的 make_manus_page。
- *
- * ⚠ 2026-09-22 办公预览被写成宿主流程：交付物是 office-file 就把 pptx
- *   画成一页。文件预览跟别的预览一样，是控制面点名的那一页。没点名、
- *   点了非 html、或这一步失败，宿主都不补一页。
+ * make_manus_page 成功时换看哪一份。失败的那一跳不当成「没有文件」，
+ * 接着往前找上一次换成的，或交给宿主默认。
  */
-function latestPresentedPath(
+function latestSwitchedPath(
   rows: readonly { tool?: string; status?: string; detail?: string }[]
 ): string | null {
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const row = rows[i];
     if (row?.tool !== "make_manus_page") continue;
-    if (row.status === "running") continue;
-    if (row.status !== "done") return null;
-    return sourcePathFromActionDetail(String(row.detail || ""));
+    if (row.status !== "done") continue;
+    const path = sourcePathFromActionDetail(String(row.detail || ""));
+    if (path && (isHtmlPath(path) || isOfficePath(path))) return path;
   }
   return null;
 }
 
-export function presentedSourcePage(
+function latestWrittenHtml(
   rows: readonly { tool?: string; status?: string; detail?: string }[]
 ): string | null {
-  const path = latestPresentedPath(rows);
-  if (!path || !/\.html?$/i.test(path)) return null;
-  return path;
-}
-
-/** make_manus_page 点名的已收回办公文件。没点名、点了 html、或失败，都不是。 */
-/** 最近一次成功点名的办公文件。同一路径改写后 id 会变，用来重画预览。 */
-export function latestOfficePresentationKey(
-  rows: readonly { id?: string; tool?: string; status?: string; detail?: string }[]
-): string | null {
-  const path = presentedOfficeFile(rows);
-  if (!path) return null;
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const row = rows[i];
-    if (row?.tool !== "make_manus_page" || row.status !== "done") continue;
-    return `${row.id || i}:${path}`;
+    if (!row || row.status !== "done" || !SOURCE_WRITE_TOOLS.has(String(row.tool || ""))) {
+      continue;
+    }
+    const path = sourcePathFromActionDetail(String(row.detail || ""));
+    if (path && isHtmlPath(path)) return path;
   }
-  return path;
-}
-
-export function presentedOfficeFile(
-  rows: readonly { tool?: string; status?: string; detail?: string }[]
-): string | null {
-  const path = latestPresentedPath(rows);
-  if (!path || !/\.(pptx|docx|xlsx)$/i.test(path)) return null;
-  return path;
+  return null;
 }
 
 /**
- * 办公会话的预览槽。点了 html → 源码页；点了办公文件 → 那一份；
- * 没点名 → 空，不许拿失败的网页运行来充。
+ * 预览看哪一份。
+ *
+ * make_manus_page 只换看哪一份。没换过时，办公会话由宿主呈现已经收回的
+ * 办公文件；还没收回，就呈现源码里已经写好的 .html。网页工程不拿
+ * index.html 顶替运行页。什么都没有时办公槽留空，不许拿失败的网页运行来充。
+ *
+ * ⚠ 2026-09-22 把「没人点名就打开，打开的是失败的网页运行」收成
+ *   「没调用 make_manus_page 就没有预览」。用户看不看得到文件，取决于
+ *   模型记不记得多调一个工具。2026-09-24 改回：收回和写好是状态，呈现是宿主的事。
+ */
+export function hostPreviewChoice(input: {
+  rows: readonly { tool?: string; status?: string; detail?: string }[];
+  /** 产物库路径，按收回顺序，后者更新。 */
+  collectedOffice?: readonly string[];
+  office: boolean;
+}): { htmlPath: string | null; officePath: string | null } {
+  const named = latestSwitchedPath(input.rows);
+  if (named && isHtmlPath(named)) return { htmlPath: named, officePath: null };
+  if (named && isOfficePath(named)) return { htmlPath: null, officePath: named };
+  if (!input.office) return { htmlPath: null, officePath: null };
+  const collected = [...(input.collectedOffice ?? [])].reverse().find(isOfficePath);
+  if (collected) return { htmlPath: null, officePath: collected };
+  const written = latestWrittenHtml(input.rows);
+  if (written) return { htmlPath: written, officePath: null };
+  return { htmlPath: null, officePath: null };
+}
+
+/**
+ * 办公会话的预览槽。有页面 → 源码页；有办公文件 → 那一份；
+ * 什么都没有 → 空，不许拿失败的网页运行来充。
  */
 export function officePreviewStage(input: {
   office: boolean;
