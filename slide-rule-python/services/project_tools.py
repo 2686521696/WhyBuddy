@@ -161,9 +161,10 @@ def operation_snapshot(snapshot):
     # ⚠ 2026-09-24：成功路径把 template/files/skip 写进 result["gate"]。
     #   skip=True 只表示没跑 npm ci，命令已经跑完。抄进回执后模型读成
     #   「这条没执行」。留在操作记录和 orch_trace，不进这份快照。
-    files = saved.get("officeFiles")
-    if isinstance(files, list) and files:
-        result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+    for name in ("officeFiles", "officeFilesHeld"):
+        files = saved.get(name)
+        if isinstance(files, list) and files:
+            result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
     # 用户原件没放进沙盒时必须让模型看见——否则它会去沙盒里找一份不存在的文件，
     # 或者照样说「已经处理了你的报价表」。
     skipped = saved.get("uploadsSkipped")
@@ -232,23 +233,53 @@ def _command_log_excerpt(store, operation_id, owner_id) -> str:
 _ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-def _hidden_command_failure(excerpt: str, exit_code) -> str | None:
+# 命令里真的起了 Python 进程，日志尾的 Traceback 才可能是它自己的。
+# `.py` 只在它是一段命令的第一个词时算（./gen.py），`cat gen.py` 不算。
+_RUNS_PYTHON = re.compile(
+    r"(?:^|[\s;&|(/])(?:python[0-9.]*|pip[0-9.]*|pytest|uv|poetry)(?=\s|$)"
+    r"|(?:^|[;&|(]\s*)[^\s;&|()]*\.py(?=\s|$|[;&|)])")
+
+
+def _hidden_command_failure(excerpt: str, exit_code, command=None) -> str | None:
     """进程退出码是 0，但日志尾已经说明命令失败。
 
     ⚠ 2026-09-24 sr-20260924190011：`import pptx > 文件; echo EXIT:$?; cat 文件`
       的进程退出码是 cat 的 0，日志里是 ModuleNotFoundError 和 EXIT:1。
       回执 status=completed，模型当成 python-pptx 已经装上。
+    ⚠ 2026-09-24 review：上一版见 Traceback 就判失败。`cat error.log`、
+      `grep -rn Traceback .` 是在**看**日志，命令本身成功了，回执却说
+      「这次命令没有成功」并置 commandOk=false——模型去修一个不存在的故障，
+      或者把刚查明的原因当成新失败。现在：
+        - 显式回显的 EXIT:N 最可信，N≠0 失败；EXIT:0 只盖住它前面的 Traceback；
+        - 没有回显时，只有命令里真起了 Python 才把 Traceback 算作它的失败；
+        - 拿不到命令文本（旧回执）时照旧判，宁可多报，不许把失败报成成功。
     """
     if exit_code not in (0, "0"):
         return None
     text = _ANSI_CSI.sub("", str(excerpt or "")).replace("\r", "\n")
     echoed = None
-    for line in text.splitlines():
+    echoed_at = -1
+    traceback_at = -1
+    for index, line in enumerate(text.splitlines()):
         matched = re.fullmatch(r"EXIT:(\d+)", line.strip())
         if matched:
-            echoed = int(matched.group(1))
+            echoed, echoed_at = int(matched.group(1)), index
+        if "Traceback (most recent call last)" in line:
+            traceback_at = index
     if echoed not in (None, 0):
         return f"进程退出码是 0，但日志尾有 EXIT:{echoed}。这次命令没有成功。"
+    # EXIT:0 只替它前面的那段作证。`pip …; echo EXIT:$?; python3 gen.py | tail`
+    # 的 EXIT:0 是 pip 的，后面 gen.py 的 Traceback 不归它管；
+    # `python3 gen.py; echo EXIT:$?; cat old.log` 回显之后只是在看旧日志。
+    # 两份日志一模一样，只有回显之后那段命令分得开。
+    scope = command
+    if echoed == 0:
+        if echoed_at > traceback_at:
+            return None
+        if isinstance(command, str) and "EXIT:" in command:
+            scope = command.rsplit("EXIT:", 1)[1]
+    if isinstance(scope, str) and scope.strip() and not _RUNS_PYTHON.search(scope):
+        return None
     if "Traceback (most recent call last)" in text:
         detail = ""
         for line in text.splitlines():
@@ -282,11 +313,23 @@ def _command_pointer(result, excerpt=""):
             "同一个沙盒留给下一条命令，已安装的包还在。"
             + hint
         )
+    elif isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]:
+        # 库里的旧文件不是这条命令的产出。说成「已收回」会把一次静默失败的
+        # 重新生成报成交付（2026-09-24 review）；说成「没有」又会让模型往树里
+        # 写占位（sr-20260924190011）。两件事都照实说。
+        named = ", ".join(str(item) for item in result["officeFilesHeld"][:8])
+        hint = (
+            "这次命令没有产出新的办公文件。"
+            f"之前的命令收回、库里还在的：{named}。"
+            "如果这条命令本该重新生成它，那次生成没有写出文件，库里仍是旧版。"
+            "不要往源码树写占位，也不要把文件 base64 进日志或 file_write。"
+            + hint
+        )
     elif result.get("officeScan") == "empty":
         hint = "这次扫描没有合格的办公文件。" + hint
     elif result.get("officeScan") == "failed":
         hint = "这次没能扫办公文件。" + hint
-    hidden = _hidden_command_failure(excerpt, result.get("exitCode"))
+    hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
     if hidden:
         hint = hidden + hint
     out = {
@@ -744,12 +787,19 @@ class ProjectTools:
             else:
                 # ⚠ 2026-09-24 sr-20260924190011：不带 file 的交付页被记成
                 #   presented=project。产物库里已有 pptx，右侧却去看工程页。
+                # ⚠ 2026-09-24 review：上一版不看这是不是办公工程。网页工程里
+                #   跑个导出脚本、树里多出一份 .xlsx，交付页就打开那张表——
+                #   网页不见了。只有办公工作区（whybuddy-workspace-1）才回退到
+                #   产物库；网页工程要看表格就点名 file。判据用修订上记着的
+                #   模板版本，跟收集器 _office_scan_is_a_command_fact 同一个事实，
+                #   不看计划：恢复的会话可能读不到计划，工程是什么却一直在库里。
                 held = []
-                try:
-                    held = ProjectOfficeArtifactStore(self.store).list(
-                        project.projectId, owner_id=self.owner_id)
-                except Exception:
-                    held = []
+                if result.get("templateVersion") == WORKSPACE_TEMPLATE_VERSION:
+                    try:
+                        held = ProjectOfficeArtifactStore(self.store).list(
+                            project.projectId, owner_id=self.owner_id)
+                    except Exception:
+                        held = []
                 latest = held[-1] if held else None
                 if isinstance(latest, dict) and latest.get("path") and latest.get("artifactId"):
                     result["path"] = latest["path"]

@@ -924,6 +924,10 @@ class _RuntimeTask:
         ⚠ 2026-09-24 sr-20260924190011：上一间沙盒已经收回 pptx，下一条命令
           扫空，回执写成「没有合格的办公文件」。模型往源码树写 pending、
           base64 占位和 1×1 预览图。库里有的路径仍是交付，不许改口说没有。
+        ⚠ 2026-09-24 review：上一版把库里的旧路径写进 officeFiles，回执于是说
+          「办公文件已收回：X。这就是交付」。模型让命令重新生成、脚本静默
+          没写出文件，看到的仍是「已收回」——一次失败的重生成被说成交付。
+          旧路径单放 officeFilesHeld，回执另有一句「这次没有产出新文件」。
         """
         if not report_miss or self.result.get("officeFiles"):
             return
@@ -938,7 +942,7 @@ class _RuntimeTask:
             if isinstance(path, str) and path not in paths:
                 paths.append(path)
         if paths:
-            self.result["officeFiles"] = paths[:8]
+            self.result["officeFilesHeld"] = paths[:8]
             return
         self.result["officeScan"] = "failed" if failed else "empty"
 

@@ -23,10 +23,15 @@ from test_control_run_service import env, settled
 def assert_live_guidance(messages, offered, *, has_project=True):
     prompt = messages[0]["content"]
     assert messages[0]["role"] == "system"
-    assert "保持当前应用运行，不需要先取消" in prompt
+    # 按意思钉，不钉字面：ae5b487f 把「保持当前应用运行」改成「保持应用运行」，
+    # 意思没变、旧字面判据就红了。
+    assert "不需要先取消" in prompt
     assert all(path in prompt for path in ("src/", "public/", "tests/", "index.html"))
     assert "completed 且 synchronized=true" in prompt
-    assert "依赖或启动配置变更需先停止并确认清理" in prompt
+    assert "依赖或启动配置" in prompt and "确认清理" in prompt
+    # 真实性边界：排队≠完成。ae5b487f 精简时把这句删了，没有判据拦住。
+    assert "如实交回 operationId" in prompt
+    assert "宣称完成" in prompt
     assert "修改前先取消活跃运行" not in prompt
     assert "私有预览和独立浏览器验收尚未接入" not in prompt
     # Readiness is assembled on the live control-turn path (including before

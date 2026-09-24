@@ -529,6 +529,11 @@ def test_empty_office_scan_still_names_a_file_already_collected(command_setup):
 
     删掉扫空时交回产物库路径，本条变红，并出现「没有合格的办公文件」。
     库里一份都没有时仍说扫空，见 test_empty_office_scan_is_a_fact。
+
+    ⚠ 2026-09-24 review：反过来也不许说成这次交付。上一版把旧路径写进
+    officeFiles，回执是「办公文件已收回：X。这就是交付」——脚本重新生成
+    失败、一个字节没写，模型读到的仍是交付成功。把旧路径写回
+    officeFiles，本条后半段变红。
     """
     from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
     from services.project_office_artifacts import ProjectOfficeArtifactStore
@@ -549,12 +554,17 @@ def test_empty_office_scan_still_names_a_file_already_collected(command_setup):
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.status == "completed", finished.result
     assert finished.result.get("officeScan") is None
-    assert finished.result.get("officeFiles") == ["为什么要盖楼.pptx"]
+    assert finished.result.get("officeFilesHeld") == ["为什么要盖楼.pptx"]
     snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
     receipt = _command_pointer(snap, "")
     assert "为什么要盖楼.pptx" in receipt["hint"]
     assert "没有合格的办公文件" not in receipt["hint"]
     assert "base64" in receipt["hint"]
+    # 旧文件不是这条命令的产出：不许出现在 officeFiles，回执不许说成交付。
+    assert finished.result.get("officeFiles") is None
+    assert "officeFiles" not in receipt
+    assert "已收回" not in receipt["hint"] and "这就是交付" not in receipt["hint"]
+    assert "没有产出新的办公文件" in receipt["hint"]
 
 
 def test_web_exec_empty_office_scan_is_not_told_to_the_model(command_setup):
@@ -598,6 +608,8 @@ def test_web_exec_still_names_a_real_office_file(command_setup):
     snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
     receipt = _command_pointer(snap, "")
     assert "deck.pptx" in receipt["hint"]
+    assert "已收回" in receipt["hint"]
+    assert "没有产出新的办公文件" not in receipt["hint"]
     assert "没有合格的办公文件" not in receipt["hint"]
 
 
@@ -712,3 +724,59 @@ def test_upload_that_cannot_be_mounted_is_named_in_the_receipt_not_fatal(command
     assert done.status == "completed", (done.status, done.result)
     snap = operation_snapshot(store.snapshot_operation(op.operationId, owner_id="alice"))
     assert snap["uploadsSkipped"] == ["报价表.xlsx"], snap
+
+
+@pytest.mark.parametrize("script,failed", [
+    # 看日志：命令本身成功，日志里的 Traceback 是被查看的内容。
+    ("cat error.log", False),
+    ("grep -rn Traceback .", False),
+    # 真起了 Python、被管道吞掉退出码：Traceback 是它自己的。
+    ("python3 gen.py | tail -20", True),
+])
+def test_traceback_in_the_tail_fails_only_a_command_that_ran_python(command_setup, script, failed):
+    """退出码 0 + 日志尾 Traceback：看日志的命令不是失败。
+
+    ⚠ 2026-09-24 review：上一版见 Traceback 就判「这次命令没有成功」并置
+    commandOk=false，`cat error.log` 也算。命令文本走真工人写进回执的那份
+    （result["command"] = 模型原样的 script），不自己拼。
+    删掉 _hidden_command_failure 里的命令判断，前两组变红；
+    把它写成「永远不判」，第三组变红。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_tools import _command_log_excerpt, _command_pointer, operation_snapshot
+    from services.workspace_provider import ProcessResult
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    tail = (
+        "Traceback (most recent call last):\n"
+        '  File "gen.py", line 3, in <module>\n'
+        "ModuleNotFoundError: No module named 'pptx'\n"
+    )
+
+    def process_result(handle, pid):
+        if pid == "44":
+            return ProcessResult(pid, stdout=tail, stderr="", exit_code=0)
+        return CommandProvider.process_result(provider, handle, pid)
+
+    provider.process_result = process_result
+    project = store.create_project(
+        "session-traceback-tail", owner_id="alice",
+        files={"README.md": "office\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="tb", command="shell", script=script)
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed", finished.result
+    excerpt = _command_log_excerpt(store, operation.operationId, "alice")
+    assert "ModuleNotFoundError" in excerpt
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    assert snap["command"] == script
+    receipt = _command_pointer(snap, excerpt)
+    if failed:
+        assert receipt["commandOk"] is False
+        assert "没有成功" in receipt["hint"]
+    else:
+        assert "commandOk" not in receipt
+        assert "没有成功" not in receipt["hint"]

@@ -76,15 +76,41 @@ def test_make_manus_page_names_a_collected_office_file(setup):
     missing = execute(setup, "make_manus_page", {"file": "没有.pptx"})
     assert missing["ok"] is False
     assert missing["error"] == "project_file_not_found"
-    # 不点名时打开最新一份收回的文件，不许落回工程页。
+    # 这是网页工程（夹具模板 test-vite-1）。树里多出一份 pptx 不等于交付物
+    # 换成了它：不点名时仍看工程页，点名才看文件（上面那段）。
+    # ⚠ 2026-09-24 review：上一版不点名就打开最新的办公文件，不看工程是什么。
+    #   删掉模板版本那道判断，本段变红。
+    unnamed = execute(setup, "make_manus_page", {})
+    assert unnamed["ok"] is True
+    assert unnamed["presented"] == "project"
+    assert "artifactId" not in unnamed
+    listed = execute(setup, "project_list")
+    assert "面团.pptx" not in {item["path"] for item in listed["files"]}
+    assert listed["officeFiles"] == ["面团.pptx"]
+
+
+def test_make_manus_page_without_file_opens_the_office_deliverable(setup, monkeypatch):
+    """办公工作区不点名时打开最新一份收回的文件，不许落回工程页。
+
+    ⚠ 2026-09-24 sr-20260924190011：不带 file 的交付页被记成 presented=project。
+    产物库里已有 pptx，右侧却去看空工作区。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_office_artifacts import ProjectOfficeArtifactStore
+
+    monkeypatch.setattr(project_creation, "load_project_template",
+        lambda *_a: ({"README.md": "office\n"}, WORKSPACE_TEMPLATE_VERSION))
+    created = create(setup)
+    assert created["templateVersion"] == WORKSPACE_TEMPLATE_VERSION
+    empty = execute(setup, "make_manus_page", {})
+    assert empty["presented"] == "project"
+    meta = ProjectOfficeArtifactStore(setup.store).put(
+        created["projectId"], owner_id="alice", path="面团.pptx", data=b"PK\x03\x04deck")
     unnamed = execute(setup, "make_manus_page", {})
     assert unnamed["ok"] is True
     assert unnamed["presented"] == "office"
     assert unnamed["path"] == "面团.pptx"
     assert unnamed["artifactId"] == meta["artifactId"]
-    listed = execute(setup, "project_list")
-    assert "面团.pptx" not in {item["path"] for item in listed["files"]}
-    assert listed["officeFiles"] == ["面团.pptx"]
 
 
 def execute(setup, name, args=None, state=None):

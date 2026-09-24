@@ -3869,6 +3869,11 @@ def _system_prompt(state: V5SessionState) -> str:
         #
         # ⚠ 2026-09-13 真模型 live-edit：提示曾教「修改前先取消」，模型照做
         #   project_cancel，标题一个字没改。运行中能改源码是事实，不是下一步命令。
+        #
+        # ⚠ 2026-09-24 review：ae5b487f 精简这段时把「任务未结束就如实交回
+        #   operationId……不能重复提交或宣称完成」一并删了。它不是教模型用哪件
+        #   工具，是真实性边界——命令排队≠完成。删掉后提示里再没有一句话拦
+        #   「提交完就说好了」。test_control_project_prompt 按意思钉着它。
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
@@ -3884,6 +3889,7 @@ def _system_prompt(state: V5SessionState) -> str:
             "completed 且 synchronized=true 才是新源码版本已同步。"
             "依赖或启动配置变了，要先停掉并确认清理，再改、再启动。"
             "check/build/test 的回执是 operationId；真实结果在 status 和 logs 里。"
+            "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
             "已有服务还在时，再跑这些命令之前运行时会要求先停掉并确认清理。"
             "project_verify 需要正在运行的工程。缺浏览器或预览是 blocked。"
             "源码或批准变了，旧证据是 stale。用例通过只覆盖列出的验收范围。"

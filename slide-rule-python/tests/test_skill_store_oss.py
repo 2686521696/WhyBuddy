@@ -364,7 +364,9 @@ def test_control_lists_skill_and_loads_body(monkeypatch):
         path=".sliderule/skills/demo/SKILL.md",
         body="# Demo\n\n跑 scripts/hello.py。\n",
     )
-    monkeypatch.setattr(rc, "_skill_infos_for_turn", lambda state: [info])
+    # 列目录和派发都走 _skill_turn_catalog；替身打在 _skill_infos_for_turn 上
+    # 只盖住一半——派发那条照样去真目录里找，demo 就 skill_not_found。
+    monkeypatch.setattr(rc, "_skill_turn_catalog", lambda state: ([info], None))
     monkeypatch.setattr(rc, "guard_control_run", lambda: None)
     state = V5SessionState(sessionId="s1", ownerId="alice", goal={"text": "build"})
     listed = rc.list_control_tools(state)

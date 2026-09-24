@@ -292,6 +292,26 @@ def test_exit_zero_with_log_failure_is_not_success():
         excerpt,
     )
     assert "进程退出码是 0" not in already_failed["hint"]
+    # 显式回显 EXIT:0 就是作者要的那条成功了，后面 cat 出来的旧 Traceback
+    # 不改判（2026-09-24 review）。
+    echoed_ok = _command_pointer(
+        {"operationId": "op-echo-ok", "exitCode": 0, "command": "python3 gen.py; echo EXIT:$?; cat old.log"},
+        "EXIT:0\n" + excerpt.replace("EXIT:1\n", ""),
+    )
+    assert "commandOk" not in echoed_ok
+    # EXIT:0 在 Traceback 前面：那是更早一段（pip）的退出码，后面的崩溃照判。
+    echoed_before = _command_pointer(
+        {"operationId": "op-echo-early", "exitCode": 0,
+         "command": "pip install python-pptx; echo EXIT:$?; python3 gen.py | tail -5"},
+        "EXIT:0\n" + excerpt.replace("EXIT:1\n", "").replace('python3 -c "import pptx"\n', ""),
+    )
+    assert echoed_before["commandOk"] is False
+    # 拿不到命令文本的旧回执：照旧判，不许把失败报成成功。
+    unknown = _command_pointer(
+        {"operationId": "op-unknown", "exitCode": 0},
+        excerpt.replace("EXIT:1\n", ""),
+    )
+    assert unknown["commandOk"] is False
 
 
 def test_command_pointer_does_not_fall_back_to_error_code():
