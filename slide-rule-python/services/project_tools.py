@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 import uuid
 from types import SimpleNamespace
@@ -223,6 +224,38 @@ def _command_log_excerpt(store, operation_id, owner_id) -> str:
     return text
 
 
+_ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _hidden_command_failure(excerpt: str, exit_code) -> str | None:
+    """进程退出码是 0，但日志尾已经说明命令失败。
+
+    ⚠ 2026-09-24 sr-20260924190011：`import pptx > 文件; echo EXIT:$?; cat 文件`
+      的进程退出码是 cat 的 0，日志里是 ModuleNotFoundError 和 EXIT:1。
+      回执 status=completed，模型当成 python-pptx 已经装上。
+    """
+    if exit_code not in (0, "0"):
+        return None
+    text = _ANSI_CSI.sub("", str(excerpt or "")).replace("\r", "\n")
+    echoed = None
+    for line in text.splitlines():
+        matched = re.fullmatch(r"EXIT:(\d+)", line.strip())
+        if matched:
+            echoed = int(matched.group(1))
+    if echoed not in (None, 0):
+        return f"进程退出码是 0，但日志尾有 EXIT:{echoed}。这次命令没有成功。"
+    if "Traceback (most recent call last)" in text:
+        detail = ""
+        for line in text.splitlines():
+            stripped = line.strip()
+            if re.search(r"(Error|Exception):", stripped) and not stripped.startswith("Traceback"):
+                detail = stripped[:180]
+        if detail:
+            return f"进程退出码是 0，但日志尾有异常：{detail}。这次命令没有成功。"
+        return "进程退出码是 0，但日志尾有 Traceback。这次命令没有成功。"
+    return None
+
+
 def _command_pointer(result, excerpt=""):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -248,11 +281,16 @@ def _command_pointer(result, excerpt=""):
         hint = "这次扫描没有合格的办公文件。" + hint
     elif result.get("officeScan") == "failed":
         hint = "这次没能扫办公文件。" + hint
+    hidden = _hidden_command_failure(excerpt, result.get("exitCode"))
+    if hidden:
+        hint = hidden + hint
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
         "hint": hint,
     }
+    if hidden:
+        out["commandOk"] = False
     out.pop("stdout", None)
     out.pop("stderr", None)
     out.pop("logPath", None)

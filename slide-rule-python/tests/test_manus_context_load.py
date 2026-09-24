@@ -254,6 +254,46 @@ def test_command_pointer_excerpt_is_log_tail_not_error_code(setup):
     assert "No module named pptx" in "".join(item["text"] for item in logs["logs"])
 
 
+def test_exit_zero_with_log_failure_is_not_success():
+    """cat 收尾使进程退出码为 0。日志里的 EXIT:1 仍是失败。
+
+    ⚠ 2026-09-24 sr-20260924190011：import pptx 失败后 echo EXIT:$? 再 cat，
+    回执 status=completed。删掉 _hidden_command_failure 的调用，本条变红。
+    进程自己非 0 时不另加这句，见上一条 exitCode 1。
+    """
+    excerpt = (
+        'python3 -c "import pptx"\n'
+        "Traceback (most recent call last):\n"
+        '  File "<string>", line 1, in <module>\n'
+        "ModuleNotFoundError: No module named 'pptx'\n"
+        "EXIT:1\n"
+    )
+    out = _command_pointer(
+        {"operationId": "op-cat", "exitCode": 0, "status": "completed"},
+        excerpt,
+    )
+    assert out["exitCode"] == 0
+    assert out["commandOk"] is False
+    assert out["hint"].startswith("进程退出码是 0，但日志尾有 EXIT:1")
+    assert "没有成功" in out["hint"]
+    colored = _command_pointer(
+        {"operationId": "op-color", "exitCode": 0},
+        "\x1b[31mEXIT:1\x1b[0m\n",
+    )
+    assert colored["commandOk"] is False
+    clean = _command_pointer(
+        {"operationId": "op-ok", "exitCode": 0, "status": "completed"},
+        "VERIFY_OK\nslides=2\n",
+    )
+    assert "没有成功" not in clean["hint"]
+    assert "commandOk" not in clean
+    already_failed = _command_pointer(
+        {"operationId": "op-fail", "exitCode": 1, "errorCode": "project_command_failed"},
+        excerpt,
+    )
+    assert "进程退出码是 0" not in already_failed["hint"]
+
+
 def test_command_pointer_does_not_fall_back_to_error_code():
     """变异：excerpt 空时不许改回 errorCode。"""
     out = _command_pointer(
