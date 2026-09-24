@@ -15,7 +15,7 @@ function officeKind(path: string): OfficeKind | null {
 }
 
 /**
- * 浏览器里用 @silurus/ooxml 画 Agent 点名的那份文件。
+ * 浏览器里用 @silurus/ooxml 画宿主正在看的那份文件。
  *
  * ⚠ 2026-09-23 上一版在 E2B 里转 PDF，再塞进 sandbox iframe。Chrome 不在
  *   沙箱框里开 PDF 查看器，右侧是「此页面已被 Chrome 屏蔽」。这份库在本页
@@ -68,13 +68,13 @@ export function PresentedOfficeFile({
   }, [projectId, path, kind, refreshKey]);
 
   if (!kind || missing) {
-    return <p className="m-0 px-3 py-6 text-sm">点名的文件读不到。</p>;
+    return <p className="m-0 px-3 py-6 text-sm">这份文件读不到。</p>;
   }
   if (failed) {
     return <p className="m-0 px-3 py-6 text-sm">这份文件画不出来。</p>;
   }
   if (!bytes) {
-    return <p className="m-0 px-3 py-6 text-sm opacity-70">正在打开点名的文件…</p>;
+    return <p className="m-0 px-3 py-6 text-sm opacity-70">正在打开这份文件…</p>;
   }
   return (
     <OfficeOoxmlView

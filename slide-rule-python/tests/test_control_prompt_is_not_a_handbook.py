@@ -32,6 +32,13 @@ HANDBOOK = (
     "下一跳请挑",
     "在哪用（平台）",
     "已经问过一轮澄清",
+    "先通过 ask_user_question",
+    "再调用 write_plan",
+    "最后用空参数",
+    "日常改一个文件用",
+    "构建用 shell_exec",
+    "预览用 deploy_expose_port",
+    "问用户用 message_ask_user",
 )
 
 
@@ -136,3 +143,16 @@ def test_project_prompt_carries_local_readiness_without_replacing_browser_accept
     assert "独立浏览器=ready" in text
     assert "不能用构建、API 或模型自述替代" in text
     assert "project_preview_not_configured" in text
+    assert "批准前不能执行" in text
+    assert "operation_idempotency_conflict 不是验收结论" in text
+    assert "不需要先取消" in text
+    for banned in (
+        "先通过 ask_user_question",
+        "再调用 write_plan",
+        "最后用空参数",
+        "日常改一个文件用",
+        "构建用 shell_exec",
+        "预览用 deploy_expose_port",
+        "问用户用 message_ask_user",
+    ):
+        assert banned not in text, banned

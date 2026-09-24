@@ -20,7 +20,7 @@
  */
 
 import React from "react";
-import { Blocks, Play, Plug, Search, Settings2, Users } from "lucide-react";
+import { Blocks, Play, Plug, Search, Settings2, Users, X } from "lucide-react";
 
 import type { SlashItem, SlashKind } from "./composer-slash";
 
@@ -55,6 +55,39 @@ const CHIP_TONE: Record<SlashKind, string> = {
 
 /** 分组顺序：计划在最前，再是伙伴 / 连接器 / 技能。 */
 const KIND_ORDER: SlashKind[] = ["rehearsal", "partner", "connector", "skill"];
+
+/**
+ * 输入框里的技能点名。照 Trae：蓝字、关闭图标在名字左边、没有边框胶囊。
+ * ⚠ 2026-09-24：第一版用文字「×」，和 15px 正文挤在一起像个乘号。
+ *   关掉必须是图标，不靠字形。
+ * 发出去的 `@slug` 由 composeSkillMentionText 补，不画在这里。
+ */
+export function SkillMentionChip({
+  item,
+  onRemove,
+}: {
+  item: SlashItem;
+  onRemove: () => void;
+}) {
+  return (
+    <span
+      data-testid="sliderule-skill-mention"
+      data-key={item.key}
+      className="inline-flex h-6 max-w-[240px] items-center gap-1 text-[15px] leading-6 text-[#3370ff]"
+    >
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`移除 ${item.name}`}
+        data-testid="sliderule-skill-mention-remove"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#3370ff] hover:bg-[#e8f0ff]"
+      >
+        <X className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+      </button>
+      <span className="truncate">{item.name}</span>
+    </span>
+  );
+}
 
 export function CapabilityChip({
   item,

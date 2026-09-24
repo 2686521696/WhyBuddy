@@ -4,23 +4,65 @@
   删掉执行器上的拷贝，或改回只存文字，本条变红。
 """
 import ast
+
+import pytest
 from pathlib import Path
 
 from services.e2b_workspace_provider import E2BWorkspaceProvider, PROJECT_ROOT
 from services.project_runtime_worker import _RuntimeTask
 from services.project_store import ProjectStore
-from services.session_uploads import sanitize_filename, upload_fact, workspace_path
+from services.session_uploads import (
+    sanitize_filename,
+    upload_fact,
+    upload_media_type,
+    workspace_path,
+)
 from services.workspace_provider import WorkspaceHandle
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+
+@pytest.fixture(autouse=True)
+def _upload_blobs_in_tmp(tmp_path, monkeypatch):
+    """原件从 2026-09-24 起落磁盘（session_uploads.upload_blob_dir）。
+    不钉到 tmp 的话，每条判据都往仓里 slide-rule-python/data/session-uploads 写文件。"""
+    monkeypatch.setenv("SESSION_UPLOAD_ROOT", str(tmp_path / "blobs"))
+
 def test_sanitize_keeps_the_leaf_name():
     assert sanitize_filename("../../报告.docx") == "报告.docx"
     assert sanitize_filename("a\\b.xlsx") == "b.xlsx"
     assert sanitize_filename("") == ""
     assert workspace_path("报告.docx") == "/home/user/workspace/报告.docx"
+
+
+def test_legacy_base64_row_still_reads(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    monkeypatch.setenv("SESSION_UPLOAD_ROOT", str(tmp_path / "blobs"))
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'legacy.db'}")
+    payload = b"old-bytes"
+    encoded = base64.b64encode(payload).decode("ascii")
+    store._q(
+        "insert into wb_session_upload"
+        "(session_id,owner_id,name,sha256,size_bytes,content) values($1,$2,$3,$4,$5,$6)",
+        ["sess-1", "alice", "a.png", hashlib.sha256(payload).hexdigest(), len(payload), encoded],
+    )
+    assert store.read_session_upload("sess-1", "a.png", owner_id="alice") == b"old-bytes"
+    store.close()
+
+
+def test_image_upload_is_shown_inline():
+    assert upload_media_type("图.PNG") == "image/png"
+    assert upload_media_type("a.jpeg") == "image/jpeg"
+    assert upload_media_type("a.pdf") == "application/pdf"
+    assert upload_media_type("报告.docx") == "application/octet-stream"
+    src = (ROOT / "routes" / "project_sources.py").read_text(encoding="utf-8")
+    body = src.split("def get_session_upload", 1)[1].split("def list_office_artifacts", 1)[0]
+    assert "read_session_upload" in body
+    assert "upload_media_type" in body
+    assert '"inline"' in body
 
 
 def test_upload_fact_names_the_path_and_not_a_parser():
@@ -31,12 +73,20 @@ def test_upload_fact_names_the_path_and_not_a_parser():
     assert upload_fact([]) is None
 
 
-def test_bytes_roundtrip_and_mount_on_the_worker(tmp_path):
+def test_bytes_roundtrip_and_mount_on_the_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("SESSION_UPLOAD_ROOT", str(tmp_path / "blobs"))
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
     stored = store.put_session_upload(
         "sess-1", owner_id="alice", name="notes/报告.docx", data=b"PK\x03\x04word")
     assert stored["name"] == "报告.docx"
     assert store.read_session_upload("sess-1", "报告.docx", owner_id="alice") == b"PK\x03\x04word"
+    # 反向：SQL 里再塞回整段 base64，2MB 图会再次 503。
+    row = store._q(
+        "select content from wb_session_upload where session_id=$1 and name=$2",
+        ["sess-1", "报告.docx"],
+    )
+    assert row[0]["content"].startswith("blob:")
+    assert b"PK" not in row[0]["content"].encode()
     assert store.list_session_uploads("sess-1", owner_id="mallory") == []
 
     written = {}
@@ -148,12 +198,13 @@ def test_max_upload_fits_the_http_sql_gateway_body_limit(tmp_path, monkeypatch):
       这里把每一发 SQL **按网关真实的请求形状**（json {sql, params, timeout_ms,
       max_rows}）量一遍，跟 db-api 的默认上限比，而不是自己拍一个数。
 
-    把 SESSION_UPLOAD_CHUNK_BYTES 调成 MAX_UPLOAD_BYTES（等于不分块）→ 本条红。
+    ⚠ 2026-09-24 起 main 那边改成原件落磁盘、SQL 只存 `blob:<sha256>`
+      （fdceceb0，真机 2.1MB PNG 503 那一趟）。这条判据照样守：谁把字节搬回
+      SQL 参数里，最大那一发就会过 4MB → 红。
     """
     import json
     import re
 
-    from services import project_store as store_mod
     from services.session_uploads import MAX_UPLOAD_BYTES
     from services.sql_gateway import numeric_to_format
 
@@ -181,21 +232,16 @@ def test_max_upload_fits_the_http_sql_gateway_body_limit(tmp_path, monkeypatch):
     assert max(sizes) < limit, f"最大一发请求体 {max(sizes)} 字节，超过 db-api 的 {limit}"
     # 反向：分块不许丢字节、不许乱序。
     assert store.read_session_upload("sess-big", "报价表.xlsx", owner_id="alice") == payload
-    assert store_mod.SESSION_UPLOAD_CHUNK_BYTES < MAX_UPLOAD_BYTES
 
 
-def test_replacing_an_upload_drops_the_old_chunks(tmp_path):
-    """同名重传：旧块必须清掉，否则大文件换成小文件后读回来是新头拼旧尾。"""
-    from services import project_store as store_mod
 
+def test_replacing_an_upload_reads_back_the_new_bytes(tmp_path):
+    """同名重传：读回来必须是新那份，不许是旧字节，也不许新头拼旧尾。"""
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
-    big = b"A" * (store_mod.SESSION_UPLOAD_CHUNK_BYTES * 2 + 7)
-    store.put_session_upload("sess-r", owner_id="alice", name="a.bin", data=big)
+    store.put_session_upload("sess-r", owner_id="alice", name="a.bin", data=b"A" * 4096)
     store.put_session_upload("sess-r", owner_id="alice", name="a.bin", data=b"small")
     assert store.read_session_upload("sess-r", "a.bin", owner_id="alice") == b"small"
-    rows = store._q("select count(*) as n from wb_session_upload_chunk where session_id=$1", ["sess-r"])
-    assert int(rows[0]["n"]) == 1
-
+    store.close()
 
 def _upload_client(tmp_path, monkeypatch, *, viewer_id="alice"):
     from fastapi import FastAPI

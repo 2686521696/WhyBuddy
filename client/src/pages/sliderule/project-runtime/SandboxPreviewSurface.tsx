@@ -39,6 +39,7 @@ import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
 import { PresentedOfficeFile } from "./PresentedOfficeFile";
 import { PreviewFileDownload } from "./PreviewFileDownload";
 import { PresentedSourcePage } from "./PresentedSourcePage";
+import { useOfficeArtifacts } from "./office-artifacts-client";
 import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
   ProjectWorkspaceError,
@@ -54,10 +55,8 @@ import {
   FOLLOW_COMPUTER_EVENT,
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
+  hostPreviewChoice,
   officePreviewStage,
-  latestOfficePresentationKey,
-  presentedOfficeFile,
-  presentedSourcePage,
   resolveComputerView,
   shouldAutoOpenPreview,
   shouldAutoWakePreview,
@@ -639,11 +638,23 @@ export function SandboxPreviewSurface({
   // ⚠ 2026-09-18：自动切档必须看**当前跟的那一行**，不是数组最后一项
   //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
   const lastTool = computerNow.current?.tool ?? null;
-  const presentedPath = presentedSourcePage(activityRows);
-  const presentedOfficePath = presentedOfficeFile(activityRows);
-  const officePresentationKey = latestOfficePresentationKey(activityRows);
+  const officeDeliverable = isOfficeFileDeliverable(deliverableKind);
+  const collectedOffice = useOfficeArtifacts(
+    officeDeliverable ? projectId : null,
+    `${activityRows.at(-1)?.id ?? ""}:${activityRows.at(-1)?.status ?? ""}:${officeReload}`
+  );
+  const previewChoice = hostPreviewChoice({
+    rows: activityRows,
+    collectedOffice: collectedOffice.map(item => item.path),
+    office: officeDeliverable,
+  });
+  const presentedPath = previewChoice.htmlPath;
+  const presentedOfficePath = previewChoice.officePath;
+  const shownOffice = collectedOffice.find(item => item.path === presentedOfficePath);
+  // 同一路径改写后 sha 变了就重画。不靠模型再点一次名。
+  const officePresentationKey = `${shownOffice?.sha256 ?? ""}:${officeReload}`;
   const previewStage = officePreviewStage({
-    office: isOfficeFileDeliverable(deliverableKind),
+    office: officeDeliverable,
     htmlPath: presentedPath,
     officePath: presentedOfficePath,
   });
@@ -659,13 +670,11 @@ export function SandboxPreviewSurface({
         userPinned,
         live: computerNow.live,
         hasActivity: activityRows.length > 0,
-        previewReady: isOfficeFileDeliverable(deliverableKind)
-          ? false
-          : previewReady,
+        previewReady: officeDeliverable ? false : previewReady,
         lastTool,
         hasConsole,
         deliverableKind,
-        presentedOffice: Boolean(presentedOfficePath),
+        presentedOffice: Boolean(presentedOfficePath || presentedPath),
       })
     : userPinned && userPinned !== "computer"
       ? userPinned
@@ -1375,7 +1384,7 @@ export function SandboxPreviewSurface({
             data-testid="office-preview-idle"
           >
             <p className="m-0 text-sm text-[#3c3c3c]">预览还没打开</p>
-            <p className="m-0 text-xs text-[#8a8a8a]">控制面还没有点名要打开的文件。</p>
+            <p className="m-0 text-xs text-[#8a8a8a]">还没有收回的办公文件，源码里也没有页面。</p>
           </div>
         ) : (
         <ScaledStageFrame

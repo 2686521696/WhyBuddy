@@ -121,7 +121,10 @@ describe("办公文件不把 Vite 预览叫醒当交差", () => {
     expect(surface).toMatch(/PreviewFileDownload/);
     expect(surface).toMatch(/path=\{presentedOfficePath\}/);
     expect(surface).not.toMatch(/OfficeArtifactPane/);
-    expect(surface).toMatch(/presentedSourcePage\(/);
+    expect(surface).toMatch(/hostPreviewChoice\(/);
+    expect(surface).toMatch(/useOfficeArtifacts\(/);
+    expect(surface).toMatch(/collectedOffice: collectedOffice\.map/);
+    expect(surface).not.toMatch(/控制面还没有点名/);
     expect(surface).toMatch(/PresentedSourcePage/);
     expect(surface).not.toMatch(/render=browser/);
     expect(surface).toMatch(/isOfficeFileDeliverable\(deliverableKind\)/);

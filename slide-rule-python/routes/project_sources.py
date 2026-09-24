@@ -19,7 +19,12 @@ from services.deliverable_kind import (
     office_preview_html,
 )
 from services.project_creation import load_authorized_session
-from services.session_uploads import MAX_UPLOAD_BYTES, workspace_path
+from services.session_uploads import (
+    MAX_UPLOAD_BYTES,
+    sanitize_filename,
+    upload_media_type,
+    workspace_path,
+)
 from services import persistence
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
@@ -264,6 +269,42 @@ async def put_session_upload(session_id: str, request: Request, viewer: CurrentU
     except ProjectStoreUnavailable as exc:
         raise HTTPException(status_code=503, detail="project_runtime_unavailable") from exc
     return {**stored, "path": workspace_path(stored["name"])}
+
+
+@router.get("/sessions/{session_id}/uploads")
+def get_session_upload(session_id: str, viewer: CurrentUser, name: str = ""):
+    """把已存的原件交回浏览器。图片用 inline，气泡缩略图和点开大图都走这一条。"""
+    if not project_read_access(viewer):
+        raise HTTPException(status_code=503, detail="project_preview_not_enabled")
+    owner_id = str(viewer.id)
+    safe_session = str(session_id or "").strip()
+    safe_name = sanitize_filename(name)
+    if not safe_session or not owner_id or not safe_name:
+        raise HTTPException(status_code=422, detail="upload_name_invalid")
+    loaded = persistence.load_session_record(safe_session)
+    if loaded.get("ok"):
+        try:
+            load_authorized_session(safe_session, owner_id=owner_id)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail="project_not_found") from exc
+    try:
+        data = get_project_store().read_session_upload(
+            safe_session, safe_name, owner_id=owner_id)
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="session_upload_not_found") from exc
+    except ProjectStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="project_runtime_unavailable") from exc
+    media = upload_media_type(safe_name)
+    inline = media.startswith("image/") or media == "application/pdf"
+    return Response(
+        data,
+        media_type=media,
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": "inline" if inline else "attachment",
+        },
+    )
 
 
 @router.get("/projects/{project_id}/artifacts")

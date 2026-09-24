@@ -617,6 +617,17 @@ class _RuntimeTask:
             bare = "package.json" not in files and "package-lock.json" not in files
             if bare and self.original.kind == "runtime.exec":
                 skip_install = True
+            # ⚠ 2026-09-24 MB5NJX8X2D：办公模板上后来有了 package.json，
+            #   助手若仍返回 False，就会 npm ci 并拆掉沙盒。模板说了算。
+            if (
+                str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
+                and self.original.kind == "runtime.exec"
+            ):
+                skip_install = True
+            self.result["gate"] = (
+                f"template={revision.templateVersion} "
+                f"files={sorted(str(n) for n in files)} skip={bool(skip_install)}"
+            )[:300]
             orch_trace(
                 "exec-gate",
                 kind=self.original.kind,
@@ -892,22 +903,68 @@ class _RuntimeTask:
         if skipped:
             self.result["uploadsSkipped"] = skipped[:8]
 
+    def _office_scan_is_a_command_fact(self) -> bool:
+        # 用类上的函数调用：收集测试把 SimpleNamespace 当 self 传进来，
+        # self.方法 会找不到这个函数。
+        try:
+            original = self.original
+            revision_id = getattr(original, "expectedRevision", None)
+            if not revision_id:
+                project = self.store.get_project(original.projectId, owner_id=self.owner_id)
+                revision_id = project.currentRevision
+            revision = self.store.get_revision(
+                original.projectId, revision_id, owner_id=self.owner_id)
+        except Exception:
+            return False
+        return str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
+
+    def _remember_held_office_files(self, report_miss: bool, *, failed: bool = False) -> None:
+        """扫空时把产物库里已有的路径写回回执。
+
+        ⚠ 2026-09-24 sr-20260924190011：上一间沙盒已经收回 pptx，下一条命令
+          扫空，回执写成「没有合格的办公文件」。模型往源码树写 pending、
+          base64 占位和 1×1 预览图。库里有的路径仍是交付，不许改口说没有。
+        """
+        if not report_miss or self.result.get("officeFiles"):
+            return
+        try:
+            rows = ProjectOfficeArtifactStore(self.store).list(
+                self.original.projectId, owner_id=self.owner_id)
+        except Exception:
+            rows = []
+        paths: list[str] = []
+        for item in rows:
+            path = item.get("path") if isinstance(item, dict) else None
+            if isinstance(path, str) and path not in paths:
+                paths.append(path)
+        if paths:
+            self.result["officeFiles"] = paths[:8]
+            return
+        self.result["officeScan"] = "failed" if failed else "empty"
+
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。
 
         ⚠ 2026-09-20 真机：python generate_deck.py 即使当时写出了 .pptx，
           主机 file_read 也是 project_file_not_found。收集 I/O 失败不许
           改写这次命令的成败（fail-open）；完工闸另看产物（fail-closed）。
+        ⚠ 2026-09-24：E2B 的 collect 每次 runtime.exec 都在，空树就是
+          {"files": []}。网页 npm run build 因此被写成「没有合格的办公文件」，
+          模型把它当成下一步。这句话只属于 whybuddy-workspace-1。
+          扫到真文件仍收回，不看模板。
         """
         collector = getattr(self.provider, "collect_office_files", None)
         if not callable(collector) or self.handle is None:
             return
+        report_miss = _RuntimeTask._office_scan_is_a_command_fact(self)
         try:
             items = collector(self.handle)
         except Exception:
             logger.warning("office artifact collect failed", exc_info=True)
+            _RuntimeTask._remember_held_office_files(self, report_miss, failed=True)
             return
         if not isinstance(items, list) or not items:
+            _RuntimeTask._remember_held_office_files(self, report_miss)
             return
         try:
             store = ProjectOfficeArtifactStore(self.store)
@@ -940,6 +997,7 @@ class _RuntimeTask:
             if path not in kept:
                 kept.append(path)
             self.result["officeFiles"] = kept[:8]
+        _RuntimeTask._remember_held_office_files(self, report_miss)
 
     def _flush_stdin(self):
         pending = self.supervisor.peek_stdin(self.operation_id)

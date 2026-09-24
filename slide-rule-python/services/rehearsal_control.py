@@ -157,7 +157,6 @@ from services.closed_tools import (
 )
 from services.control_skills import (
     SkillInfo,
-    invoke_skill,
     mentioned_skill_playbooks,
     mentioned_skill_slugs,
     normalize_skill_name,
@@ -174,6 +173,8 @@ from services.skill_catalog_store import (
     OFFICE_SKILL_CATEGORY,
     installed_skill_infos,
     local_seed_skill_info,
+    classify_skill_catalog_result,
+    resolve_invoked_skill,
     skill_seed_category,
 )
 from services.drive_full_factory import start_drive_full_factory_run
@@ -182,7 +183,7 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
-from services.project_tools import command_receipt_from
+from services.project_tools import command_receipt_from, present_project_tool_result
 from services.project_store import get_project_store
 from services.session_uploads import upload_fact, workspace_path
 from services.workflow_registry import workflow_for, workflow_names
@@ -699,6 +700,24 @@ def _recall_belongs_to_task(query: str, note: str) -> bool:
     terms.extend(cjk[i : i + 3] for i in range(max(0, len(cjk) - 2)))
     blob = text.lower()
     return any((t.lower() in blob) if t.isascii() else (t in text) for t in terms)
+
+
+def _recall_note_fits(query: str, task: str, note: str) -> bool:
+    """显式查询命中笔记，还要看它是不是两个字套进了别的任务。
+
+    ⚠ 2026-09-24 sr-20260924153920：做 PPT 时三次 recall 都带回
+      「待办清单偏好」。两个字的「偏好」能套进那条笔记，但笔记并不
+      以这两个字开头，当前任务里也没有这两个字。
+      「角色」仍要跨话题查到：笔记以「角色」开头（test_换一个会话还查得到）。
+    """
+    if not _recall_belongs_to_task(query, note):
+        return False
+    cjk = "".join(ch for ch in str(query or "") if "一" <= ch <= "鿿")
+    if len(cjk) != 2 or any(ch.isascii() and ch.isalnum() for ch in str(query or "")):
+        return True
+    if str(note or "").startswith(cjk) or cjk in str(task or ""):
+        return True
+    return False
 
 
 def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
@@ -1236,8 +1255,11 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
     state.controlSkillCache = rows
 
 
-def _skill_infos_for_turn(state: V5SessionState) -> list:
-    """已安装短目录。点名只预加载正文，不把别的技能藏起来。
+def _skill_turn_catalog(state: V5SessionState) -> tuple[list, str | None]:
+    """(目录, 失败码)。商店答上来了，空列表也是答案，失败码是 None。
+
+    ⚠ 2026-09-24：上一版把商店异常收成 []，点名失败就一律 skill_not_found。
+    目录没答上来和「没有这个技能」被写成同一件事，模型按没装过处理。
 
     ⚠ 2026-09-20：selectedSkills 曾经用来 filter_selected 收窄目录。
     用户要的是「自由 Agent 编排 + 这次 @ 的 Skills 流程」——已装的
@@ -1250,11 +1272,13 @@ def _skill_infos_for_turn(state: V5SessionState) -> list:
     """
     owner = str(getattr(state, "ownerId", None) or "").strip()
     live: list = []
+    catalog_error: str | None = None
     if owner:
         try:
             live = list(installed_skill_infos(owner) or [])
         except Exception:
             live = []
+            catalog_error = "skill_catalog_unavailable"
     cached = _skill_infos_from_cache(state)
     by_name = {info.name: info for info in cached}
     for info in live:
@@ -1287,7 +1311,13 @@ def _skill_infos_for_turn(state: V5SessionState) -> list:
     # ⚠ 2026-09-23 review：这里原来 `_remember_skill_infos(state, merged)`，
     #   把整份已装目录（连正文）写进会话缓存。列目录不是「打开过」——
     #   写缓存只发生在 skill() 真的成功那一处（见 _dispatch_tool）。
-    return list(by_name.values())
+    return list(by_name.values()), catalog_error
+
+
+def _skill_infos_for_turn(state: V5SessionState) -> list:
+    """已安装短目录。点名只预加载正文，不把别的技能藏起来。"""
+    infos, _catalog_error = _skill_turn_catalog(state)
+    return infos
 
 
 def _mentioned_skill_infos(state: V5SessionState) -> list:
@@ -3756,8 +3786,9 @@ def _system_prompt(state: V5SessionState) -> str:
             "办公文件（.pptx / .docx / .xlsx）是磁盘上的文件，不是 Vite 网页。"
             "react-vite-tasks 只用于任务管理网页。"
             "办公计划下的工程是空工作区，不是 Vite 脚手架。"
-            "右侧预览显示 make_manus_page 点名的那一份：源码里的 .html，或已经收回的 .pptx / .docx / .xlsx。"
-            "没有点名就没有预览。应用运行失败不是办公文件的预览。Vite 页面不是办公文件。"
+            "右侧预览显示已经收回的办公文件，或源码里的 .html。"
+            "make_manus_page 只换看哪一份。"
+            "应用运行失败不是办公文件的预览。Vite 页面不是办公文件。"
             "办公文件不以 project_verify 为交付证据。"
         )
     upload_fact = _session_upload_fact(
@@ -3779,10 +3810,13 @@ def _system_prompt(state: V5SessionState) -> str:
     if plan_execution_authorized(state):
         facts.append("用户已明确批准这份计划，可以按该版本执行。")
     else:
+        # ⚠ 2026-09-24：上一版把规划写成三步（先 ask_user_question，再
+        #   write_plan，再空参数 exit_plan_mode）。工具合同里已经有这三件，
+        #   系统提示再排次序就是答题卡。这里只留批准边界。
         facts.append(
-            "当前处于只读规划。先通过 ask_user_question 访谈澄清真实需求、设备和设计选择，"
-            "再调用 write_plan 写完整实施计划，最后用空参数 exit_plan_mode 请求批准。"
-            "问卷提交、跳过访谈或普通文字都不是计划批准；批准前不能执行任何生成或修改工具。"
+            "当前处于只读规划。"
+            "问卷提交、跳过访谈或普通文字都不是计划批准；"
+            "批准前不能执行任何生成或修改工具。"
         )
     for row in reversed(getattr(state, "controlTranscript", None) or []):
         if row.get("kind") in ("plan_cancelled", "plan_abandoned"):
@@ -3829,40 +3863,33 @@ def _system_prompt(state: V5SessionState) -> str:
         readiness = (readiness_tool.capability_readiness()
                       if readiness_tool is not None and hasattr(readiness_tool, "capability_readiness")
                       else None)
+        # ⚠ 2026-09-04 _after_write_hint 已改成报现场。工程段当时没跟着收，
+        #   仍规定改文件、构建、预览、问用户各用哪件工具。工具合同里有这些名字。
+        #   这里只留运行时会强制的边界，和回执字段的含义。
+        #
+        # ⚠ 2026-09-13 真模型 live-edit：提示曾教「修改前先取消」，模型照做
+        #   project_cancel，标题一个字没改。运行中能改源码是事实，不是下一步命令。
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
-            "创建新工程用 project_create；任务管理网页才选 templateId=react-vite-tasks。"
-            "办公文件不是任务管理应用，不要为 .pptx / .docx / .xlsx 选 react-vite-tasks。"
-            "办公计划下 project_create 会开空工作区，templateId 不会变成 Vite。"
+            "任务管理网页的 templateId 是 react-vite-tasks。"
+            "办公文件不是任务管理应用，.pptx / .docx / .xlsx 不会走这个模板。"
+            "办公计划下建出来的工程是空工作区。"
             "react-vite 仅是网页的最小电脑；已有 HTML 应用转换尚未支持。"
-            "工程会话使用 project_* 工具，不调用 HTML 工厂。"
-            # 2026-09-13 真模型 live-edit：工具已支持运行中同步，这里仍教
-            # “修改前先取消”，模型照做 project_cancel，标题一个字没改。
-            # 初始化、工具回填和checkpoint恢复共用此装配，必须与执行合同一致。
-            "电脑核用泄漏包那 29 件名字：file_*、shell_*、browser_*、deploy_*、message_*、info_search_web、make_manus_page、idle。"
-            "GitHub 薄核也能用：read_file / write_file / search_replace / bash / grep / list_dir / glob，接到同一份源码和沙箱命令。"
-            "日常改一个文件用 file_write（file+content）或 file_str_replace（old_str 必须只出现一次）。"
-            "读文件用 file_read；搜内容用 file_find_in_content；按名找用 file_find_by_name。"
-            "构建用 shell_exec：check/build/test 走受管安装，其它一行命令在 E2B 沙箱里跑（grok-build bash）。看输出用 shell_view / shell_wait，写入正在跑的 PTY 用 shell_write_to_process，停用 shell_kill_process。sudo 拒绝。"
-            "预览用 deploy_expose_port 或 browser_navigate（只许本工程预览地址）。deploy_apply_deployment 只亮私有预览，不是公开 CDN，deployed 永远为 false。"
-            "预览就绪后可用 browser_view 看交互节点，再用 browser_click / input / key / scroll / console_exec。外站拒绝。这不是 project_verify，点过不等于验收通过。"
-            "问用户用 message_ask_user；报个进度用 message_notify_user；检索用 info_search_web；这一轮先交给用户用 idle，那不是报完工。"
-            "这几件不要自己传 approvalRef、版本号或文件哈希。sudo=true 会被拒绝。"
-            "多文件精确对照或删除仍用 project_patch。"
-            "project_patch 在运行就绪时可直接修改 src/、public/、tests/ 和 index.html 的源码与静态资源，"
-            "由现有运行持有者同步，保持当前应用运行，不需要先取消。"
-            "返回 runtime.patch 的 operationId 表示补丁已排队；用 project_status 查询到 completed 且 synchronized=true，"
-            "才能确认新源码版本已同步。依赖或启动配置变更需先停止并确认清理，再修改和重启。"
-            "project_exec 只运行 check/build/test，返回 operationId；用 status/logs 读取真实结果。"
-            "新回合可用不带 operationId 的 project_status 找回任务；运行 project_exec 命令前先取消已有服务并等待清理。"
-            "project_verify 需要保留正在运行的工程：由原运行者先固定源码、锁文件安装并构建，再在独立浏览器中运行对应模板的受管用例，"
-            "与源码修改由原运行者串行执行。用 project_verification 读取真实断言；缺浏览器或预览为 blocked，"
-            "源码或批准改变使旧证据 stale。失败后按断言修源码再申请新检查；用例通过只代表列出的验收范围。"
-            "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
+            "工程会话不调用 HTML 工厂。"
+            "不要自己传 approvalRef、版本号或文件哈希。sudo=true 会被拒绝。"
+            "运行已经就绪时，src/、public/、tests/ 和 index.html 可以由当前运行持有者直接改，"
+            "保持应用运行，不需要先取消。"
+            "runtime.patch 的 operationId 表示补丁已排队，不是已经同步。"
+            "completed 且 synchronized=true 才是新源码版本已同步。"
+            "依赖或启动配置变了，要先停掉并确认清理，再改、再启动。"
+            "check/build/test 的回执是 operationId；真实结果在 status 和 logs 里。"
+            "已有服务还在时，再跑这些命令之前运行时会要求先停掉并确认清理。"
+            "project_verify 需要正在运行的工程。缺浏览器或预览是 blocked。"
+            "源码或批准变了，旧证据是 stale。用例通过只覆盖列出的验收范围。"
             "project_verify 的幂等键若已被别的请求占用，服务端仍会排上一次检查并交回新的 operationId。"
             "operation_idempotency_conflict 不是验收结论，也不是登录失败。"
-            "构建通过和服务就绪均不是业务验收；私有预览、验证结果和对外发布分别查看服务端真实状态。"
+            "构建通过和服务就绪都不是业务验收。"
         )
         if isinstance(readiness, dict):
             blockers = readiness.get("blockers") or []
@@ -5842,6 +5869,7 @@ async def _dispatch_tool(
                 yield {"type": "control_project_state", "sessionId": state.sessionId,
                     "runtimeKind": "project", "projectId": state.projectId,
                     "projectRevision": state.projectRevision}
+        body = present_project_tool_result(body)
         yield {"type": "control_tool_result", "tool": name, **body}
         return
     if name in ("pages", "structure", "bind", "closure", "workflow", "refine", "repair") and _assumptions_awaiting(state):
@@ -6206,15 +6234,20 @@ async def _dispatch_tool(
         if fell_back:
             query = goal_text
         rows = recall_memory(scope_id=owner, query=query) if query else []
-        # 兜底那一支按**任务文本**滤（否则等于 dump 整个账号）；模型自己
-        # 划了范围的那一支按**查询**滤——记忆得真的讲到他问的那件事，
-        # 而不是「和当前任务同一个话题」。后者会把「问角色 / 做报销系统」
-        # 这种正常的跨话题追问整条毙掉。
-        against = goal_text if fell_back else query
-        rows = [
-            row for row in rows
-            if _recall_belongs_to_task(against, str(row.get("text") or ""))
-        ] if against else []
+        # 兜底那一支按**任务文本**滤（否则等于 dump 整个账号）。
+        # 任务文本也空：不要把账号里的笔记整段交回去。
+        # 显式查询按查询滤；两个字还要再看是不是套进了别的任务的笔记。
+        if fell_back:
+            rows = [
+                row for row in rows
+                if goal_text and _recall_belongs_to_task(
+                    goal_text, str(row.get("text") or ""))
+            ]
+        else:
+            rows = [
+                row for row in rows
+                if _recall_note_fits(query, goal_text, str(row.get("text") or ""))
+            ]
         orch_trace("recall", count=len(rows), taskChars=len(goal_text))
         yield {
             "type": "control_tool_result",
@@ -6246,34 +6279,22 @@ async def _dispatch_tool(
                 ),
             }
             return
-        infos = list(_skill_infos_for_turn(state))
-        # ⚠ 2026-09-22 Z8NPKNM14C：fallback 只在 error==skill_not_found 之后
-        #   才打开种子。真机回执就是 skill_not_found / available=[]，
-        #   种子正文没进结果。点名先并进目录，再 invoke，不靠事后补救。
-        seeded = local_seed_skill_info(slug) if slug else None
-        if seeded is not None and all(getattr(info, "name", None) != seeded.name for info in infos):
-            infos = [seeded, *infos]
-        result = invoke_skill(
-            infos,
-            str(args.get("name") or args.get("skill") or ""),
-            str(args.get("args") or "") or None,
-        )
-        if (
-            not result.get("ok")
-            and result.get("error") == "skill_not_found"
-            and seeded is not None
-        ):
-            result = invoke_skill(
-                [seeded],
-                seeded.name,
+        infos, catalog_error = _skill_turn_catalog(state)
+        result = classify_skill_catalog_result(
+            resolve_invoked_skill(
+                infos,
+                str(args.get("name") or args.get("skill") or ""),
                 str(args.get("args") or "") or None,
-            )
-        result["seedBytes"] = 0 if seeded is None else len(seeded.body or "")
+            ),
+            catalog_error,
+        )
+        seeded = local_seed_skill_info(slug) if slug else None
         orch_trace(
             "skill",
             slug=slug,
             catalog=[getattr(info, "name", "") for info in infos],
-            seedBytes=result["seedBytes"],
+            catalogError=catalog_error,
+            seedBytes=result.get("seedBytes"),
             ok=bool(result.get("ok")),
             error=result.get("error"),
         )

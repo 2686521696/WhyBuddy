@@ -53,6 +53,31 @@ export async function listOfficeArtifacts(
   return Array.isArray(body.files) ? body.files : [];
 }
 
+/** 已经收回的办公文件。读不到当没有（fail-closed），不编一份预览。 */
+export function useOfficeArtifacts(
+  projectId: string | null | undefined,
+  refreshKey?: unknown
+): OfficeArtifactMeta[] {
+  const [items, setItems] = useState<OfficeArtifactMeta[]>([]);
+  useEffect(() => {
+    const id = String(projectId || "").trim();
+    if (!id) {
+      setItems([]);
+      return;
+    }
+    const ac = new AbortController();
+    void listOfficeArtifacts(id, ac.signal)
+      .then(next => {
+        if (!ac.signal.aborted) setItems(next);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setItems([]);
+      });
+    return () => ac.abort();
+  }, [projectId, refreshKey]);
+  return items;
+}
+
 /** 产物库有没有办公文件。读不到当没有（fail-closed）。 */
 export function useOfficeArtifactPresent(
   projectId: string | null | undefined,
@@ -92,7 +117,7 @@ export function officeArtifactPreviewUrl(
   return `${BASE}/projects/${projectId}/artifacts/${artifactId}/preview`;
 }
 
-/** make_manus_page 点名之后，浏览器打开的那一份。列表本身不取这一页。 */
+/** 预览框取这一份的浏览器页。列表本身不取这一页。 */
 export function officeArtifactBrowserUrl(
   projectId: string,
   artifactId: string

@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyRehearsalSlashPick,
-  applySkillSlashPick,
   applySlashPick,
+  composeSkillMentionText,
   COMPOSER_SLASH_REHEARSAL_ITEMS,
   controlUserTextForSlash,
   filterSlashItems,
@@ -340,23 +340,22 @@ describe("推演动词", () => {
     expect(installedSkillSlashItems([])).toEqual([]);
   });
 
-  it("选中技能是留下 @slug，不是摘成空芯片", () => {
-    const item = {
-      key: "office-skills",
-      kind: "skill" as const,
-      name: "office-skills",
-      description: "做 PPT",
-    };
-    const r = applySkillSlashPick(
-      "/off",
-      slashQueryAt("/off", 4)!,
-      item
-    );
-    expect(r.text).toBe("@office-skills ");
-    expect(r.text.startsWith("@")).toBe(true);
-    expect(slashQueryAt(r.text, r.caret)).toBeNull();
+  it("可见正文摘掉斜杠；发出去的正文仍带 @slug", () => {
     const stripped = applySlashPick("/off", slashQueryAt("/off", 4)!);
     expect(stripped.text).not.toContain("office-skills");
+    expect(slashQueryAt(stripped.text, stripped.caret)).toBeNull();
+    const sent = composeSkillMentionText(["office-skills"], "做个5页PPT");
+    expect(sent).toBe("@office-skills 做个5页PPT");
+    expect(
+      mentionedSkillSlugs(sent, ["office-skills"])
+    ).toEqual(["office-skills"]);
+    expect(
+      composeSkillMentionText(["office-skills"], "@office-skills 做个5页PPT")
+    ).toBe("@office-skills 做个5页PPT");
+    expect(composeSkillMentionText([], "做个PPT")).toBe("做个PPT");
+    expect(composeSkillMentionText(["office-skills"], "")).toBe(
+      "@office-skills"
+    );
   });
 
   it("正文 @slug 才是这一轮点名；商店勾选存档不算", () => {

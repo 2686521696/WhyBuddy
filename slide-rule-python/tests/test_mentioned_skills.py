@@ -130,5 +130,7 @@ def test_live_path_preloads_from_system_prompt_source():
     assert "mentioned_skill_playbooks" in prompt_body
 
     turn_body = _fn_body(strip_python(CONTROL_SRC), "_skill_infos_for_turn")
-    assert "installed_skill_infos" in turn_body
-    assert "filter_selected" not in turn_body
+    catalog_body = _fn_body(strip_python(CONTROL_SRC), "_skill_turn_catalog")
+    assert "_skill_turn_catalog" in turn_body
+    assert "installed_skill_infos" in catalog_body
+    assert "filter_selected" not in catalog_body

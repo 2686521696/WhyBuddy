@@ -313,8 +313,9 @@ export function applyRehearsalSlashPick(
 /**
  * 商店已装技能 → `/` 面板条目。没装的不进。
  *
- * 选中后走 `applySkillSlashPick`，在正文里留下 `@slug`，这一轮自由
- * Agent 就按这份 SKILL.md 编排。不是勾选存档，也不是死流程。
+ * 选中后输入框里是一枚可删标签（Trae 那种），不是 `@slug` 纯文本。
+ * 发出去时 `composeSkillMentionText` 把 `@slug` 加回正文，服务端才预加载。
+ * 不是勾选存档，也不是死流程。
  */
 export function installedSkillSlashItems(
   skills: ReadonlyArray<{
@@ -340,18 +341,38 @@ export function installedSkillSlashItems(
   return out;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * 选中已装技能：把 `/查询串` 换成 `@slug `。
+ * 发送时把技能标签写回正文。
  *
- * ⚠ 不能走 `applySlashPick` 只摘斜杠。摘完正文里没有点名，服务端
- *   只看见「做个 PPT」，技能正文不会预加载。
+ * ⚠ 2026-09-24：可见输入改成 Trae 那种蓝色可删标签，`/查询串` 从正文摘掉。
+ *   只摘不写回的话，服务端只看见「做个 PPT」，技能正文不会预加载。
+ *   标签不进 localStorage——那是勾选存档，下一轮会自己粘回来。
+ *
+ * 正文里已经有同一个 `@slug`（人自己打的）就不再加一遍。
  */
-export function applySkillSlashPick(
-  text: string,
-  q: SlashQuery,
-  item: SlashItem
-): { text: string; caret: number } {
-  const mention = `@${item.key} `;
-  const next = `${text.slice(0, q.start)}${mention}${text.slice(q.end)}`;
-  return { text: next, caret: q.start + mention.length };
+export function composeSkillMentionText(
+  keys: readonly string[],
+  text: string
+): string {
+  const body = String(text || "");
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of keys) {
+    const key = String(raw || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const mention = `@${key}`;
+    const re = new RegExp(
+      `(?<![A-Za-z0-9_])${escapeRegExp(mention)}(?![A-Za-z0-9_.-])`
+    );
+    if (!re.test(body)) missing.push(mention);
+  }
+  if (missing.length === 0) return body;
+  const prefix = missing.join(" ");
+  const rest = body.replace(/^\s+/, "");
+  return rest ? `${prefix} ${rest}` : prefix;
 }

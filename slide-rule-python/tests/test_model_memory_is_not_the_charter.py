@@ -366,3 +366,47 @@ def test_偏好查询也不得把待办倒进PPT(harness, monkeypatch):
     blob = str(res[0].get("summary") or "") + str(res[0].get("notes") or "")
     assert "All|Active|Done" not in blob
     assert "待办清单" not in blob
+
+
+def test_两个字的偏好套不进PPT_角色开头的笔记仍跨话题(harness, monkeypatch):
+    """⚠ 2026-09-24 MB5NJX8X2D：query=偏好 套进「待办清单偏好」。
+
+    笔记不以「偏好」开头，当前任务里也没有这两个字，就不交。
+    「角色」开头的笔记仍要查到。把两个字的例外删掉，角色那条变红；
+    放宽成只要笔记里出现这两个字就交，待办那条变红。
+    """
+    owner = _uid("owner")
+    _login_as(monkeypatch, owner)
+    remember(
+        scope_id=owner,
+        text="待办清单偏好：简洁清爽（白卡片+细分割线+主色勾选）、桌面优先、要账号登录、顶部 All|Active|Done 分段筛选",
+    )
+    remember(scope_id=owner, text="角色叫主管不叫经理")
+    sid = new_sid("ppt-short-recall")
+    seed_session(
+        sid,
+        goal={"text": "做一份两页 PPT，主题是为什么要盖楼", "status": "clear"},
+        ownerId=owner,
+    )
+    n = {"i": 0}
+
+    def impl(*_a, **_k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return llm_tool("recall", {"query": "偏好"})
+        if n["i"] == 2:
+            return llm_tool("recall", {"query": "角色"})
+        return llm_text("好")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一份两页 PPT，主题是为什么要盖楼"))
+    results = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "recall"
+    ]
+    assert len(results) >= 2, results
+    first = str(results[0].get("summary") or "") + str(results[0].get("notes") or "")
+    second = str(results[1].get("summary") or "") + str(results[1].get("notes") or "")
+    assert "待办清单" not in first
+    assert "All|Active|Done" not in first
+    assert "主管" in second

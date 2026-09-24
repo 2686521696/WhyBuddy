@@ -445,6 +445,162 @@ def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
     assert provider.commands == ["python3 build_deck.py", 'python3 -c "import pptx"']
 
 
+def test_office_template_keeps_sandbox_after_package_json_appears(command_setup):
+    """⚠ 2026-09-24 MB5NJX8X2D：办公区补了 package.json 之后每条命令拆沙盒。
+
+    模板是 whybuddy-workspace-1 就留下沙盒，不许 npm ci。
+    把 skip 改回「看见 package.json 就 False」，created 变成 2，本条变红。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    project = store.create_project(
+        "session-office-pkg", owner_id="alice",
+        files={"README.md": "office\n", "package.json": "{}\n", "package-lock.json": "{}\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    first = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="one", command="shell", script="python3 build.py")
+    built = eventually(lambda: state(store, first, "stopped"))
+    assert built.status == "completed", built.result
+    assert built.result.get("keepSandbox") is True
+    assert built.result.get("officeScan") == "empty"
+    assert "npm ci" not in " ".join(provider.commands)
+    assert "template=whybuddy-workspace-1" in str(built.result.get("gate") or "")
+    from services.project_tools import _command_pointer, operation_snapshot
+    snap = operation_snapshot(store.snapshot_operation(first.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, "")
+    # skip=True 留在操作记录。抄回快照，模型把它读成「命令没跑」。
+    assert "gate" not in snap and "gate" not in receipt
+    assert "skip=" not in str(receipt)
+    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").expiresAt <= time.time())
+    second = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="two", command="shell", script="python3 build.py")
+    again = eventually(lambda: state(store, second, "stopped"))
+    assert again.status == "completed"
+    assert provider.created == 1
+
+
+def test_empty_office_scan_is_a_fact_and_failed_stderr_is_the_excerpt(command_setup):
+    """退出码 0 但没有合格 pptx：回执写扫描结果，不写禁令。
+    失败命令的 stderr 要进 excerpt，不能只剩错误码。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_tools import _command_log_excerpt, _command_pointer, operation_snapshot
+    from services.workspace_provider import ProcessResult
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    provider.command_code = 1
+
+    def process_result(handle, pid):
+        if pid == "44":
+            return ProcessResult(pid, stdout="", stderr="No module named pptx\n", exit_code=1)
+        return CommandProvider.process_result(provider, handle, pid)
+
+    provider.process_result = process_result
+    project = store.create_project(
+        "session-office-scan", owner_id="alice",
+        files={"README.md": "office\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="fail", command="shell",
+        script="python3 generate_pptx.py")
+    failed = eventually(lambda: state(store, operation, "failed"))
+    assert failed.status == "failed"
+    assert failed.result.get("officeScan") == "empty"
+    excerpt = _command_log_excerpt(store, operation.operationId, "alice")
+    assert "No module named pptx" in excerpt
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, excerpt)
+    assert "没有合格的办公文件" in receipt["hint"]
+    assert "base64" not in receipt["hint"]
+    assert receipt["excerpt"] != receipt.get("errorCode")
+
+
+def test_empty_office_scan_still_names_a_file_already_collected(command_setup):
+    """这次没扫到新文件，不等于交付没了。
+
+    ⚠ 2026-09-24 sr-20260924190011：上一间沙盒已经收回 pptx，下一条扫空，
+    回执写成「没有合格的办公文件」。模型往源码树写 pending 和 base64 占位。
+
+    删掉扫空时交回产物库路径，本条变红，并出现「没有合格的办公文件」。
+    库里一份都没有时仍说扫空，见 test_empty_office_scan_is_a_fact。
+    """
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_office_artifacts import ProjectOfficeArtifactStore
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store, _, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    project = store.create_project(
+        "session-office-held", owner_id="alice",
+        files={"README.md": "office\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+    ProjectOfficeArtifactStore(store).put(
+        project.projectId, owner_id="alice", path="为什么要盖楼.pptx",
+        data=b"PK\x03\x04" + b"held")
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="held", command="shell", script="python3 qa.py")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed", finished.result
+    assert finished.result.get("officeScan") is None
+    assert finished.result.get("officeFiles") == ["为什么要盖楼.pptx"]
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, "")
+    assert "为什么要盖楼.pptx" in receipt["hint"]
+    assert "没有合格的办公文件" not in receipt["hint"]
+    assert "base64" in receipt["hint"]
+
+
+def test_web_exec_empty_office_scan_is_not_told_to_the_model(command_setup):
+    """网页 npm run build 也会扫。扫空不是「没有合格的办公文件」。
+
+    真机 E2B 的 collect_office_files 一直在，空树返回 []。这套 Provider
+    默认没有这个方法，只给办公模板装收集器的用例删掉模板判断也仍是绿的。
+
+    见空就写 officeScan=empty，本条变红。
+    办公模板扫空仍要说，见 test_empty_office_scan_is_a_fact。
+    真收回的文件不能跟着瞒掉，见下一条。
+    """
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store, project, provider, worker, _ = command_setup
+    provider.collect_office_files = lambda _handle: []
+    operation = submit(worker, project, command="build", key="web-empty-scan")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed", finished.result
+    assert finished.result.get("officeScan") is None
+    assert finished.result.get("officeFiles") is None
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, "vite build done")
+    assert "officeScan" not in snap and "officeScan" not in receipt
+    assert "没有合格的办公文件" not in receipt["hint"]
+    assert "没能扫办公文件" not in receipt["hint"]
+
+
+def test_web_exec_still_names_a_real_office_file(command_setup):
+    """不把空扫写进网页回执，不许因此连真收回的 pptx 一起不说。"""
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store, project, provider, worker, _ = command_setup
+    pptx = b"PK\x03\x04" + b"deck"
+    provider.collect_office_files = lambda _handle: [{"path": "deck.pptx", "data": pptx}]
+    operation = submit(worker, project, command="build", key="web-kept-pptx")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed", finished.result
+    assert finished.result.get("officeFiles") == ["deck.pptx"]
+    assert finished.result.get("officeScan") is None
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    receipt = _command_pointer(snap, "")
+    assert "deck.pptx" in receipt["hint"]
+    assert "没有合格的办公文件" not in receipt["hint"]
+
+
 def test_submit_command_only_queues_it_does_not_start_a_worker(command_setup, monkeypatch):
     """入队不是执行。submit_command 回来时不许已经有工人线程在跑。
 
@@ -529,7 +685,7 @@ def test_office_sandbox_without_template_env_stays_on_the_default_image(command_
 
 
 
-def test_upload_that_cannot_be_mounted_is_named_in_the_receipt_not_fatal(command_setup):
+def test_upload_that_cannot_be_mounted_is_named_in_the_receipt_not_fatal(command_setup, tmp_path, monkeypatch):
     """活路径：真监督器、真执行器、真回执。
 
     ⚠ 2026-09-23 review：上一版 provider 没有 write_bytes 时直接抛
@@ -540,6 +696,7 @@ def test_upload_that_cannot_be_mounted_is_named_in_the_receipt_not_fatal(command
     from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
     from services.project_tools import operation_snapshot
 
+    monkeypatch.setenv("SESSION_UPLOAD_ROOT", str(tmp_path / "blobs"))
     store, _, provider, worker, _ = command_setup
     assert not hasattr(provider, "write_bytes")
     project = store.create_project(

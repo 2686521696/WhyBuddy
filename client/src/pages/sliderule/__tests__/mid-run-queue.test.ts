@@ -292,7 +292,10 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(pick).toContain('item.kind === "rehearsal"');
     expect(pick).toContain("applyRehearsalSlashPick");
     expect(pick).toContain('item.kind === "skill"');
-    expect(pick).toContain("applySkillSlashPick");
+    expect(pick).toContain("setSkillMentions");
+    expect(pick).toContain("applySlashPick");
+    expect(pick).not.toContain("applySkillSlashPick");
+    expect(DOCK).toContain("composeSkillMentionText");
     expect(MENU).toContain('rehearsal: "计划"');
     expect(MENU).not.toContain('rehearsal: "推演"');
     expect(MENU).toContain('["rehearsal", "partner", "connector", "skill"]');

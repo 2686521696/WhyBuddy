@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 import uuid
 from types import SimpleNamespace
@@ -103,6 +104,30 @@ def _bounded_log_text(result, item, text):
     return text[:low]
 
 
+def present_project_tool_result(body: Any) -> Any:
+    """回喂给模型的工程回执只留一个当前版本。
+
+    ⚠ 2026-09-24 sr-20260924094114：file_write 同时给出 revision（新）和
+    parentRevision（写入前）。模型把后者读成「源码版本又跳回了」，
+    下一跳去核对文件并整份重生成。runtime.revision 是沙盒挂载时的版本，
+    也可以比当前头更旧，同样不能跟 revision 并排。
+    库里的父子关系不动，只改模型看见的这一份。
+
+    不在回执里写「别重生成」。旧版本号已经不在这一份里，这句没有事实可绑，
+    而且每一次写入都说。整份重写是停滞，归已有的打转闸，不归提示词。
+    """
+    if not isinstance(body, dict):
+        return body
+    out = dict(body)
+    out.pop("parentRevision", None)
+    runtime = out.get("runtime")
+    if isinstance(runtime, dict):
+        runtime = dict(runtime)
+        runtime.pop("revision", None)
+        out["runtime"] = runtime
+    return out
+
+
 def operation_snapshot(snapshot):
     operation = snapshot["operation"]
     result = {"operationId": operation.operationId, "kind": operation.kind,
@@ -133,8 +158,9 @@ def operation_snapshot(snapshot):
     for name in ("command", "exitCode", "errorCode"):
         if name in saved and isinstance(saved[name], (str, int, type(None))):
             result[name] = saved[name][:240] if isinstance(saved[name], str) else saved[name]
-    if isinstance(saved.get("gate"), str) and saved["gate"]:
-        result["gate"] = saved["gate"][:300]
+    # ⚠ 2026-09-24：成功路径把 template/files/skip 写进 result["gate"]。
+    #   skip=True 只表示没跑 npm ci，命令已经跑完。抄进回执后模型读成
+    #   「这条没执行」。留在操作记录和 orch_trace，不进这份快照。
     files = saved.get("officeFiles")
     if isinstance(files, list) and files:
         result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
@@ -143,8 +169,13 @@ def operation_snapshot(snapshot):
     skipped = saved.get("uploadsSkipped")
     if isinstance(skipped, list) and skipped:
         result["uploadsSkipped"] = [str(item)[:240] for item in skipped[:8] if isinstance(item, str)]
+    if saved.get("officeScan") in {"empty", "failed"}:
+        result["officeScan"] = saved["officeScan"]
     if operation.kind == "runtime.patch":
-        for name in ("revision", "parentRevision", "runtimeOperationId", "synchronized", "sourcePublished"):
+        # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
+        #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
+        #   再整份重生成。上一版只留在库里，不进模型看见的回执。
+        for name in ("revision", "runtimeOperationId", "synchronized", "sourcePublished"):
             if name in saved and isinstance(saved[name], (str, bool)):
                 result[name] = saved[name]
         result["verification"] = "not_run"
@@ -198,6 +229,38 @@ def _command_log_excerpt(store, operation_id, owner_id) -> str:
     return text
 
 
+_ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _hidden_command_failure(excerpt: str, exit_code) -> str | None:
+    """进程退出码是 0，但日志尾已经说明命令失败。
+
+    ⚠ 2026-09-24 sr-20260924190011：`import pptx > 文件; echo EXIT:$?; cat 文件`
+      的进程退出码是 cat 的 0，日志里是 ModuleNotFoundError 和 EXIT:1。
+      回执 status=completed，模型当成 python-pptx 已经装上。
+    """
+    if exit_code not in (0, "0"):
+        return None
+    text = _ANSI_CSI.sub("", str(excerpt or "")).replace("\r", "\n")
+    echoed = None
+    for line in text.splitlines():
+        matched = re.fullmatch(r"EXIT:(\d+)", line.strip())
+        if matched:
+            echoed = int(matched.group(1))
+    if echoed not in (None, 0):
+        return f"进程退出码是 0，但日志尾有 EXIT:{echoed}。这次命令没有成功。"
+    if "Traceback (most recent call last)" in text:
+        detail = ""
+        for line in text.splitlines():
+            stripped = line.strip()
+            if re.search(r"(Error|Exception):", stripped) and not stripped.startswith("Traceback"):
+                detail = stripped[:180]
+        if detail:
+            return f"进程退出码是 0，但日志尾有异常：{detail}。这次命令没有成功。"
+        return "进程退出码是 0，但日志尾有 Traceback。这次命令没有成功。"
+    return None
+
+
 def _command_pointer(result, excerpt=""):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -219,11 +282,20 @@ def _command_pointer(result, excerpt=""):
             "同一个沙盒留给下一条命令，已安装的包还在。"
             + hint
         )
+    elif result.get("officeScan") == "empty":
+        hint = "这次扫描没有合格的办公文件。" + hint
+    elif result.get("officeScan") == "failed":
+        hint = "这次没能扫办公文件。" + hint
+    hidden = _hidden_command_failure(excerpt, result.get("exitCode"))
+    if hidden:
+        hint = hidden + hint
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
         "hint": hint,
     }
+    if hidden:
+        out["commandOk"] = False
     out.pop("stdout", None)
     out.pop("stderr", None)
     out.pop("logPath", None)
@@ -463,7 +535,7 @@ class ProjectTools:
                 return {"ok": True, **self._file_find_by_name(files, revision, parsed, project)}
             revision = self.store.get_revision(project.projectId, parsed.revision, owner_id=self.owner_id)
             if name == "project_list":
-                return {"ok": True, **self._list(revision, parsed)}
+                return {"ok": True, **self._list(revision, parsed, project)}
             files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
             if name == "project_read":
                 return {"ok": True, **self._read(files, revision, parsed)}
@@ -670,7 +742,21 @@ class ProjectTools:
                     result["artifactId"] = meta["artifactId"]
                     result["presented"] = "office"
             else:
-                result["presented"] = "project"
+                # ⚠ 2026-09-24 sr-20260924190011：不带 file 的交付页被记成
+                #   presented=project。产物库里已有 pptx，右侧却去看工程页。
+                held = []
+                try:
+                    held = ProjectOfficeArtifactStore(self.store).list(
+                        project.projectId, owner_id=self.owner_id)
+                except Exception:
+                    held = []
+                latest = held[-1] if held else None
+                if isinstance(latest, dict) and latest.get("path") and latest.get("artifactId"):
+                    result["path"] = latest["path"]
+                    result["artifactId"] = latest["artifactId"]
+                    result["presented"] = "office"
+                else:
+                    result["presented"] = "project"
             if parsed.title:
                 result["title"] = parsed.title
             return result
@@ -848,7 +934,7 @@ class ProjectTools:
                 lease_generation=lease.generation, lease_owner=lease.leaseOwner)
             sync_session_project(self.store, project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
             result = {"projectId": project.projectId, "revision": revision.revision,
-                "parentRevision": current.revision, "changedFileCount": len(changed_paths),
+                "changedFileCount": len(changed_paths),
                 "changedFiles": [], "truncated": False, "verification": "not_run"}
             for path in changed_paths:
                 if _size({**result, "changedFiles": result["changedFiles"] + [path]}) > MAX_RESULT_CHARS:
@@ -860,7 +946,7 @@ class ProjectTools:
             self.store.release_lease(project.projectId, owner_id=self.owner_id,
                 lease_owner=lease.leaseOwner, generation=lease.generation)
 
-    def _list(self, revision, args):
+    def _list(self, revision, args, project=None):
         entries = revision.manifest.files
         if args.cursor > len(entries):
             raise ValueError("invalid_project_cursor")
@@ -872,6 +958,20 @@ class ProjectTools:
             result["files"].append(item)
             result["nextCursor"] += 1
         result["truncated"] = result["nextCursor"] < len(entries)
+        if project is not None:
+            try:
+                office = [
+                    item["path"]
+                    for item in ProjectOfficeArtifactStore(self.store).list(
+                        project.projectId, owner_id=self.owner_id)
+                    if isinstance(item.get("path"), str)
+                ]
+            except Exception:
+                office = []
+            if office:
+                # 源码清单里没有 pptx。模型把「files 里没有」读成没交付，
+                # 再往树里写占位（2026-09-24 sr-20260924190011）。
+                result["officeFiles"] = office[:8]
         return result
 
     def _file_read(self, files, revision, args, project=None):

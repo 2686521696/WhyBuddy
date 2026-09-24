@@ -19,7 +19,10 @@ def test_fresh_topic_exposes_interview_and_planning_tools():
     assert {"ask_user_question", "enter_plan_mode", "write_plan"} <= names
     assert not {"scope_card", "clarify", "rehearse", "spec"} & names
     prompt = _system_prompt(state)
-    assert "write_plan" in prompt and "exit_plan_mode" in prompt
+    assert "批准前不能执行" in prompt
+    assert "先通过 ask_user_question" not in prompt
+    assert "再调用 write_plan" not in prompt
+    assert "最后用空参数" not in prompt
 
 
 def test_real_product_topic_can_still_be_interviewed(harness):
