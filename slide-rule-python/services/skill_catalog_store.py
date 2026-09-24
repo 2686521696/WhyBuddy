@@ -421,8 +421,68 @@ def reset_skill_catalog_cache() -> None:
         _store_ident = None
 
 
+def resolve_invoked_skill(infos, name: str, args: str | None = None) -> dict:
+    """点名加载。商店目录空了也打开仓库里的种子包。
+
+    ⚠ 2026-09-24 sr-20260924130205：skill(office-skills) 回执
+    available=[] / skill_not_found，种子正文没进结果。目录失败不能
+    把已经点名的种子一起丢掉。
+    """
+    from services.control_skills import invoke_skill, normalize_skill_name
+
+    slug = normalize_skill_name(str(name or ""))
+    seeded = local_seed_skill_info(slug) if slug else None
+    merged = list(infos or [])
+    if seeded is not None and all(getattr(info, "name", None) != seeded.name for info in merged):
+        merged = [seeded, *merged]
+    result = invoke_skill(merged, str(name or ""), args)
+    if (
+        not result.get("ok")
+        and result.get("error") == "skill_not_found"
+        and seeded is not None
+    ):
+        result = invoke_skill([seeded], seeded.name, args)
+    result["seedBytes"] = 0 if seeded is None else len(seeded.body or "")
+    return result
+
+
+def classify_skill_catalog_result(result: dict, catalog_error: str | None) -> dict:
+    """目录失败和 skill_not_found 分开。
+
+    点名能对上种子就照常打开，回执带上目录为什么是空的。
+    对不上、目录又没答上来：回 skill_catalog_unavailable，不回
+    skill_not_found，也不给一份空的 available。skill_not_found 只表示
+    目录答了、这个名字不在里面。
+
+    ⚠ 2026-09-24：resolve_invoked_skill 只是把「目录空了就打开种子」从
+    分发处搬过来。搬完循环仍把两种失败都交给模型当「没这个技能」。
+    """
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    if catalog_error:
+        out["catalogError"] = catalog_error
+    if (
+        not out.get("ok")
+        and out.get("error") == "skill_not_found"
+        and catalog_error
+    ):
+        out["error"] = "skill_catalog_unavailable"
+        out.pop("available", None)
+    return out
+
+
+class SkillCatalogUnavailable(Exception):
+    """商店这一发没答上来。不是「用户没装这个技能」。"""
+
+    code = "skill_catalog_unavailable"
+
+
 def installed_skill_infos(owner_id: str) -> list[SkillInfo]:
+    """商店答上来的已装目录。空列表是答案。商店自己失败就抛，不许收成 []。"""
     try:
         return get_skill_catalog_store().installed_skill_infos(owner_id)
-    except Exception:
-        return []
+    except SkillCatalogUnavailable:
+        raise
+    except Exception as exc:
+        raise SkillCatalogUnavailable() from exc
