@@ -13,7 +13,6 @@ import asyncio
 import base64
 import io
 import json
-import re
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,7 +32,6 @@ from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
     OFFICE_START_NOT_APPLICABLE,
     is_office_artifact_path,
-    office_preview_html,
     office_preview_payload,
 )
 from services.identity_store import User
@@ -170,29 +168,6 @@ def test_def_rpr_keeps_each_line_color_and_size():
     assert title["color"] == "#FFFFFF" and title["fontSize"] == 44
     assert title["lines"][0]["bold"] is True
     assert title["lines"][1]["color"] == "#93C5FD" and title["lines"][1]["fontSize"] == 19
-    page = office_preview_html(preview)
-    assert page is not None
-    assert page.count("color:#93C5FD") == 2
-    assert page.count("3.52cqh") == 2
-    assert page.count("font-weight:700") == 2
-    assert page.count('class="mini"') == 1
-    assert ">面团AI办公启动会</button>" not in page
-
-
-def test_filmstrip_is_a_miniature_of_each_slide():
-    """⚠ 2026-09-22 底部是正文第一行截成的按钮，不是这一页的缩小。
-
-    缩略图和舞台不是同一份版式，或点过一页之后选中框不再跟着走，本条变红。
-    """
-    page = office_preview_html(office_preview_payload(positioned_pptx(), "deck.pptx"))
-    assert page is not None
-    assert page.count('class="mini"') == 2
-    assert page.count("left:3.750%") == 4
-    assert 'class="badge">1</span>' in page and 'class="badge">2</span>' in page
-    assert 'class="thumbs"' not in page
-    assert ">第二页</button>" not in page
-    assert "setAttribute('aria-current','true')" in page
-    assert "toggleAttribute('aria-current'" not in page
 
 
 def test_leaf_office_path_and_preview():
@@ -486,7 +461,6 @@ def test_collect_stores_the_file_and_does_not_render_a_sandbox_pdf(tmp_path, mon
     blobs._engine.dispose()
 
 
-
 def test_garbage_host_pdf_never_becomes_the_preview(tmp_path, monkeypatch):
     from services import project_office_artifacts as office_module
 
@@ -514,9 +488,6 @@ def test_garbage_host_pdf_never_becomes_the_preview(tmp_path, monkeypatch):
     assert after is not None and after.get("kind") != "pdf", after
     store.close()
     blobs._engine.dispose()
-
-
-
 
 
 @pytest.fixture
@@ -620,23 +591,13 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
         body = preview.json()
         assert body["kind"] == "slides"
         assert "封面" in body["slides"][0]["text"]
+        # ⚠ 2026-09-24 宿主拼的 HTML 预览页已删（前端用 @silurus/ooxml 画字节）。
+        #   带 render=browser 也只回 JSON，不许再出一份同源 HTML。
+        #   把那一页加回路由，本段变红。
         page = client.get(url + f"/artifacts/{meta['artifactId']}/preview?render=browser")
         assert page.status_code == 200
-        assert page.headers["content-type"].startswith("text/html")
-        assert "封面" in page.text
-        # ⚠ 2026-09-23：这里原本钉的是 `function show(n)`（那段翻页脚本）。
-        #   页面已经不带脚本了——翻页是 radio + :checked。真正要钉的是
-        #   「翻页还在」和「响应头没给脚本开口子」，不是某一句 JS 的字面。
-        assert '<input type="radio" name="wb-slide"' in page.text
-        assert "<script" not in page.text
-        sent = page.headers["content-security-policy"]
-        assert "script-src 'none'" in sent
-        assert "unsafe-inline" not in sent, sent
-        import base64 as _b64
-        import hashlib as _hl
-        _block = re.search(r"<style>(.*?)</style>", page.text, re.S).group(1)
-        _digest = _b64.b64encode(_hl.sha256(_block.encode("utf-8")).digest()).decode("ascii")
-        assert f"'sha256-{_digest}'" in sent, sent
+        assert page.headers["content-type"].startswith("application/json")
+        assert page.json() == body
         download = client.get(url + f"/artifacts/{meta['artifactId']}")
         assert download.status_code == 200
         assert download.content == pptx
@@ -650,14 +611,6 @@ def test_export_and_http_serve_office_bytes(tmp_path, monkeypatch):
         assert client.get(url + "/artifacts").status_code == 404
     store.close()
     sessions._engine.dispose()
-
-
-def test_browser_page_is_only_the_named_render():
-    """没带 render=browser 仍是 JSON。点名之后那一页才是 HTML。"""
-    src = (ROOT / "routes" / "project_sources.py").read_text(encoding="utf-8")
-    body = _fn_body(src, "preview_office_artifact")
-    assert 'get("render") == "browser"' in body
-    assert body.index('get("render") == "browser"') < body.index("office_preview_html")
 
 
 def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
@@ -704,12 +657,8 @@ def test_stale_text_preview_keeps_shape_json(tmp_path, monkeypatch):
         preview = client.get(url)
         assert preview.headers["content-type"].startswith("application/json")
         assert preview.json()["slides"][0]["shapes"][0]["x"] == 457200
-        page = client.get(url + "?render=browser")
-        assert page.status_code == 200
-        assert page.headers["content-type"].startswith("text/html")
-        assert "第二页" in page.text and "第十页" in page.text
-        assert "left:" in page.text
-        assert page.text.count('class="mini"') == 2
+        texts = [slide["text"] for slide in preview.json()["slides"]]
+        assert any("第二页" in text for text in texts) and any("第十页" in text for text in texts)
     store.close()
     sessions._engine.dispose()
 
@@ -766,10 +715,7 @@ def test_stored_shapes_without_color_are_repainted(tmp_path, monkeypatch):
         body = client.get(url).json()
         title = next(shape for shape in body["slides"][0]["shapes"] if "面团AI办公启动会" in shape["text"])
         assert title["lines"][1]["color"] == "#93C5FD"
-        page = client.get(url + "?render=browser")
-        assert page.status_code == 200
-        assert page.text.count('class="mini"') == 1
-        assert "color:#FFFFFF" in page.text and "color:#93C5FD" in page.text
+        assert title["lines"][0]["color"] == "#FFFFFF"
     kept = json.loads(base64.b64decode(store._q(
         "select content from wb_project_office_preview where artifact_id=$1",
         [meta["artifactId"]],
@@ -779,102 +725,3 @@ def test_stored_shapes_without_color_are_repainted(tmp_path, monkeypatch):
     sessions._engine.dispose()
 
 
-def _deck_payload(font_size=44, height=6858000):
-    return {
-        "kind": "slides", "slideWidth": 12192000, "slideHeight": height,
-        "slides": [
-            {"text": "封面", "background": "#102030", "shapes": [
-                {"x": 914400, "y": 914400, "w": 6096000, "h": 914400,
-                 "text": "面团AI办公启动会", "fontSize": font_size, "color": "#FFFFFF"},
-            ]},
-            {"text": "第二页", "shapes": []},
-        ],
-    }
-
-
-def test_slide_preview_uses_the_font_size_it_extracted():
-    """抽出来的 fontSize 必须画到页上，不然标题和正文一样大。
-
-    ⚠ 2026-09-23 review：office_preview_payload 抽了 fontSize，_slides_html
-      一行没用（§4 生成侧 / 消费侧）。字号按幻灯片高度给比例，舞台缩多少
-      字就缩多少；老浏览器停在前面那条 pt 上。
-
-    判据盯**语义**（大字号画得比小字号大、高度减半时比例翻倍），不盯某一句
-    CSS 的字面——换个写法不该让它失灵。
-    """
-    from services.deliverable_kind import office_preview_html
-
-    big = office_preview_html(_deck_payload(font_size=44))
-    small = office_preview_html(_deck_payload(font_size=12))
-    assert big is not None and small is not None
-
-    def ratio(document):
-        match = re.search(r"font-size:([0-9.]+)cqh", document)
-        assert match, document[:600]
-        return float(match.group(1))
-
-    assert ratio(big) > ratio(small), (ratio(big), ratio(small))
-    # 540pt 高的幻灯片上，44pt 就是 8.148%。
-    assert abs(ratio(big) - 44 / 540 * 100) < 0.01
-    # 幻灯片矮一半，同一个字号占的比例翻倍。
-    assert abs(ratio(office_preview_html(_deck_payload(height=6858000 // 2)))
-               - 44 / 270 * 100) < 0.01
-    # pt 兜底那一条也要在，且排在 cqh 前面（认不出 cqh 的浏览器停在它上面）。
-    assert big.index("font-size:44pt") < big.index("font-size:8.148cqh")
-
-
-def test_slide_preview_needs_no_script_and_csp_matches_the_document():
-    """这一页不带脚本，样式按**真发出去的那份**算 hash。
-
-    ⚠ 2026-09-23 review：路由原本发 `script-src 'unsafe-inline';
-      style-src 'unsafe-inline'`。这一页是拿用户 .pptx 生成的 HTML 又和产品
-      同源，转义漏一处就是同源执行。翻页改成 radio + :checked，脚本清零。
-
-    ⚠ 反向那一半：hash 不是另拼一份字符串算的。对不上只会在浏览器控制台
-      报错、页面白屏，服务端一切正常——所以这里拿文档里的 <style> 原样再
-      算一遍对。
-    """
-    import base64
-    import hashlib
-
-    from services.deliverable_kind import office_preview_csp, office_preview_html
-
-    document = office_preview_html(_deck_payload())
-    assert document is not None
-    assert "<script" not in document
-    assert 'style="' not in document, "形状的位置/颜色不许留在行内 style 属性上"
-    # 翻页还在：两页、两个 radio、两个 label。
-    assert document.count('type="radio"') == 2
-    assert document.count("<label for=") == 2
-    assert "#s1:checked~.stage .pg1{display:block}" in document
-
-    csp = office_preview_csp(document)
-    assert "'unsafe-inline'" not in csp
-    assert "script-src 'none'" in csp
-    block = re.search(r"<style>(.*?)</style>", document, re.S).group(1)
-    digest = base64.b64encode(hashlib.sha256(block.encode("utf-8")).digest()).decode("ascii")
-    assert f"'sha256-{digest}'" in csp, csp
-
-
-def test_browser_route_sends_the_computed_csp_not_a_literal():
-    """路由发的 CSP 要来自那一份 document，不是手写常量。
-
-    把 `office_preview_csp(document)` 换回写死的 header，本条变红。
-    """
-    src = (ROOT / "routes" / "project_sources.py").read_text(encoding="utf-8")
-    body = _fn_body(src, "preview_office_artifact")
-    assert "office_preview_csp(document)" in body
-    # ⚠ 先剥注释再匹配：这个函数的注释里就写着上一版那句 unsafe-inline，
-    #   不剥的话这条判据永远红（CLAUDE.md §2 踩过的原形）。
-    code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
-    assert "unsafe-inline" not in code, code
-
-
-def test_office_iframe_does_not_allow_scripts():
-    """消费侧：这一页不需要脚本，sandbox 就不该给（§4 成对的东西）。"""
-    surface = (
-        ROOT.parent / "client" / "src" / "pages" / "sliderule"
-        / "project-runtime" / "PresentedOfficeFile.tsx"
-    ).read_text(encoding="utf-8")
-    assert 'sandbox=""' in surface
-    assert 'sandbox="allow-scripts"' not in surface

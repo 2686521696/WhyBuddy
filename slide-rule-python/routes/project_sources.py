@@ -13,11 +13,7 @@ from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
 from services.project_office_artifacts import ProjectOfficeArtifactStore
-from services.deliverable_kind import (
-    office_artifact_suffix,
-    office_preview_csp,
-    office_preview_html,
-)
+from services.deliverable_kind import office_artifact_suffix
 from services.project_creation import load_authorized_session
 from services.session_uploads import (
     MAX_UPLOAD_BYTES,
@@ -346,20 +342,10 @@ def preview_office_artifact(project_id: str, artifact_id: str, request: Request,
             return Response(data, media_type="application/pdf", headers={
                 "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             })
-        # ⚠ 2026-09-22 列表出现就画，是宿主流程。这一页只给 make_manus_page
-        #   点名之后的预览框来取。
-        if request.query_params.get("render") == "browser":
-            document = office_preview_html(preview)
-            if document:
-                # ⚠ 2026-09-23 review：上一版这里是
-                #   `style-src 'unsafe-inline'; script-src 'unsafe-inline'`。
-                #   这一页是拿用户的 .pptx 生成的 HTML，又和产品同源——转义
-                #   漏一处就是同源执行。页面现在不带脚本，样式按实际发出去
-                #   的那份文档算 hash（office_preview_csp 只认这一份，不另外
-                #   拼一份字符串去 hash）。
-                return Response(document, media_type="text/html; charset=utf-8", headers={
-                    "Cache-Control": "no-store",
-                    "X-Content-Type-Options": "nosniff",
-                    "Content-Security-Policy": office_preview_csp(document),
-                })
+        # ⚠ 2026-09-24 这里原先还有一页 `?render=browser`：宿主拿幻灯片
+        #   JSON 拼一份 HTML（胶片条、hash 过的 CSP）。前端改用浏览器里的
+        #   @silurus/ooxml 直接画文件字节后，这一页没有调用方了，只剩测试
+        #   在养它——拿用户的 .pptx 生成、又和产品同源的 HTML，留着就是
+        #   一处白挂的攻击面。删掉；带 render=browser 也只回 JSON，
+        #   test_export_and_http_serve_office_bytes 钉着。
         return preview

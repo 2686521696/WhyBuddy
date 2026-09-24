@@ -117,14 +117,6 @@ export function officeArtifactPreviewUrl(
   return `${BASE}/projects/${projectId}/artifacts/${artifactId}/preview`;
 }
 
-/** 预览框取这一份的浏览器页。列表本身不取这一页。 */
-export function officeArtifactBrowserUrl(
-  projectId: string,
-  artifactId: string
-): string {
-  return `${officeArtifactPreviewUrl(projectId, artifactId)}?render=browser`;
-}
-
 export async function loadOfficeArtifactPreview(
   projectId: string,
   artifactId: string,
