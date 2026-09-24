@@ -149,7 +149,9 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(DOCK).not.toContain("SkillSelectBar");
     expect(DOCK).not.toContain("skill-select-bar");
     expect(DOCK).toContain("installedSkillSlashItems");
-    expect(DOCK).toContain("applySkillSlashPick");
+    expect(DOCK).toContain("composeSkillMentionText");
+    expect(DOCK).toContain("setSkillMentions");
+    expect(DOCK).not.toContain("applySkillSlashPick");
     const postFn = DRIVER.slice(
       DRIVER.indexOf("export async function postControlTurnStream"),
       DRIVER.indexOf("export async function consumeControlStreamResponse")

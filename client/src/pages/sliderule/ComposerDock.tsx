@@ -22,8 +22,8 @@ import {
 import { installKeyOf, loadInstalledSkills } from "./installed-skills";
 import {
   applyRehearsalSlashPick,
-  applySkillSlashPick,
   applySlashPick,
+  composeSkillMentionText,
   COMPOSER_SLASH_REHEARSAL_ITEMS,
   filterSlashItems,
   installedSkillSlashItems,
@@ -42,7 +42,11 @@ import {
   partnerCapabilities,
   type Partner,
 } from "./partners";
-import { CapabilityChip, ComposerSlashMenu } from "./ComposerSlashMenu";
+import {
+  CapabilityChip,
+  ComposerSlashMenu,
+  SkillMentionChip,
+} from "./ComposerSlashMenu";
 import { listConnectors, type ConnectorSpec } from "./connectors-client";
 import {
   loadTurnCapabilities,
@@ -53,6 +57,10 @@ import {
   applyChallengePrefillToComposer,
   CHALLENGE_PREFILL_EVENT,
 } from "./challenge-composer";
+import {
+  attachmentStatusLine,
+  visibleUserMessage,
+} from "./user-message-display";
 import { uploadSessionFile, workspaceUploadNote } from "./session-uploads";
 
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
@@ -297,12 +305,6 @@ async function buildAttachmentContext(
     }
   }
   return parts.join("\n\n");
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 /**
@@ -559,6 +561,8 @@ export function ComposerDock({
   const extractPromises = React.useRef(
     new Map<string, Promise<AttachmentExtractOutcome>>()
   );
+  // 这一轮输入框里的技能标签。不进 localStorage：存档会在下一轮自己粘回来。
+  const [skillMentions, setSkillMentions] = React.useState<SlashItem[]>([]);
 
   const addAttachments = React.useCallback((files: File[]) => {
     if (!files.length) return;
@@ -635,10 +639,16 @@ export function ComposerDock({
    *  审查/优化在飞同样拒绝——生成卡的时候发送必须灰。 */
   const doSend = React.useCallback(() => {
     // 运行中也走 sendMessage：那边排队，这里不许改成 stop。
+    // 技能标签不在可见正文里。发出去必须把 @slug 写回来，否则服务端
+    // 只看见任务、不预加载 SKILL.md。
+    const outgoing = composeSkillMentionText(
+      skillMentions.map(item => item.key),
+      input
+    ).trim();
     if (
       isComposerSendBlocked({
         isRunning,
-        input,
+        input: outgoing,
         attachments,
         isRefining,
         askOpen: askBlocksTyping(pendingAsk),
@@ -646,7 +656,8 @@ export function ComposerDock({
       })
     )
       return;
-    const text = input.trim();
+    setSkillMentions([]);
+    const text = outgoing;
     if (attachments.length > 0) {
       const snapshot = attachments;
       setAttachments(prev => {
@@ -684,11 +695,12 @@ export function ComposerDock({
         sendMessage(body);
       })();
     } else {
-      sendMessage();
+      sendMessage(text);
     }
   }, [
     isRunning,
     input,
+    skillMentions,
     attachments,
     sendMessage,
     isRefining,
@@ -932,15 +944,15 @@ export function ComposerDock({
         return;
       }
       if (item.kind === "skill") {
+        // 可见正文只摘掉 `/查询串`。`@slug` 留到发送时再写回。
         const applied =
           ta && slash
-            ? applySkillSlashPick(ta.value, slash, item)
-            : applySkillSlashPick(
-                "/",
-                { start: 0, end: 1, query: "" },
-                item
-              );
+            ? applySlashPick(ta.value, slash)
+            : applySlashPick("/", { start: 0, end: 1, query: "" });
         setInput(applied.text);
+        setSkillMentions(prev =>
+          prev.some(one => one.key === item.key) ? prev : [...prev, item]
+        );
         slashSeedRef.current = false;
         setSlash(null);
         setSlashIndex(0);
@@ -1013,6 +1025,10 @@ export function ComposerDock({
     ]
   );
 
+  const removeSkillMention = React.useCallback((item: SlashItem) => {
+    setSkillMentions(prev => prev.filter(one => one.key !== item.key));
+  }, []);
+
   const removeCapability = React.useCallback((item: SlashItem) => {
     setPicked(prev => {
       const next = prev.filter(p => !(p.kind === item.kind && p.key === item.key));
@@ -1067,12 +1083,16 @@ export function ComposerDock({
 
   const placeholderText =
     placeholder || (hero ? "描述你想做的应用" : "畅所欲问");
+  const outgoingText = composeSkillMentionText(
+    skillMentions.map(item => item.key),
+    input
+  );
 
   const extractPending = isAttachmentExtractPending(attachments);
   const sendBusy = extractPending || isRefining;
   const sendBlocked = isComposerSendBlocked({
     isRunning,
-    input,
+    input: outgoingText,
     attachments,
     isRefining,
     askOpen: askBlocksTyping(pendingAsk),
@@ -1088,7 +1108,6 @@ export function ComposerDock({
      pendingAsk 也必须出这一行——提问改成芯片后，没有附件/hint 时也得
      把这一行撑出来，否则选项没地方画。 */
   const showActionRow =
-    attachments.length > 0 ||
     Boolean(pendingAsk) ||
     (!hero && (actionHints.length > 0 || !!statusPill));
 
@@ -1246,76 +1265,6 @@ export function ComposerDock({
               </button>
             ))
           )}
-          {attachments.length > 0 ? (
-            <div
-              className="flex flex-wrap gap-2"
-              data-testid="sliderule-attachments"
-            >
-              {attachments.map(att => (
-                <div
-                  key={att.id}
-                  className="group relative flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white p-1 pr-2.5"
-                  data-testid="sliderule-attachment-card"
-                >
-                  {att.previewUrl ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setLightbox({ src: att.previewUrl!, name: att.name })
-                      }
-                      data-testid="sliderule-attachment-preview-open"
-                      title="点击放大"
-                      className="shrink-0 cursor-zoom-in rounded-full"
-                    >
-                      <img
-                        src={att.previewUrl}
-                        alt={att.name}
-                        className="h-10 w-10 rounded-full object-cover"
-                      />
-                    </button>
-                  ) : (
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e9edf2] text-stone-500">
-                      <FileText className="h-4 w-4" />
-                    </span>
-                  )}
-                  <span className="min-w-0">
-                    <span className="block max-w-[160px] truncate text-[11px] font-medium text-stone-700">
-                      {att.name}
-                    </span>
-                    <span
-                      className="block text-[10px] text-stone-400"
-                      title={
-                        att.extractStatus === "failed"
-                          ? att.extractDetail
-                          : undefined
-                      }
-                      data-testid={`sliderule-attachment-status-${att.extractStatus ?? "none"}`}
-                    >
-                      {formatFileSize(att.size)}
-                      {att.extractStatus === "pending" && " · 解析中…"}
-                      {att.extractStatus === "ready" &&
-                        ` · 已解析 ${att.extractChars ?? 0} 字`}
-                      {att.extractStatus === "failed" &&
-                        " · 解析失败，仅带文件名"}
-                      {!att.extractStatus &&
-                        (isTextAttachment(att)
-                          ? " · 发送时注入内容"
-                          : " · 仅随消息带文件名")}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(att.id)}
-                    data-testid="sliderule-attachment-remove"
-                    title="移除附件"
-                    className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[#e5e7eb] bg-white text-stone-400 shadow-sm transition hover:text-stone-700"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
       {/* 空态和会话内同一张卡片：发送在底栏里，不在卡片外另起一个圆。 */}
@@ -1475,6 +1424,68 @@ export function ComposerDock({
               </div>
 
               <div className="order-first w-full min-w-0 col-span-4 row-start-1 sm:order-none">
+                {attachments.length > 0 ? (
+                  <div
+                    className="mb-2 flex flex-wrap gap-2"
+                    data-testid="sliderule-attachments"
+                  >
+                    {attachments.map(att => (
+                      <div
+                        key={att.id}
+                        className="group relative flex max-w-full items-center gap-2 rounded-lg bg-[#f4f4f5] py-1.5 pl-1.5 pr-1.5"
+                        data-testid="sliderule-attachment-card"
+                      >
+                        {att.previewUrl ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLightbox({ src: att.previewUrl!, name: att.name })
+                            }
+                            data-testid="sliderule-attachment-preview-open"
+                            title="点击放大"
+                            className="shrink-0 cursor-zoom-in rounded-md"
+                          >
+                            <img
+                              src={att.previewUrl}
+                              alt={att.name}
+                              className="h-9 w-9 rounded-md object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-stone-500">
+                            <FileText className="h-4 w-4" />
+                          </span>
+                        )}
+                        <span className="min-w-0 pr-1">
+                          <span className="block max-w-[180px] truncate text-[12px] leading-4 text-[#171717]">
+                            {att.name}
+                          </span>
+                          <span
+                            className="block text-[11px] leading-4 text-[#8a8f98]"
+                            title={
+                              att.extractStatus === "failed"
+                                ? att.extractDetail
+                                : undefined
+                            }
+                            data-testid={`sliderule-attachment-status-${att.extractStatus ?? "none"}`}
+                          >
+                            {attachmentStatusLine(att)}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(att.id)}
+                          data-testid="sliderule-attachment-remove"
+                          title="移除附件"
+                          aria-label="移除附件"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#8a8f98] transition hover:bg-white hover:text-[#171717]"
+                        >
+                          <X className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {/*
                   挂上的能力是**输入框里的前缀标签**，不是上面另起一行的芯片。
                   用户 2026-08-26 指着 TRAE 的截图说的：选完之后能力就待在
@@ -1496,6 +1507,14 @@ export function ComposerDock({
                     ))}
                   </div>
                 ) : null}
+                <div className="flex flex-wrap items-start gap-x-1">
+                {skillMentions.map(item => (
+                  <SkillMentionChip
+                    key={item.key}
+                    item={item}
+                    onRemove={() => removeSkillMention(item)}
+                  />
+                ))}
                 <textarea
                   ref={textareaRef}
                   value={input}
@@ -1546,12 +1565,16 @@ export function ComposerDock({
                          退格当然是删字，抢过来会让人删不动东西。 */
                     if (
                       event.key === "Backspace" &&
-                      picked.length > 0 &&
                       event.currentTarget.value === "" &&
-                      (event.currentTarget.selectionStart ?? 0) === 0
+                      (event.currentTarget.selectionStart ?? 0) === 0 &&
+                      (skillMentions.length > 0 || picked.length > 0)
                     ) {
                       event.preventDefault();
-                      removeCapability(picked[picked.length - 1]!);
+                      if (skillMentions.length > 0) {
+                        removeSkillMention(skillMentions[skillMentions.length - 1]!);
+                      } else {
+                        removeCapability(picked[picked.length - 1]!);
+                      }
                       return;
                     }
                     // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
@@ -1563,18 +1586,25 @@ export function ComposerDock({
                   }}
                   onPaste={handlePaste}
                   placeholder={
-                    picked.length > 0 ? "输入你的任务…" : placeholderText
+                    skillMentions.length > 0
+                      ? "输入你的任务。"
+                      : picked.length > 0
+                        ? "输入你的任务…"
+                        : placeholderText
                   }
                   aria-label={
-                    picked.length > 0 ? "输入你的任务" : placeholderText
+                    skillMentions.length > 0 || picked.length > 0
+                      ? "输入你的任务"
+                      : placeholderText
                   }
                   rows={1}
                   disabled={
                     askBlocksTyping(pendingAsk)
                   }
-                  className="block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
+                  className="block max-h-40 min-w-[12rem] flex-1 resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
                   data-testid="sliderule-composer-input"
                 />
+                </div>
               </div>
 
               {/* 优化贴发送左边，跟发送同一簇靠右。 */}
@@ -1649,7 +1679,7 @@ export function ComposerDock({
                       className="flex items-start gap-1.5 py-0.5"
                     >
                       <span className="min-w-0 flex-1 truncate text-[12px] leading-5 text-[#171717]">
-                        {row.text}
+                        {visibleUserMessage(row.text).prompt || row.text}
                       </span>
                       {onRemoveQueued ? (
                         <button

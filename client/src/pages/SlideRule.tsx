@@ -19,6 +19,10 @@ import {
   sessionIdFromHref,
 } from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
+import {
+  isPreviewableImageName,
+  visibleUserMessage,
+} from "./sliderule/user-message-display";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
@@ -38,6 +42,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
@@ -123,7 +128,8 @@ import {
   type ClarificationItem,
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
-import { ComposerDock } from "./sliderule/ComposerDock";
+import { AttachmentImageLightbox, ComposerDock } from "./sliderule/ComposerDock";
+import { sessionUploadUrl } from "./sliderule/session-uploads";
 import { dispatchChallengePrefill } from "./sliderule/challenge-composer";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
@@ -636,34 +642,104 @@ function useImTurn(): ImItem | null {
   return items[0] ?? null;
 }
 
+function SentFileThumb({ name }: { name: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [broken, setBroken] = React.useState(false);
+  const sessionId =
+    typeof window === "undefined"
+      ? ""
+      : sessionIdFromHref(hrefFromWindow(window)) || "";
+  const src =
+    sessionId && isPreviewableImageName(name)
+      ? sessionUploadUrl(sessionId, name)
+      : "";
+  if (!src || broken) {
+    return (
+      <div
+        data-testid="sliderule-user-file"
+        className="max-w-full truncate rounded-lg bg-[#f3f4f6] px-2.5 py-1.5 text-[12px] leading-4 text-[#171717]"
+      >
+        {name}
+      </div>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="sliderule-user-file-open"
+        title={name}
+        onClick={() => setOpen(true)}
+        className="overflow-hidden rounded-lg border border-black/5 bg-[#f3f4f6]"
+      >
+        <img
+          src={src}
+          alt={name}
+          data-testid="sliderule-user-file-thumb"
+          className="max-h-36 max-w-[140px] object-contain"
+          onError={() => setBroken(true)}
+        />
+      </button>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <AttachmentImageLightbox
+              src={src}
+              name={name}
+              onClose={() => setOpen(false)}
+            />,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
 function ImUserMessage() {
   const item = useImTurn();
   // 没有用户文本的轮次不渲染气泡（系统提示 / 空恢复轮）
   if (!item?.turn.user) return null;
-  const text = item.turn.user;
+  // 解析正文留在 turn.user 里给模型。气泡只画任务句；图片用原件缩略图。
+  const visible = visibleUserMessage(item.turn.user);
+  if (!visible.prompt && visible.files.length === 0) return null;
   return (
-    <div className="group mb-3 flex flex-col items-end">
+    <div className="group mb-3 flex flex-col items-end gap-1.5">
+      {visible.files.length > 0 ? (
+        <div
+          className="flex max-w-[560px] flex-col items-end gap-1.5"
+          data-testid="sliderule-user-files"
+        >
+          {visible.files.map(name => (
+            <SentFileThumb key={name} name={name} />
+          ))}
+        </div>
+      ) : null}
       {/* 2026-08-18：用户块改 Cursor 灰底，不是品牌蓝气泡。
           上一版 #e6f4ff 在对话流里像消费级聊天，跟侧栏/空会话那套对不上。 */}
-      <div
-        data-testid="sliderule-user-bubble"
-        className="max-w-[560px] rounded-[10px] bg-[#f3f4f6] px-3 py-2 text-[13.5px] leading-6 text-[#171717]"
-      >
-        {text}
-      </div>
-      {/* 迭代环：意图原文回填输入条，改半句再推（悬停显现，不抢注意力） */}
-      <button
-        type="button"
-        data-testid="sliderule-edit-rerun"
-        onClick={() => {
-          window.dispatchEvent(
-            new CustomEvent("sliderule:fill-prompt", { detail: { text } })
-          );
-        }}
-        className="mt-0.5 rounded-md px-1.5 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#f3f4f6] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
-      >
-        编辑重跑
-      </button>
+      {visible.prompt ? (
+        <div
+          data-testid="sliderule-user-bubble"
+          className="max-w-[560px] whitespace-pre-wrap rounded-[10px] bg-[#f3f4f6] px-3 py-2 text-[13.5px] leading-6 text-[#171717]"
+        >
+          {visible.prompt}
+        </div>
+      ) : null}
+      {/* 迭代环回填的是任务句，不是解析正文。 */}
+      {visible.prompt ? (
+        <button
+          type="button"
+          data-testid="sliderule-edit-rerun"
+          onClick={() => {
+            window.dispatchEvent(
+              new CustomEvent("sliderule:fill-prompt", {
+                detail: { text: visible.prompt },
+              })
+            );
+          }}
+          className="mt-0.5 rounded-md px-1.5 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#f3f4f6] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
+        >
+          编辑重跑
+        </button>
+      ) : null}
     </div>
   );
 }

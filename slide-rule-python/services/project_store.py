@@ -1104,7 +1104,13 @@ class ProjectStore:
         return data
 
     def put_session_upload(self, session_id: str, *, owner_id: str, name: str, data: bytes) -> dict:
-        from services.session_uploads import MAX_UPLOAD_BYTES, MAX_UPLOADS, sanitize_filename
+        from services.session_uploads import (
+            MAX_UPLOAD_BYTES,
+            MAX_UPLOADS,
+            load_upload_bytes,
+            sanitize_filename,
+            store_upload_bytes,
+        )
 
         session_id = _required(session_id, "session_id_required")
         owner_id = _required(owner_id, "owner_id_required")
@@ -1128,18 +1134,19 @@ class ProjectStore:
             if int(count[0]["total"] or 0) >= MAX_UPLOADS:
                 raise ValueError("upload_limit")
         digest = hashlib.sha256(payload).hexdigest()
-        encoded = base64.b64encode(payload).decode("ascii")
+        # 字节在磁盘。SQL 只存 blob:<sha256>，避免把整张图塞进 db-api。
+        pointer = store_upload_bytes(session_id, payload)
         if existing:
             self._q(
                 "update wb_session_upload set sha256=$1,size_bytes=$2,content=$3 "
                 "where session_id=$4 and name=$5",
-                [digest, len(payload), encoded, session_id, safe],
+                [digest, len(payload), pointer, session_id, safe],
             )
         else:
             self._q(
                 "insert into wb_session_upload"
                 "(session_id,owner_id,name,sha256,size_bytes,content) values($1,$2,$3,$4,$5,$6)",
-                [session_id, owner_id, safe, digest, len(payload), encoded],
+                [session_id, owner_id, safe, digest, len(payload), pointer],
             )
         return {"name": safe, "sha256": digest, "sizeBytes": len(payload)}
 
@@ -1157,6 +1164,8 @@ class ProjectStore:
         ]
 
     def read_session_upload(self, session_id: str, name: str, *, owner_id: str) -> bytes:
+        from services.session_uploads import load_upload_bytes
+
         session_id = _required(session_id, "session_id_required")
         owner_id = _required(owner_id, "owner_id_required")
         rows = self._q(
@@ -1167,7 +1176,9 @@ class ProjectStore:
         if not rows:
             raise ProjectNotFound("session_upload_not_found")
         try:
-            data = base64.b64decode(rows[0]["content"], validate=True)
+            data = load_upload_bytes(session_id, rows[0]["content"])
+        except FileNotFoundError as exc:
+            raise ProjectNotFound("session_upload_not_found") from exc
         except Exception as exc:
             raise ProjectStoreUnavailable("session_upload_corrupt") from exc
         if len(data) != int(rows[0]["size_bytes"] or 0) or hashlib.sha256(data).hexdigest() != rows[0]["sha256"]:

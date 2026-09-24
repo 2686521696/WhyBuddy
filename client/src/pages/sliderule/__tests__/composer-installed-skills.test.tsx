@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * `/` 面板能选已装技能，选中留下 @slug。
+ * `/` 面板能选已装技能。选中后输入框是可删标签，不是 `@slug` 纯文本。
  *
- * 反向：没装的不出现；选中再走摘斜杠空芯片，正文没有点名。
+ * 反向：没装的不出现；摘掉标签再发，正文没有点名。
+ * 发出去的那一发必须仍带 `@slug`，否则服务端不预加载技能。
  */
 import React from "react";
 import { act } from "react";
@@ -37,13 +38,17 @@ vi.mock("../connectors-client", () => ({
 
 import { ComposerDock } from "../ComposerDock";
 
+const sent: string[] = [];
+
 function Harness() {
   const [input, setInput] = React.useState("");
   return (
     <ComposerDock
       input={input}
       setInput={setInput}
-      sendMessage={() => {}}
+      sendMessage={text => {
+        sent.push(typeof text === "string" ? text : input);
+      }}
       isRunning={false}
       sessionId="mention-ui"
       goal="做个PPT"
@@ -80,7 +85,11 @@ async function flush() {
 }
 
 describe("已装技能进斜杠面板", () => {
-  it("点 / 能选 office-skills，选中留下 @office-skills，没装的不出现", async () => {
+  beforeEach(() => {
+    sent.length = 0;
+  });
+
+  it("点 / 能选 office-skills，框里是可删标签，发出去仍带 @slug", async () => {
     await act(async () => {
       root.render(<Harness />);
     });
@@ -119,7 +128,92 @@ describe("已装技能进斜杠面板", () => {
     const box = container.querySelector<HTMLTextAreaElement>(
       '[data-testid="sliderule-composer-input"]'
     );
-    expect(box?.value).toContain("@office-skills");
-    expect(box?.value).not.toMatch(/^\/off/);
+    expect(box?.value ?? "").not.toContain("@office-skills");
+    expect(box?.placeholder).toBe("输入你的任务。");
+    const chip = container.querySelector(
+      '[data-testid="sliderule-skill-mention"][data-key="office-skills"]'
+    );
+    expect(chip?.textContent).toContain("office-skills");
+    expect(chip?.textContent).not.toContain("@");
+    const remove = chip?.querySelector(
+      '[data-testid="sliderule-skill-mention-remove"]'
+    );
+    expect(remove?.querySelector("svg")).toBeTruthy();
+    expect(remove?.textContent ?? "").not.toMatch(/×|x/i);
+
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value"
+      );
+      proto?.set?.call(box, "做一份5页PPT");
+      box!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flush();
+    const send = container.querySelector<HTMLButtonElement>(
+      '[data-testid="sliderule-composer-send"]'
+    );
+    expect(send?.disabled).toBe(false);
+    await act(async () => {
+      send!.click();
+    });
+    expect(sent).toEqual(["@office-skills 做一份5页PPT"]);
+    expect(
+      container.querySelector('[data-testid="sliderule-skill-mention"]')
+    ).toBeNull();
+  });
+
+  it("摘掉标签再发，正文没有点名", async () => {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+    await flush();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="sliderule-slash-hint"]')!
+        .click();
+    });
+    await flush();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="sliderule-slash-item"][data-key="office-skills"]'
+        )!
+        .dispatchEvent(
+          new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+        );
+    });
+    await flush();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="sliderule-skill-mention-remove"]'
+        )!
+        .click();
+    });
+    await flush();
+    expect(
+      container.querySelector('[data-testid="sliderule-skill-mention"]')
+    ).toBeNull();
+    const box = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="sliderule-composer-input"]'
+    );
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value"
+      );
+      proto?.set?.call(box, "做一份5页PPT");
+      box!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flush();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="sliderule-composer-send"]'
+        )!
+        .click();
+    });
+    expect(sent).toEqual(["做一份5页PPT"]);
   });
 });
