@@ -157,8 +157,9 @@ def operation_snapshot(snapshot):
     for name in ("command", "exitCode", "errorCode"):
         if name in saved and isinstance(saved[name], (str, int, type(None))):
             result[name] = saved[name][:240] if isinstance(saved[name], str) else saved[name]
-    if isinstance(saved.get("gate"), str) and saved["gate"]:
-        result["gate"] = saved["gate"][:300]
+    # ⚠ 2026-09-24：成功路径把 template/files/skip 写进 result["gate"]。
+    #   skip=True 只表示没跑 npm ci，命令已经跑完。抄进回执后模型读成
+    #   「这条没执行」。留在操作记录和 orch_trace，不进这份快照。
     files = saved.get("officeFiles")
     if isinstance(files, list) and files:
         result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]

@@ -864,24 +864,46 @@ class _RuntimeTask:
                 self.original.sessionId, row["name"], owner_id=self.owner_id)
             writer(self.handle, row["name"], data)
 
+    def _office_scan_is_a_command_fact(self) -> bool:
+        # 用类上的函数调用：收集测试把 SimpleNamespace 当 self 传进来，
+        # self.方法 会找不到这个函数。
+        try:
+            original = self.original
+            revision_id = getattr(original, "expectedRevision", None)
+            if not revision_id:
+                project = self.store.get_project(original.projectId, owner_id=self.owner_id)
+                revision_id = project.currentRevision
+            revision = self.store.get_revision(
+                original.projectId, revision_id, owner_id=self.owner_id)
+        except Exception:
+            return False
+        return str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
+
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。
 
         ⚠ 2026-09-20 真机：python generate_deck.py 即使当时写出了 .pptx，
           主机 file_read 也是 project_file_not_found。收集 I/O 失败不许
           改写这次命令的成败（fail-open）；完工闸另看产物（fail-closed）。
+        ⚠ 2026-09-24：E2B 的 collect 每次 runtime.exec 都在，空树就是
+          {"files": []}。网页 npm run build 因此被写成「没有合格的办公文件」，
+          模型把它当成下一步。这句话只属于 whybuddy-workspace-1。
+          扫到真文件仍收回，不看模板。
         """
         collector = getattr(self.provider, "collect_office_files", None)
         if not callable(collector) or self.handle is None:
             return
+        report_miss = _RuntimeTask._office_scan_is_a_command_fact(self)
         try:
             items = collector(self.handle)
         except Exception:
             logger.warning("office artifact collect failed", exc_info=True)
-            self.result["officeScan"] = "failed"
+            if report_miss:
+                self.result["officeScan"] = "failed"
             return
         if not isinstance(items, list) or not items:
-            self.result["officeScan"] = "empty"
+            if report_miss:
+                self.result["officeScan"] = "empty"
             return
         try:
             store = ProjectOfficeArtifactStore(self.store)
@@ -914,7 +936,7 @@ class _RuntimeTask:
             if path not in kept:
                 kept.append(path)
             self.result["officeFiles"] = kept[:8]
-        if not self.result.get("officeFiles"):
+        if report_miss and not self.result.get("officeFiles"):
             self.result["officeScan"] = "empty"
 
     def _flush_stdin(self):
