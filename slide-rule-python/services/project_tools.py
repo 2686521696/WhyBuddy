@@ -103,6 +103,30 @@ def _bounded_log_text(result, item, text):
     return text[:low]
 
 
+def present_project_tool_result(body: Any) -> Any:
+    """回喂给模型的工程回执只留一个当前版本。
+
+    ⚠ 2026-09-24 sr-20260924094114：file_write 同时给出 revision（新）和
+    parentRevision（写入前）。模型把后者读成「源码版本又跳回了」，
+    下一跳去核对文件并整份重生成。runtime.revision 是沙盒挂载时的版本，
+    也可以比当前头更旧，同样不能跟 revision 并排。
+    库里的父子关系不动，只改模型看见的这一份。
+
+    不在回执里写「别重生成」。旧版本号已经不在这一份里，这句没有事实可绑，
+    而且每一次写入都说。整份重写是停滞，归已有的打转闸，不归提示词。
+    """
+    if not isinstance(body, dict):
+        return body
+    out = dict(body)
+    out.pop("parentRevision", None)
+    runtime = out.get("runtime")
+    if isinstance(runtime, dict):
+        runtime = dict(runtime)
+        runtime.pop("revision", None)
+        out["runtime"] = runtime
+    return out
+
+
 def operation_snapshot(snapshot):
     operation = snapshot["operation"]
     result = {"operationId": operation.operationId, "kind": operation.kind,
@@ -138,8 +162,13 @@ def operation_snapshot(snapshot):
     files = saved.get("officeFiles")
     if isinstance(files, list) and files:
         result["officeFiles"] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+    if saved.get("officeScan") in {"empty", "failed"}:
+        result["officeScan"] = saved["officeScan"]
     if operation.kind == "runtime.patch":
-        for name in ("revision", "parentRevision", "runtimeOperationId", "synchronized", "sourcePublished"):
+        # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
+        #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
+        #   再整份重生成。上一版只留在库里，不进模型看见的回执。
+        for name in ("revision", "runtimeOperationId", "synchronized", "sourcePublished"):
             if name in saved and isinstance(saved[name], (str, bool)):
                 result[name] = saved[name]
         result["verification"] = "not_run"
@@ -214,6 +243,10 @@ def _command_pointer(result, excerpt=""):
             "同一个沙盒留给下一条命令，已安装的包还在。"
             + hint
         )
+    elif result.get("officeScan") == "empty":
+        hint = "这次扫描没有合格的办公文件。" + hint
+    elif result.get("officeScan") == "failed":
+        hint = "这次没能扫办公文件。" + hint
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
@@ -843,7 +876,7 @@ class ProjectTools:
                 lease_generation=lease.generation, lease_owner=lease.leaseOwner)
             sync_session_project(self.store, project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
             result = {"projectId": project.projectId, "revision": revision.revision,
-                "parentRevision": current.revision, "changedFileCount": len(changed_paths),
+                "changedFileCount": len(changed_paths),
                 "changedFiles": [], "truncated": False, "verification": "not_run"}
             for path in changed_paths:
                 if _size({**result, "changedFiles": result["changedFiles"] + [path]}) > MAX_RESULT_CHARS:
