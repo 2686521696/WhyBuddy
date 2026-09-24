@@ -76,6 +76,15 @@ def test_make_manus_page_names_a_collected_office_file(setup):
     missing = execute(setup, "make_manus_page", {"file": "没有.pptx"})
     assert missing["ok"] is False
     assert missing["error"] == "project_file_not_found"
+    # 不点名时打开最新一份收回的文件，不许落回工程页。
+    unnamed = execute(setup, "make_manus_page", {})
+    assert unnamed["ok"] is True
+    assert unnamed["presented"] == "office"
+    assert unnamed["path"] == "面团.pptx"
+    assert unnamed["artifactId"] == meta["artifactId"]
+    listed = execute(setup, "project_list")
+    assert "面团.pptx" not in {item["path"] for item in listed["files"]}
+    assert listed["officeFiles"] == ["面团.pptx"]
 
 
 def execute(setup, name, args=None, state=None):

@@ -879,6 +879,30 @@ class _RuntimeTask:
             return False
         return str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
 
+    def _remember_held_office_files(self, report_miss: bool, *, failed: bool = False) -> None:
+        """扫空时把产物库里已有的路径写回回执。
+
+        ⚠ 2026-09-24 sr-20260924190011：上一间沙盒已经收回 pptx，下一条命令
+          扫空，回执写成「没有合格的办公文件」。模型往源码树写 pending、
+          base64 占位和 1×1 预览图。库里有的路径仍是交付，不许改口说没有。
+        """
+        if not report_miss or self.result.get("officeFiles"):
+            return
+        try:
+            rows = ProjectOfficeArtifactStore(self.store).list(
+                self.original.projectId, owner_id=self.owner_id)
+        except Exception:
+            rows = []
+        paths: list[str] = []
+        for item in rows:
+            path = item.get("path") if isinstance(item, dict) else None
+            if isinstance(path, str) and path not in paths:
+                paths.append(path)
+        if paths:
+            self.result["officeFiles"] = paths[:8]
+            return
+        self.result["officeScan"] = "failed" if failed else "empty"
+
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。
 
@@ -898,12 +922,10 @@ class _RuntimeTask:
             items = collector(self.handle)
         except Exception:
             logger.warning("office artifact collect failed", exc_info=True)
-            if report_miss:
-                self.result["officeScan"] = "failed"
+            _RuntimeTask._remember_held_office_files(self, report_miss, failed=True)
             return
         if not isinstance(items, list) or not items:
-            if report_miss:
-                self.result["officeScan"] = "empty"
+            _RuntimeTask._remember_held_office_files(self, report_miss)
             return
         try:
             store = ProjectOfficeArtifactStore(self.store)
@@ -936,8 +958,7 @@ class _RuntimeTask:
             if path not in kept:
                 kept.append(path)
             self.result["officeFiles"] = kept[:8]
-        if report_miss and not self.result.get("officeFiles"):
-            self.result["officeScan"] = "empty"
+        _RuntimeTask._remember_held_office_files(self, report_miss)
 
     def _flush_stdin(self):
         pending = self.supervisor.peek_stdin(self.operation_id)

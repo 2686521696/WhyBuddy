@@ -492,7 +492,7 @@ class ProjectTools:
                 return {"ok": True, **self._file_find_by_name(files, revision, parsed, project)}
             revision = self.store.get_revision(project.projectId, parsed.revision, owner_id=self.owner_id)
             if name == "project_list":
-                return {"ok": True, **self._list(revision, parsed)}
+                return {"ok": True, **self._list(revision, parsed, project)}
             files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
             if name == "project_read":
                 return {"ok": True, **self._read(files, revision, parsed)}
@@ -699,7 +699,21 @@ class ProjectTools:
                     result["artifactId"] = meta["artifactId"]
                     result["presented"] = "office"
             else:
-                result["presented"] = "project"
+                # ⚠ 2026-09-24 sr-20260924190011：不带 file 的交付页被记成
+                #   presented=project。产物库里已有 pptx，右侧却去看工程页。
+                held = []
+                try:
+                    held = ProjectOfficeArtifactStore(self.store).list(
+                        project.projectId, owner_id=self.owner_id)
+                except Exception:
+                    held = []
+                latest = held[-1] if held else None
+                if isinstance(latest, dict) and latest.get("path") and latest.get("artifactId"):
+                    result["path"] = latest["path"]
+                    result["artifactId"] = latest["artifactId"]
+                    result["presented"] = "office"
+                else:
+                    result["presented"] = "project"
             if parsed.title:
                 result["title"] = parsed.title
             return result
@@ -889,7 +903,7 @@ class ProjectTools:
             self.store.release_lease(project.projectId, owner_id=self.owner_id,
                 lease_owner=lease.leaseOwner, generation=lease.generation)
 
-    def _list(self, revision, args):
+    def _list(self, revision, args, project=None):
         entries = revision.manifest.files
         if args.cursor > len(entries):
             raise ValueError("invalid_project_cursor")
@@ -901,6 +915,20 @@ class ProjectTools:
             result["files"].append(item)
             result["nextCursor"] += 1
         result["truncated"] = result["nextCursor"] < len(entries)
+        if project is not None:
+            try:
+                office = [
+                    item["path"]
+                    for item in ProjectOfficeArtifactStore(self.store).list(
+                        project.projectId, owner_id=self.owner_id)
+                    if isinstance(item.get("path"), str)
+                ]
+            except Exception:
+                office = []
+            if office:
+                # 源码清单里没有 pptx。模型把「files 里没有」读成没交付，
+                # 再往树里写占位（2026-09-24 sr-20260924190011）。
+                result["officeFiles"] = office[:8]
         return result
 
     def _file_read(self, files, revision, args, project=None):

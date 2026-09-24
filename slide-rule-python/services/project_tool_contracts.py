@@ -588,7 +588,7 @@ PROJECT_ALIAS_TOOLS = frozenset({
 
 _DESCRIPTIONS = {
     "project_create": "Create or recover this session's React/TypeScript/Vite project using the current approved plan. templateId=react-vite-tasks is only for a task-management web app (login, SQLite, writer/reader roles). Office files (.pptx/.docx/.xlsx) are not a task app — do not pick react-vite-tasks for those. react-vite is a minimal computer. Existing projects retain their source. Returns saved revision, not delivery.",
-    "project_list": "List immutable project files with SHA256 and source revision. Continue with nextCursor and the returned revision while truncated.",
+    "project_list": "List source files with SHA256 and revision. Collected .pptx/.docx/.xlsx are officeFiles on this result, not in files. That list is the deliverable; do not copy it into the source tree. Continue with nextCursor while truncated.",
     "project_read": "Read a saved source file. Default (no offset/limit) returns path, sha256, size and a short excerpt — not the full text. Ask for a window with offset/limit (max {max_read_chars} characters) when you need the body; search with project_search. Use returned SHA256 for patch preconditions. Only when truncated is true, continue with nextOffset and the same revision.",
     "project_search": "Search saved source for literal text, with bounded line excerpts. Use nextCursor and the same revision to continue; this is not regex or shell execution.",
     "project_revisions": "List committed source history for this project, newest first. Continue with nextCursor. History never includes losing or uncommitted source writes.",
@@ -621,7 +621,7 @@ _DESCRIPTIONS = {
     "browser_console_view": "Read the latest managed command log, which is the closest console this workspace exposes.",
     "deploy_expose_port": "Start the managed private preview on port. This is not a public deployment.",
     "deploy_apply_deployment": "Start the private preview (same kernel as deploy_expose_port). This is not a public CDN. deployed is always false; previewPrivate is true.",
-    "make_manus_page": "Switch the preview to one existing file. file may be a source .html, or a collected .pptx/.docx/.xlsx (the officeFiles path). A missing path fails. This does not start Vite. A collected office file or a source .html is already shown without this call.",
+    "make_manus_page": "Switch the preview to one existing file. file may be a source .html, or a collected .pptx/.docx/.xlsx (the officeFiles path). A missing path fails. Omit file to show the newest collected office file when one exists. This does not start Vite.",
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
