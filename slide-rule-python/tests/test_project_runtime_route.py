@@ -451,3 +451,32 @@ def test_preview_snapshot_route_is_not_verification(setup):
     assert shot.content == _TINY_PNG
     still = setup.client.get(f"/projects/{pid}/verification")
     assert still.json()["snapshot"] is None
+
+
+def test_wake_reuses_the_dev_server_the_model_already_started(setup, monkeypatch):
+    """⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：模型 deploy_expose_port
+    起了一台（幂等键是随机 uuid），0.15 秒后预览面板 POST /preview/wake 又排一台
+    ——唤醒只认自己的 preview-wake:* 键。收工时那台还烂在队列里。
+    把 supervisor.submit 里的复用删掉，本条变红。"""
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    model_start = setup.supervisor.submit(setup.project.projectId, owner_id="u1",
+        expected_revision=setup.project.currentRevision, approval_ref=setup.body["approvalRef"],
+        idempotency_key="0d6864d4-9235-43e5-b57e-072ab0c700f1")
+    woke = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert woke.status_code == 202
+    assert woke.json()["operation"]["operationId"] == model_start.operationId
+    starts = [op for op in setup.store.list_project_operations(setup.project.projectId, owner_id="u1", limit=100)
+              if op.kind == "runtime.start"]
+    assert [op.operationId for op in starts] == [model_start.operationId]
+    assert not setup.called
+
+
+def test_start_after_the_running_one_is_cancelled_opens_a_new_one(setup, monkeypatch):
+    """反向：停掉之后再起，照常起一台新的（不是永远复用一台死的）。"""
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = setup.supervisor.submit(setup.project.projectId, owner_id="u1",
+        expected_revision=setup.project.currentRevision, approval_ref=setup.body["approvalRef"],
+        idempotency_key="first")
+    setup.store.request_operation_cancel(first.operationId, owner_id="u1")
+    woke = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert woke.json()["operation"]["operationId"] != first.operationId

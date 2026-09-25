@@ -163,6 +163,12 @@ class ProjectRuntimeSupervisor:
             kind="runtime.start", idempotencyKey=idempotency_key, requestHash="", expectedRevision=project.currentRevision,
             approvalRef=approval_ref, createdAt=_timestamp(), updatedAt=_timestamp())
         self.authorizer(self.store, candidate, owner_id)
+        # 一个工程一台开发服务器（见 ProjectStore.active_runtime_start）。同一把
+        # 幂等键交过的照旧走幂等：重放拿回原样，换参数报冲突。
+        if self.store.operation_by_key(project_id, idempotency_key, owner_id=owner_id) is None:
+            active = self.store.active_runtime_start(project_id, owner_id=owner_id)
+            if active is not None:
+                return active
         operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
             idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
             input={"port": port})

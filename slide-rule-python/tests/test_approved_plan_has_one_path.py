@@ -89,3 +89,18 @@ def test_the_offered_project_create_says_it_is_the_office_tool(project_tools_on)
     assert ".pptx" in desc
     assert "deliverable" in desc
     assert "empty workspace" in desc or "office-file plan" in desc
+
+
+def test_the_offered_project_create_makes_react_vite_the_web_default(project_tools_on):
+    """⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：记账网页选了
+    react-vite-tasks，交付被锁在任务清单验收上，永远交不了。模型看到的描述与
+    参数说明都要讲清：react-vite 是任何网页（含浏览器本地存储）的默认；任务模板
+    选错的后果是永远交付不了。盯语义，把描述改回「a minimal computer」本条变红。"""
+    listed = rc.list_control_tools(_approved())
+    fn = next(t for t in listed if t["function"]["name"] == "project_create")["function"]
+    desc = fn["description"]
+    field = fn["parameters"]["properties"]["templateId"].get("description", "")
+    for text in (desc, field):
+        assert "default" in text and "localStorage" in text
+        assert "never be delivered" in text
+    assert "minimal computer" not in desc

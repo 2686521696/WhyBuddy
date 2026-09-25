@@ -716,6 +716,34 @@ class ProjectStore:
         rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [project_id, key])
         return ProjectOperation.model_validate_json(rows[0]["payload"]) if rows else None
 
+    def active_runtime_start(self, project_id: str, *, owner_id: str) -> ProjectOperation | None:
+        """这个工程当前那台开发服务器（在跑或已在排队）；没有返回 None。
+
+        一个工程同一时刻只有一台。模型工具、预览唤醒、界面启动都经
+        supervisor.submit 问这里——抄 grok-build 的 preview_supervisor：
+        一个监督者只管一个子进程，谁都不另起一台。
+        ⚠ 2026-09-25 K1N7JX1FPS：模型侧每发都另起，一轮 6 起 4 停。
+        ⚠ 2026-09-25 T4TJXXCW0Z：模型侧修好后，预览面板 POST /preview/wake
+          晚 0.15 秒又排了一台（唤醒只认自己发过的 preview-wake:* 键）。
+        挑法先认租约持有者（工人就按它放行），再认最早 running，再认最早排队；
+        operationId 是随机 uuid，不能按 id 排。
+        """
+        lease = self.get_lease(project_id, owner_id=owner_id)
+        holder = lease.processRefs.get("operationId") if lease else None
+        active, after = [], ""
+        while True:
+            page = self.list_project_operations(project_id, owner_id=owner_id, after_id=after, limit=100)
+            active += [op for op in page if op.kind == "runtime.start"
+                       and op.status not in _TERMINAL_OPERATIONS and not op.cancelRequested]
+            if len(page) < 100:
+                break
+            after = page[-1].operationId
+        for op in active:
+            if op.operationId == holder:
+                return op
+        running = [op for op in active if op.status == "running"]
+        return min(running or active, key=lambda op: op.createdAt) if active else None
+
     def list_project_operations(self, project_id: str, *, owner_id: str,
                                 after_id: str = "", limit: int = 9) -> list[ProjectOperation]:
         self.get_project(project_id, owner_id=owner_id)

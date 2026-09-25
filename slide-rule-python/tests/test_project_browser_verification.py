@@ -561,3 +561,28 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
         eventually(lambda: parent().status == "cancelled")
     finally:
         supervisor.shutdown()
+
+
+def test_an_environment_auth_failure_is_explained_not_blamed_on_the_app(live, monkeypatch):
+    """⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：回执只有
+    project_browser_auth_failed，模型收尾写成「被模板登录鉴权阻断」。
+    收据形状照真机：blocked、没有断言、没有截图。删掉 errorHint 那一行，本条变红。"""
+    browser, _ = install_browser(live, monkeypatch)
+    monkeypatch.setattr(browser, "run", lambda **kwargs: {"status": "blocked", "cleanupConfirmed": True,
+        "runnerVersion": "whybuddy-browser-v1:pw1.61.1", "errorCode": "project_browser_auth_failed",
+        "assertions": [], "artifacts": {}})
+    child = verify(live)
+    assert verdict(live, child).effectiveStatus == "blocked"
+    seen = live.tools.execute("project_status", {"operationId": child, "waitSeconds": 0}, live.state)
+    hint = seen["verification"]["errorHint"]
+    assert "不是应用自己的登录" in hint and "运行环境" in hint
+    assert "重复验收" in hint  # 别让它原地重试
+
+
+def test_a_passed_check_carries_no_error_hint(live, monkeypatch):
+    """反向：通过的验收不挂任何解释。"""
+    install_browser(live, monkeypatch)
+    child = verify(live)
+    assert verdict(live, child).effectiveStatus == "passed"
+    seen = live.tools.execute("project_status", {"operationId": child, "waitSeconds": 0}, live.state)
+    assert "errorHint" not in seen["verification"]

@@ -9,6 +9,8 @@
 
 from project_actor_support import project_actor  # noqa: F401
 from services.project_tool_contracts import LEAKED_KERNEL_TOOLS
+import pytest
+
 from test_project_tools import create, execute, setup  # noqa: F401
 
 
@@ -185,3 +187,30 @@ def test_idle_is_not_a_done_claim():
     assert events[1] == {"type": "control_tool_result", "tool": "idle", "ok": True, "idle": True}
     assert events[2]["type"] == "complete"
     assert all(event.get("tool") != "report_done" for event in events)
+
+
+@pytest.mark.parametrize("exec_dir", ["/home/user/workspace", "/home/user/workspace/", "~/workspace", ".", None])
+def test_shell_exec_accepts_the_real_sandbox_root(setup, exec_dir):
+    """⚠ 2026-09-25 T4TJXXCW0Z：描述里写着 /home/user/workspace，模型照着传，
+    被 project_shell_exec_dir_not_supported 拒掉。根的各种写法都放行，命令原样。"""
+    create(setup)
+    result = execute(setup, "shell_exec", {"command": "ls -la", "exec_dir": exec_dir, "is_background": True})
+    assert result["ok"], result
+    assert setup.store.get_operation(result["operationId"], owner_id="alice").input["script"] == "ls -la"
+
+
+def test_shell_exec_in_a_subdirectory_cds_there_first(setup):
+    create(setup)
+    result = execute(setup, "shell_exec", {"command": "npm run build", "exec_dir": "/home/user/workspace/apps/web",
+                                           "is_background": True})
+    assert result["ok"], result
+    saved = setup.store.get_operation(result["operationId"], owner_id="alice").input
+    assert saved == {"command": "shell", "script": "cd apps/web && npm run build"}
+
+
+@pytest.mark.parametrize("exec_dir", ["/etc", "/home/user/workspace/../..", "../outside", "~/.ssh"])
+def test_shell_exec_still_refuses_to_leave_the_workspace(setup, exec_dir):
+    """反向：出了工作区照样拒（grok resolve_path_within_root 的 escape 分支）。"""
+    create(setup)
+    result = execute(setup, "shell_exec", {"command": "ls", "exec_dir": exec_dir})
+    assert result == {"ok": False, "error": "project_shell_exec_dir_not_supported"}

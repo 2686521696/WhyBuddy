@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import Literal
 
@@ -14,7 +15,16 @@ class ToolArguments(BaseModel):
 
 class CreateArguments(ToolArguments):
     approvalRef: str = Field(min_length=1, max_length=240)
-    templateId: Literal["react-vite", "react-vite-tasks"] = "react-vite"
+    # ⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：记账网页选了
+    #   react-vite-tasks。那个模板把交付锁死在任务清单验收上（登录、增改筛任务），
+    #   记账页写得再好也永远交不了。上一轮同一话题选的是 react-vite——选择不稳定，
+    #   原描述只说「tasks 只给任务管理应用」「react-vite 是 a minimal computer」，
+    #   后者读起来像个空壳，没说它才是默认，也没说选错的后果。
+    templateId: Literal["react-vite", "react-vite-tasks"] = Field(default="react-vite", description=(
+        "react-vite (default): use for every web page or web app, including ones that keep their data in "
+        "the browser (localStorage) such as trackers, ledgers, planners, dashboards and games. "
+        "react-vite-tasks: only for exactly a task-management app with login and writer/reader roles; "
+        "its delivery is locked to a fixed task-list acceptance suite, so any other app built on it can never be delivered."))
 
 
 class RevisionArguments(ToolArguments):
@@ -425,9 +435,38 @@ def leaked_shell_command(command: str) -> str:
     return name
 
 
-def leaked_shell_exec_dir_allowed(exec_dir: str | None) -> bool:
-    raw = str(exec_dir or "").strip().replace("\\", "/").rstrip("/")
-    return raw.lower() in {"", ".", "home/ubuntu", "/home/ubuntu", "workspace", "/workspace"}
+SANDBOX_WORKSPACE = "/home/user/workspace"
+# 模型可能用的几种「工作区根」写法。长的在前，前缀匹配才不会被短的截走。
+_WORKSPACE_ROOTS = ("/home/user/workspace", "~/workspace", "/home/ubuntu", "home/ubuntu",
+    "/workspace", "workspace")
+
+
+def shell_exec_subdir(exec_dir: str | None) -> str | None:
+    """exec_dir → 工作区内的相对子目录（"" 是根）；出了工作区返回 None。
+
+    ⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：shell_exec 的描述写着
+      「runs … in /home/user/workspace」，模型照着传 exec_dir=/home/user/workspace，
+      被 project_shell_exec_dir_not_supported 拒掉——白名单只有 /home/ubuntu、
+      workspace 几种别名，偏偏没有沙盒真实的那个根。
+    抄 grok-build `resolve_path_within_root`：相对路径拼到根上，绝对路径照收，
+    `..` 规整后只要还在根里就放行，越出去才拒。
+    """
+    raw = str(exec_dir or "").strip().replace("\\", "/")
+    if raw in {"", "."}:
+        return ""
+    for root in _WORKSPACE_ROOTS:
+        if raw == root or raw.startswith(root + "/"):
+            raw = raw[len(root):].lstrip("/")
+            break
+    else:
+        if raw.startswith(("/", "~")):
+            return None
+    rel = posixpath.normpath(raw) if raw else "."
+    if rel == ".":
+        return ""
+    if rel == ".." or rel.startswith("../") or rel.startswith("/"):
+        return None
+    return rel
 
 
 def leaked_browser_url_allowed(url: str) -> bool:
@@ -587,7 +626,7 @@ PROJECT_ALIAS_TOOLS = frozenset({
 })
 
 _DESCRIPTIONS = {
-    "project_create": "Create or recover this session's computer (an E2B sandbox workspace) for the current approved plan. For a web-app plan it is a React/TypeScript/Vite project. For an office-file plan (.pptx/.docx/.xlsx) it is an empty workspace: run commands there (bash/shell_exec, e.g. python-pptx / python-docx / openpyxl) and every .pptx/.docx/.xlsx you write is collected as the deliverable — this is the office-file tool. templateId=react-vite-tasks is only for a task-management web app (login, SQLite, writer/reader roles). Office files (.pptx/.docx/.xlsx) are not a task app — do not pick react-vite-tasks for those. react-vite is a minimal computer. Existing projects retain their source. Returns saved revision, not delivery.",
+    "project_create": "Create or recover this session's computer (an E2B sandbox workspace) for the current approved plan. For a web-app plan it is a React/TypeScript/Vite project. For an office-file plan (.pptx/.docx/.xlsx) it is an empty workspace: run commands there (bash/shell_exec, e.g. python-pptx / python-docx / openpyxl) and every .pptx/.docx/.xlsx you write is collected as the deliverable — this is the office-file tool. templateId=react-vite is the default for every web page or web app, including apps that keep their data in the browser (localStorage). templateId=react-vite-tasks is a fixed task-list app (login, SQLite server, writer/reader roles) whose delivery is locked to a task-list acceptance suite (create/edit/filter tasks with roles): pick it only when the approved plan is exactly that task-management app — any other app built on it can never be delivered. Office files (.pptx/.docx/.xlsx) are not a task app — do not pick react-vite-tasks for those. Existing projects retain their source. Returns saved revision, not delivery.",
     "project_list": "List source files with SHA256 and revision. Collected .pptx/.docx/.xlsx are officeFiles on this result, not in files. That list is the deliverable; do not copy it into the source tree. Continue with nextCursor while truncated.",
     "project_read": "Read a saved source file. Default (no offset/limit) returns path, sha256, size and a short excerpt — not the full text. Ask for a window with offset/limit (max {max_read_chars} characters) when you need the body; search with project_search. Use returned SHA256 for patch preconditions. Only when truncated is true, continue with nextOffset and the same revision.",
     "project_search": "Search saved source for literal text, with bounded line excerpts. Use nextCursor and the same revision to continue; this is not regex or shell execution.",

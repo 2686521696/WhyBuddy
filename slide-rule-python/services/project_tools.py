@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import shlex
 import time
 import uuid
 from types import SimpleNamespace
@@ -35,7 +36,7 @@ from services.project_tool_contracts import (
     PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS, PatchArguments,
     classify_shell_command, compile_browser_action, explicit_read_window,
     leaked_browser_url_allowed,
-    leaked_shell_exec_dir_allowed,
+    sandbox_shell_script, shell_exec_subdir,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS,
 )
 from services.deliverable_kind import (
@@ -126,6 +127,22 @@ def present_project_tool_result(body: Any) -> Any:
         runtime.pop("revision", None)
         out["runtime"] = runtime
     return out
+
+
+# 独立验收的错误码 → 模型读得懂的一句话：是什么、不是什么、该怎么办。
+# ⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：回执只有
+#   project_browser_auth_failed，模型收尾写成「被模板登录鉴权阻断」——当成了应用
+#   自己的登录。其实是验收浏览器拿不到预览访问票。写法抄 minimax-code 的
+#   cronUnsupportedHostError：先说不是什么，再说别做什么，最后说该做什么。
+VERIFICATION_ERROR_TEXT = {
+    "project_browser_auth_failed": "验收浏览器拿不到这台预览的访问票：预览网关不认这台主机发的票。"
+        "这是运行环境的问题，不是应用自己的登录，也不是代码错误；改代码、重启服务、重复验收都解决不了。"
+        "如实告诉用户验收没能在这个环境里跑起来。",
+    "project_browser_not_configured": "这个环境没有配置独立验收浏览器。不是代码错误，重复验收没有用；如实告诉用户。",
+    "project_browser_key_missing": "这个环境缺少验收浏览器的凭据。不是代码错误，重复验收没有用；如实告诉用户。",
+    "project_browser_unavailable": "验收浏览器这次没能启动，是运行环境的问题，不是代码错误。可以稍后再验收一次；仍然失败就如实告诉用户。",
+    "project_browser_assertion_failed": "验收跑完了，有断言没通过——这是应用本身的问题。看 assertions 里 failed 的那几条，改代码后对新版本重新验收。",
+}
 
 
 def queue_blocker(adapter, operation_id) -> dict | None:
@@ -742,6 +759,8 @@ class ProjectTools:
                     "acceptanceProfile": record.specRevision if snapshot.deliveryEligible else None,
                     "acceptanceRequirements": list(record.acceptanceRequirements),
                     "errorCode": record.errorCode,
+                    **({"errorHint": VERIFICATION_ERROR_TEXT[record.errorCode]}
+                       if record.errorCode in VERIFICATION_ERROR_TEXT else {}),
                     "runtimeOperationId": record.runtimeOperationId,
                     "logOperationId": record.runtimeOperationId,
                     "build": ({key: getattr(record.build, key) for key in (
@@ -793,46 +812,15 @@ class ProjectTools:
         return max(operations, key=lambda item: item.createdAt) if operations else None
 
     def _active_runtime(self, project):
-        """这个工程当前那台开发服务器（在跑或已在排队）；没有返回 None。
-
-        ⚠ 2026-09-25 隔离真机 sr-20260925043119-K1N7JX1FPS（记账网页）：
-          browser_navigate / deploy_expose_port / project_start 每次都新提交
-          一个 runtime.start，排在正在跑的那台后面。模型照回执停掉挡路的，
-          排队的旧启动顶上来，它再发一个——一轮里起了 6 次、停了 4 次，
-          收工时还有 3 个启动烂在队列里。一个工程同一时刻只该有一台。
-        ⚠ 不用 _latest_operation 挑：operationId 是随机 uuid，按 id 排的
-          「最后一个」是随机一个。先认租约持有者（工人就按它放行），
-          再认最早的 running，再认最早排队的。
-        """
-        lease = self.store.get_lease(project.projectId, owner_id=self.owner_id)
-        holder = lease.processRefs.get("operationId") if lease else None
-        active, after = [], ""
-        while True:
-            page = self.store.list_project_operations(project.projectId, owner_id=self.owner_id,
-                after_id=after, limit=100)
-            active += [op for op in page if op.kind == "runtime.start"
-                       and op.status not in _TERMINAL and not op.cancelRequested]
-            if len(page) < 100:
-                break
-            after = page[-1].operationId
-        for op in active:
-            if op.operationId == holder:
-                return op
-        running = [op for op in active if op.status == "running"]
-        return min(running or active, key=lambda op: op.createdAt) if active else None
+        return self.store.active_runtime_start(project.projectId, owner_id=self.owner_id)
 
     def _runtime_for_view(self, project, params, port):
-        """看页面 / 开端口 / 启动：有现成的开发服务器就用它，没有才起一台。
-
-        同一把幂等键交过的，照旧走幂等：重放拿回原样回执，换参数报冲突。
-        """
-        key = params["idempotency_key"]
-        if self.store.operation_by_key(project.projectId, key, owner_id=self.owner_id) is None:
-            active = self._active_runtime(project)
-            if active is not None:
-                return self._snapshot(active.operationId) | {"runtimeReused": True}
+        """看页面 / 开端口 / 启动：交给 supervisor.submit，它会复用现成的那台。"""
         operation = self.supervisor.submit(project.projectId, **params, port=port)
-        return self._snapshot(operation.operationId)
+        result = self._snapshot(operation.operationId)
+        if operation.idempotencyKey != params["idempotency_key"]:
+            result["runtimeReused"] = True
+        return result
 
     def _operation_by_id(self, project, session_id, operation_id, kinds=None):
         if operation_id:
@@ -858,11 +846,16 @@ class ProjectTools:
             idempotency_key=getattr(parsed, "id", None) or str(uuid.uuid4()),
         )
         if name in {"shell_exec", "bash"}:
-            if name == "shell_exec" and not leaked_shell_exec_dir_allowed(getattr(parsed, "exec_dir", None)):
+            subdir = shell_exec_subdir(getattr(parsed, "exec_dir", None)) if name == "shell_exec" else ""
+            if subdir is None:
                 raise ValueError("project_shell_exec_dir_not_supported")
             if name == "bash":
                 params["idempotency_key"] = str(uuid.uuid4())
             managed, script = classify_shell_command(parsed.command)
+            if subdir:
+                # 子目录里跑：交成普通 shell，先 cd 进去（受管的 check/build/test
+                # 只在根上跑，不能换目录）。
+                managed, script = "shell", f"cd {shlex.quote(subdir)} && {sandbox_shell_script(parsed.command)}"
             if script is None:
                 operation = self.supervisor.submit_command(
                     project.projectId, **params, command=managed)
