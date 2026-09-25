@@ -128,6 +128,56 @@ def present_project_tool_result(body: Any) -> Any:
     return out
 
 
+def queue_blocker(adapter, operation_id) -> dict | None:
+    """一条 queued 的操作排在谁后面。没人挡、或者查不到，返回 None。
+
+    ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB（记账网页）：
+      runtime.start（pop-7aa459…）起了开发服务器，runtime 已 ready，操作本身
+      一直是 running——开发服务器不会自己结束。之后的 project_exec、
+      shell_exec、browser_navigate 全是 queued，模型轮着查了六次 status，
+      每次只看见 queued，不知道是谁挡着、也不知道挡的那个永远不会让路。
+
+    判据取工人真用的那一条：工程租约 processRefs.operationId 指向另一条
+    未终态的操作（`list_runnable_operations` 就是按它跳过的），不另编规则。
+    增强类，查不到就当没有（fail-open，CLAUDE.md §7）。
+    """
+    try:
+        operation = adapter.store.get_operation(operation_id, owner_id=adapter.owner_id)
+        if operation.status != "queued":
+            return None
+        lease = adapter.store.get_lease(operation.projectId, owner_id=adapter.owner_id)
+        holder_id = lease.processRefs.get("operationId") if lease else None
+        if not holder_id or holder_id == operation.operationId:
+            return None
+        holder = adapter.store.get_operation(holder_id, owner_id=adapter.owner_id)
+    except Exception:
+        return None
+    if holder.status in _TERMINAL and holder.pendingEvent is None:
+        return None
+    return {"operationId": holder.operationId, "kind": holder.kind, "status": holder.status,
+        # 开发服务器 running 就是常驻：等它结束等于等到租约过期。
+        "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL}
+
+
+def explain_queue(adapter, body):
+    """queued 的回执说清被谁挡住、该怎么办。见 queue_blocker。"""
+    if not isinstance(body, dict) or body.get("status") != "queued" or not body.get("operationId"):
+        return body
+    blocker = queue_blocker(adapter, body["operationId"])
+    if blocker is None:
+        return body
+    hid = blocker["operationId"]
+    if blocker["neverYields"]:
+        hint = (f"这条排在 {hid}（runtime.start，开发服务器，正在运行）后面。开发服务器不会自己结束，"
+                f"它不停，这条就不会开始，再查状态也还是 queued。要跑这条，先用 shell_kill_process 停掉 {hid}；"
+                "不要再提交新的启动，它也会排在同一个位置。")
+    else:
+        hint = (f"这条排在 {hid}（{blocker['kind']}，{blocker['status']}）后面，它结束后才会开始。"
+                f"用 project_status 带 {hid} 看它的进度，不要重复提交。")
+    return {**body, "blockedBy": {k: blocker[k] for k in ("operationId", "kind", "status")},
+        "queueHint": hint}
+
+
 def operation_snapshot(snapshot):
     operation = snapshot["operation"]
     result = {"operationId": operation.operationId, "kind": operation.kind,

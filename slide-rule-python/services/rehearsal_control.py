@@ -183,7 +183,7 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
-from services.project_tools import command_receipt_from, present_project_tool_result
+from services.project_tools import command_receipt_from, explain_queue, present_project_tool_result, queue_blocker
 from services.project_store import get_project_store
 from services.session_uploads import upload_fact, workspace_path
 from services.workflow_registry import workflow_for, workflow_names
@@ -5850,6 +5850,12 @@ async def _dispatch_tool(
                 name, summary=summary or "", operation_id=str(operation_id)
             )
         wait_seconds = _project_tool_wait_seconds(name, args, body)
+        # ⚠ 2026-09-25 74E9KCWHAB：排在常驻开发服务器后面的前台 shell 等满
+        #   120 秒也还是 queued。挡路的那个不会让路，就别等，直接交回回执。
+        if operation_id and wait_seconds > 0 and isinstance(body, dict) and body.get("status") == "queued":
+            blocker = await run_in_threadpool(queue_blocker, adapter, operation_id)
+            if blocker is not None and blocker["neverYields"]:
+                wait_seconds = 0
         if operation_id and wait_seconds > 0:
             deadline = time.monotonic() + wait_seconds
             while time.monotonic() < deadline:
@@ -5891,6 +5897,8 @@ async def _dispatch_tool(
                 yield {"type": "control_project_state", "sessionId": state.sessionId,
                     "runtimeKind": "project", "projectId": state.projectId,
                     "projectRevision": state.projectRevision}
+        # 等待之后才判：等的过程中它可能已经开始了，不许挂一句过期的「被挡住」。
+        body = await run_in_threadpool(explain_queue, adapter, body)
         body = present_project_tool_result(body)
         yield {"type": "control_tool_result", "tool": name, **body}
         return
