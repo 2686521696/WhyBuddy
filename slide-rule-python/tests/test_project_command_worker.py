@@ -780,3 +780,63 @@ def test_traceback_in_the_tail_fails_only_a_command_that_ran_python(command_setu
     else:
         assert "commandOk" not in receipt
         assert "没有成功" not in receipt["hint"]
+
+
+def test_unchanged_office_file_is_not_collected_again_and_links_are_real(command_setup):
+    """同一份字节再扫到，不是这次的产出；回执给的是用户点得开的下载地址。
+
+    ⚠ 2026-09-25 luna 隔离真机 sr-20260925003931-HP3KEB33FR：办公沙盒整轮复用，
+      每条命令都把没改过的 pptx 再扫一遍，回执次次「办公文件已收回……这就是交付」，
+      连失败的只读校验也这么说；模型交给用户的链接是 sandbox:/home/user/… 。
+    把收集器里的 unchanged 判断删掉，第二条命令的断言变红；
+    把 _download_sentence 从提示语里拿掉，下载地址那几条变红。
+    """
+    from app import app
+    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store, _, provider, worker, _ = command_setup
+    deck = {"bytes": b"PK\x03\x04" + b"deck-v1"}
+    provider.collect_office_files = lambda _handle: [{"path": "deck.pptx", "data": deck["bytes"]}]
+    project = store.create_project(
+        "session-office-unchanged", owner_id="alice",
+        files={"README.md": "office\n"},
+        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
+
+    def run(key, script):
+        operation = worker.submit_command(
+            project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+            approval_ref="plan-1", idempotency_key=key, command="shell", script=script)
+        finished = eventually(lambda: state(store, operation, "stopped"))
+        assert finished.status == "completed", finished.result
+        snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+        return finished, _command_pointer(snap, "")
+
+    first, receipt1 = run("gen", "python3 build_deck.py")
+    assert first.result.get("officeFiles") == ["deck.pptx"]
+    assert "已收回" in receipt1["hint"]
+
+    # 下载地址：回执里有，提示语里有，而且对得上应用真实注册的 GET 路由。
+    url = receipt1["officeDownloads"]["deck.pptx"]
+    assert f"({url})" in receipt1["hint"]
+    assert "sandbox:" in receipt1["hint"]  # 明说不要写沙盒路径
+    # 从真实应用反查下载路由（这个 FastAPI 延迟挂载子路由，app.routes 不展开，
+    # 别再按 route.path 去扫——2026-09-25 第一版就这么扫空了）。
+    artifact_id = url.rsplit("/", 1)[-1]
+    assert artifact_id.startswith("art-"), url
+    assert url == app.url_path_for(
+        "download_office_artifact", project_id=project.projectId, artifact_id=artifact_id)
+
+    # 第二条只读命令：沙盒里还是同一份字节——不是这次的产出。
+    second, receipt2 = run("check", "python3 -c 'print(1)'")
+    assert second.result.get("officeFiles") is None
+    assert second.result.get("officeFilesHeld") == ["deck.pptx"]
+    assert "已收回" not in receipt2["hint"] and "这就是交付" not in receipt2["hint"]
+    assert "没有产出新的办公文件" in receipt2["hint"]
+    assert f"({url})" in receipt2["hint"]  # 旧文件的链接照样给
+
+    # 第三条真的改了字节：又是这次的产出。
+    deck["bytes"] = b"PK\x03\x04" + b"deck-v2"
+    third, receipt3 = run("regen", "python3 build_deck.py")
+    assert third.result.get("officeFiles") == ["deck.pptx"]
+    assert "已收回" in receipt3["hint"]

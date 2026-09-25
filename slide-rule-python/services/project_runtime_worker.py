@@ -45,7 +45,7 @@ from services.deliverable_kind import (
     orch_trace,
     skip_vite_dependency_install,
 )
-from services.project_office_artifacts import ProjectOfficeArtifactStore
+from services.project_office_artifacts import ProjectOfficeArtifactStore, office_artifact_download_url
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
 from services.project_acceptance import normalize_acceptance_requirements
@@ -941,10 +941,20 @@ class _RuntimeTask:
             path = item.get("path") if isinstance(item, dict) else None
             if isinstance(path, str) and path not in paths:
                 paths.append(path)
+                _RuntimeTask._remember_download(self, path, item.get("artifactId"))
         if paths:
             self.result["officeFilesHeld"] = paths[:8]
             return
         self.result["officeScan"] = "failed" if failed else "empty"
+
+    def _remember_download(self, path, artifact_id) -> None:
+        """回执里给这份文件的真实下载地址（office_artifact_download_url 头注）。"""
+        if not isinstance(path, str) or not isinstance(artifact_id, str) or not artifact_id:
+            return
+        downloads = dict(self.result.get("officeDownloads") or {})
+        if path not in downloads and len(downloads) < 8:
+            downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
+        self.result["officeDownloads"] = downloads
 
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。
@@ -987,8 +997,17 @@ class _RuntimeTask:
                 continue
             # ⚠ 2026-09-23 预览不再在沙盒里转 PDF。右侧用浏览器里的
             #   @silurus/ooxml 画这份字节。soffice 的 PDF 曾被 Chrome 沙箱框屏蔽。
+            # ⚠ 2026-09-25 luna 隔离真机：办公沙盒整轮复用，每条命令都把同一份
+            #   没改过的 pptx 再扫一遍，回执次次说「办公文件已收回……这就是交付」，
+            #   连一条只读、还失败了的校验命令也这么说。字节没变不是这次的产出：
+            #   归进 officeFilesHeld，回执照实说「这次没有产出新文件」。
             try:
-                store.put(
+                before = store.find_by_path(
+                    self.original.projectId, path, owner_id=self.owner_id)
+            except Exception:
+                before = None
+            try:
+                meta = store.put(
                     self.original.projectId,
                     owner_id=self.owner_id,
                     path=path,
@@ -997,10 +1016,18 @@ class _RuntimeTask:
             except Exception:
                 logger.warning("office artifact persist failed", exc_info=True)
                 continue
-            kept = list(self.result.get("officeFiles") or [])
-            if path not in kept:
-                kept.append(path)
-            self.result["officeFiles"] = kept[:8]
+            stored = meta.get("path", path) if isinstance(meta, dict) else path
+            _RuntimeTask._remember_download(
+                self, stored, meta.get("artifactId") if isinstance(meta, dict) else None)
+            unchanged = (
+                isinstance(before, dict) and isinstance(meta, dict)
+                and before.get("sha256") == meta.get("sha256")
+            )
+            bucket = "officeFilesHeld" if unchanged else "officeFiles"
+            kept = list(self.result.get(bucket) or [])
+            if stored not in kept:
+                kept.append(stored)
+            self.result[bucket] = kept[:8]
         _RuntimeTask._remember_held_office_files(self, report_miss)
 
     def _flush_stdin(self):

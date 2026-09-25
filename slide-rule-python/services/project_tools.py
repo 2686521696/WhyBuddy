@@ -165,6 +165,13 @@ def operation_snapshot(snapshot):
         files = saved.get(name)
         if isinstance(files, list) and files:
             result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+    downloads = saved.get("officeDownloads")
+    if isinstance(downloads, dict) and downloads:
+        result["officeDownloads"] = {
+            str(path)[:240]: str(url)[:300]
+            for path, url in list(downloads.items())[:8]
+            if isinstance(path, str) and isinstance(url, str) and url.startswith("/api/")
+        }
     # 用户原件没放进沙盒时必须让模型看见——否则它会去沙盒里找一份不存在的文件，
     # 或者照样说「已经处理了你的报价表」。
     skipped = saved.get("uploadsSkipped")
@@ -292,6 +299,23 @@ def _hidden_command_failure(excerpt: str, exit_code, command=None) -> str | None
     return None
 
 
+def _download_sentence(result) -> str:
+    """把真实下载地址写进模型看得见的那句话。
+
+    ⚠ 2026-09-25 luna 隔离真机：回执只有文件名，模型给用户写的是
+      `sandbox:/home/user/workspace/…pptx`——E2B 里的路径，用户点不开。
+      地址只写在字段里不够（2026-09-22 BABCJGGB44 同一课：模型读的是这句话）。
+    """
+    downloads = result.get("officeDownloads")
+    if not isinstance(downloads, dict) or not downloads:
+        return ""
+    links = "；".join(f"[{path}]({url})" for path, url in list(downloads.items())[:8])
+    return (
+        f"给用户的下载链接：{links}。"
+        "交付时用这个链接，不要写沙盒里的路径（sandbox:/home/user/…），用户打不开。"
+    )
+
+
 def _command_pointer(result, excerpt=""):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -311,6 +335,7 @@ def _command_pointer(result, excerpt=""):
             f"办公文件已收回：{named}。"
             "这就是交付，不要再把文件 base64 进日志或 file_write。"
             "同一个沙盒留给下一条命令，已安装的包还在。"
+            + _download_sentence(result)
             + hint
         )
     elif isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]:
@@ -323,6 +348,7 @@ def _command_pointer(result, excerpt=""):
             f"之前的命令收回、库里还在的：{named}。"
             "如果这条命令本该重新生成它，那次生成没有写出文件，库里仍是旧版。"
             "不要往源码树写占位，也不要把文件 base64 进日志或 file_write。"
+            + _download_sentence(result)
             + hint
         )
     elif result.get("officeScan") == "empty":

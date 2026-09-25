@@ -362,6 +362,34 @@ export function deriveSessionStory(
   return blocks;
 }
 
+/**
+ * 收尾那句不进折叠。
+ *
+ * ⚠ 2026-09-25 luna 隔离真机 sr-20260925003931-HP3KEB33FR：模型收尾说
+ *   「已完成并生成 PPT 文件……已核对：共 10 页、16:9……」，这是一整轮里唯一
+ *   交代结果的那段话。它是最后一块 speech，跟过程一起被折进「工作了 7m 16s」，
+ *   页面全文里搜不到它——用户只看见结果卡，不知道核对了什么、文件在哪。
+ *   Manus 的完成态是「过程折起 → 『已完成』那句 → 结果卡」，总结在外面。
+ *
+ * 只在**流停了**、最后一块是开口、前面**确实有过工具组**时才拆：
+ *   · 还在流 → 最后一句可能只是「接着改筛选」，不是收尾
+ *   · 没有工具组 → 纯对话，本来就没有要折的过程
+ */
+export function splitClosingSpeech(
+  blocks: readonly SessionStoryBlock[],
+  streaming: boolean
+): { process: SessionStoryBlock[]; closing: SessionStorySpeech | null } {
+  const last = blocks[blocks.length - 1];
+  if (
+    streaming ||
+    last?.kind !== "speech" ||
+    !blocks.some(block => block.kind === "tools")
+  ) {
+    return { process: [...blocks], closing: null };
+  }
+  return { process: blocks.slice(0, -1), closing: last };
+}
+
 export function sessionStoryHasProcess(
   blocks: readonly SessionStoryBlock[]
 ): boolean {

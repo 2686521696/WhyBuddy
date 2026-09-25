@@ -74,6 +74,11 @@ export function useOfficeArtifactPresent(
   return present;
 }
 
+/**
+ * ⚠ 成对物：Python `project_office_artifacts.office_artifact_download_url`
+ * 拼的是同一个地址，写进命令回执给模型交付用（2026-09-25：模型曾把
+ * `sandbox:/home/user/…` 当下载链接给用户）。改一边要改另一边。
+ */
 export function officeArtifactDownloadUrl(
   projectId: string,
   artifactId: string

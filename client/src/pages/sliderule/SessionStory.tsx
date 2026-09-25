@@ -15,6 +15,8 @@
 
 import React from "react";
 import { ChevronRight, LoaderCircle } from "lucide-react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ProjectActionRowView,
   useSelectedProjectActionId,
@@ -26,6 +28,7 @@ import {
 import {
   deriveSessionStory,
   disclosureOpen,
+  splitClosingSpeech,
   sessionStoryCollapsedHint,
   sessionStoryDuration,
   sessionStoryHasProcess,
@@ -159,6 +162,24 @@ function ToolGroup({
   );
 }
 
+/**
+ * 收尾里的链接：地址被 react-markdown 默认过滤清空（sandbox: 之类）就画成字。
+ *
+ * ⚠ 2026-09-25 真机：`[下载…](sandbox:/home/user/…)` 被清成 `href=""`，
+ *   仍是一个蓝色可点的链接——点了把当前页整页重载。第一版判据只查
+ *   「没有 sandbox: 开头的 href」，空 href 照样放过。
+ */
+const CLOSING_MARKDOWN: Components = {
+  a: ({ href, children }) =>
+    href ? (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    ),
+};
+
 export function SessionStory({
   turn,
   streaming,
@@ -170,10 +191,11 @@ export function SessionStory({
   productSlot?: React.ReactNode;
   deliverableKind?: string;
 }) {
-  const blocks = React.useMemo(
+  const allBlocks = React.useMemo(
     () => deriveSessionStory(turn, { deliverableKind }),
     [turn, deliverableKind]
   );
+  const { process: blocks, closing } = splitClosingSpeech(allBlocks, streaming);
   const duration = sessionStoryDuration(turn);
   const hasProcess = sessionStoryHasProcess(blocks);
   const collapsedHint = sessionStoryCollapsedHint(blocks);
@@ -193,7 +215,7 @@ export function SessionStory({
     .reverse()
     .find(block => block.kind === "tools")?.id;
 
-  if (!hasProcess && !productSlot && !duration) return null;
+  if (!hasProcess && !closing && !productSlot && !duration) return null;
 
   const body = (
     <div id={bodyId} data-testid="session-story-body" className="min-w-0 space-y-2">
@@ -270,6 +292,20 @@ export function SessionStory({
       ) : null}
       {hasProcess ? (
         <div hidden={canFold && !expanded}>{body}</div>
+      ) : null}
+      {/* 收尾总结在折页外面、结果卡前面（splitClosingSpeech 头注）。
+          它常带下载链接，按 markdown 画；react-markdown 默认的地址过滤只放行
+          http(s)/mailto/相对路径，模型写的 sandbox: 路径会被清空，不会变成
+          一个点了没反应的假链接。 */}
+      {closing ? (
+        <div
+          data-testid="session-story-closing"
+          className="min-w-0 space-y-2 text-[14px] leading-[1.7] text-[#171717] [overflow-wrap:anywhere] [&_a]:text-[#2f6bff] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={CLOSING_MARKDOWN}>
+            {closing.text}
+          </ReactMarkdown>
+        </div>
       ) : null}
       {/* ⚠ 2026-09-20 番茄钟：卡是「任务已完成」，贴在过程折页后面。
           塞进 body / 创建工程后面，人圈出来位置不对。 */}

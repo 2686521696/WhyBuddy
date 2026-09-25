@@ -312,5 +312,17 @@ class ProjectOfficeArtifactStore:
 
 
 # 给测试/路由一个稳定 id 前缀，避免和会话 id 撞。
+def office_artifact_download_url(project_id: str, artifact_id: str) -> str:
+    """用户点得开的下载地址（同源、带登录 cookie）。
+
+    ⚠ 2026-09-25 luna 隔离真机 sr-20260925003931-HP3KEB33FR：回执只给了
+      沙盒路径，模型交给用户的是 `[下载…](sandbox:/home/user/workspace/…pptx)`，
+      那是 E2B 里的路径，用户点不开。地址必须由宿主给，不许让模型猜。
+    ⚠ 成对物：前端 `office-artifacts-client.ts::officeArtifactDownloadUrl`
+      拼的是同一个地址（路由在 routes/project_sources.py）。改一边要改另一边。
+    """
+    return f"/api/sliderule/projects/{project_id}/artifacts/{artifact_id}"
+
+
 def new_artifact_id() -> str:
     return "art-" + uuid.uuid4().hex[:40]

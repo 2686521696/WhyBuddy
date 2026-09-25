@@ -85,6 +85,18 @@ export function PresentedOfficeFile({
   );
 }
 
+/** 幻灯片翻页栏上的字。纯函数，判据直接跑它。 */
+export function slidePagerLabel(index: number, total: number): string {
+  if (!Number.isFinite(total) || total <= 0) return "";
+  const current = Math.min(Math.max(Math.trunc(index) + 1, 1), total);
+  return `第 ${current} / ${total} 页`;
+}
+
+type SlideNav = {
+  prev: () => void;
+  next: () => void;
+};
+
 function OfficeOoxmlView({
   bytes,
   kind,
@@ -97,11 +109,24 @@ function OfficeOoxmlView({
   const host = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  // ⚠ 2026-09-25 luna 隔离真机 sr-20260925003931-HP3KEB33FR：10 页的复盘稿，
+  //   右栏只在左上角画了一张 ~300px 的封面，下面整片空白，另外 9 页看不到、
+  //   也没有翻页。PptxViewer 默认按库里的缺省宽度画当前页，不会自己铺满容器，
+  //   也不带翻页 UI——这两件事都得宿主做：按面板宽度 fitPage，尺寸变了再 fit，
+  //   底下给「上一页 / 第 i / N 页 / 下一页」。
+  const [slide, setSlide] = useState<{ index: number; total: number }>({
+    index: 0,
+    total: 0,
+  });
+  const nav = useRef<SlideNav | null>(null);
   useEffect(() => {
     const el = host.current;
     if (!el) return;
     let dead = false;
     let viewer: { destroy: () => void } | null = null;
+    let resize: ResizeObserver | null = null;
+    setSlide({ index: 0, total: 0 });
+    nav.current = null;
     void (async () => {
       try {
         if (kind === "xlsx") {
@@ -114,11 +139,28 @@ function OfficeOoxmlView({
           const { PptxViewer } = await import("@silurus/ooxml/pptx");
           if (dead) return;
           const canvas = document.createElement("canvas");
-          canvas.className = "h-full w-full";
           el.replaceChildren(canvas);
-          const view = new PptxViewer(canvas);
+          const view = new PptxViewer(canvas, {
+            width: Math.max(320, Math.floor(el.clientWidth || 0)),
+            onSlideChange: (index, total) => {
+              if (!dead) setSlide({ index, total });
+            },
+          });
           viewer = view;
           await view.load(bytes);
+          if (dead) return;
+          await view.fitPage();
+          setSlide({ index: view.slideIndex, total: view.slideCount });
+          nav.current = {
+            prev: () => void view.prevSlide(),
+            next: () => void view.nextSlide(),
+          };
+          if (typeof ResizeObserver !== "undefined") {
+            resize = new ResizeObserver(() => {
+              if (!dead) void view.fitPage();
+            });
+            resize.observe(el);
+          }
         } else {
           const { DocxViewer } = await import("@silurus/ooxml/docx");
           if (dead) return;
@@ -135,15 +177,56 @@ function OfficeOoxmlView({
     })();
     return () => {
       dead = true;
+      resize?.disconnect();
+      nav.current = null;
       viewer?.destroy();
     };
   }, [bytes, kind]);
+  const pager = kind === "pptx" ? slidePagerLabel(slide.index, slide.total) : "";
   return (
     <div
-      ref={host}
-      data-testid="office-ooxml-view"
-      data-office-kind={kind}
-      className="h-full min-h-0 w-full flex-1 overflow-hidden bg-white"
-    />
+      className="flex h-full min-h-0 w-full flex-1 flex-col bg-white"
+      tabIndex={pager ? 0 : undefined}
+      onKeyDown={event => {
+        if (!pager) return;
+        if (event.key === "ArrowRight" || event.key === "PageDown") nav.current?.next();
+        if (event.key === "ArrowLeft" || event.key === "PageUp") nav.current?.prev();
+      }}
+    >
+      <div
+        ref={host}
+        data-testid="office-ooxml-view"
+        data-office-kind={kind}
+        className="min-h-0 w-full flex-1 overflow-auto"
+      />
+      {pager ? (
+        <div
+          data-testid="office-slide-pager"
+          className="flex shrink-0 items-center justify-center gap-3 border-t border-[#eeeeee] py-1.5 text-[12px] text-[#525252]"
+        >
+          <button
+            type="button"
+            data-testid="office-slide-prev"
+            disabled={slide.index <= 0}
+            onClick={() => nav.current?.prev()}
+            className="rounded px-2 py-0.5 hover:bg-[#f2f2f2] disabled:opacity-40"
+          >
+            上一页
+          </button>
+          <span data-testid="office-slide-position" className="tabular-nums">
+            {pager}
+          </span>
+          <button
+            type="button"
+            data-testid="office-slide-next"
+            disabled={slide.index >= slide.total - 1}
+            onClick={() => nav.current?.next()}
+            className="rounded px-2 py-0.5 hover:bg-[#f2f2f2] disabled:opacity-40"
+          >
+            下一页
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
