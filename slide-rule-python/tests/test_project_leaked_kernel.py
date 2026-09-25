@@ -51,7 +51,8 @@ def test_shell_exec_maps_managed_commands_and_runs_sandbox_bash(setup):
     elsewhere = execute(setup, "shell_exec", {"command": "check", "exec_dir": "/etc"})
     assert elsewhere == {"ok": False, "error": "project_shell_exec_dir_not_supported"}
     newline = execute(setup, "shell_exec", {"command": "ls\nrm -rf /"})
-    assert newline == {"ok": False, "error": "project_shell_command_not_allowed"}
+    assert newline["ok"] is False and newline["error"] == "project_shell_multiline_not_supported"
+    assert "file_write" in newline["hint"]
 
 
 def test_shell_wait_and_kill_use_the_operation_id(setup):

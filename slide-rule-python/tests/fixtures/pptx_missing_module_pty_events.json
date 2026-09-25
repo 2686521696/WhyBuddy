@@ -1,0 +1,2794 @@
+[
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:1",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 1,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "running",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "provisioning",
+"port": 5173,
+"previewUrl": null,
+"processId": null,
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:04.415214+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": null
+},
+"cancelRequested": false,
+"stateVersion": 1,
+"updatedAt": "2026-09-25T11:18:04.416022+00:00"
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:2",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 2,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "running",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "syncing",
+"port": 5173,
+"previewUrl": null,
+"processId": null,
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:04.699581+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": null
+},
+"cancelRequested": false,
+"stateVersion": 2,
+"updatedAt": "2026-09-25T11:18:04.700596+00:00"
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 3,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "running",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "executing",
+"port": 5173,
+"previewUrl": null,
+"processId": null,
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:05.389059+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": null
+},
+"cancelRequested": false,
+"stateVersion": 3,
+"updatedAt": "2026-09-25T11:18:05.389966+00:00"
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:4",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 4,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "running",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "executing",
+"port": 5173,
+"previewUrl": null,
+"processId": "1321",
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:05.492912+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": null
+},
+"cancelRequested": false,
+"stateVersion": 4,
+"updatedAt": "2026-09-25T11:18:05.494404+00:00"
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:0:30",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 5,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "\u001b[?2004huser@e2b:~/workspace$ ",
+"nextOffset": 30,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:30:31",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 6,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 31,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:31:32",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 7,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "y",
+"nextOffset": 32,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:32:33",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 8,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 33,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:33:34",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 9,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "h",
+"nextOffset": 34,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:34:35",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 10,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "o",
+"nextOffset": 35,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:35:36",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 11,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 36,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:36:37",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 12,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "3",
+"nextOffset": 37,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:37:38",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 13,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 38,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:38:39",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 14,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "g",
+"nextOffset": 39,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:39:40",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 15,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 40,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:40:41",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 16,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 41,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:41:42",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 17,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 42,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:42:43",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 18,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 43,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:43:44",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 19,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "a",
+"nextOffset": 44,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:44:45",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 20,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 45,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:45:46",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 21,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 46,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:46:47",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 22,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 47,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:47:48",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 23,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 48,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:48:49",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 24,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 49,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:49:50",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 25,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "c",
+"nextOffset": 50,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:50:51",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 26,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "k",
+"nextOffset": 51,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:51:52",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 27,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ".",
+"nextOffset": 52,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:52:53",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 28,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 53,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:53:54",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 29,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "y",
+"nextOffset": 54,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:54:55",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 30,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 55,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:55:56",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 31,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "&",
+"nextOffset": 56,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:56:57",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 32,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "&",
+"nextOffset": 57,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:57:58",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 33,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 58,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:58:59",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 34,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 59,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:59:60",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 35,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "y",
+"nextOffset": 60,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:60:61",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 36,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 61,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:61:62",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 37,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "h",
+"nextOffset": 62,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:62:63",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 38,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "o",
+"nextOffset": 63,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:63:64",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 39,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 64,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:64:65",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 40,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "3",
+"nextOffset": 65,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:65:66",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 41,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 66,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:66:67",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 42,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "-",
+"nextOffset": 67,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:67:68",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 43,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "c",
+"nextOffset": 68,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:68:69",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 44,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 69,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:69:70",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 45,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "\"",
+"nextOffset": 70,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:70:71",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 46,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "f",
+"nextOffset": 71,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:71:72",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 47,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 72,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:72:73",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 48,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "o",
+"nextOffset": 73,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:73:74",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 49,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "m",
+"nextOffset": 74,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:74:75",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 50,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 75,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:75:76",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 51,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 76,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:76:77",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 52,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 77,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:77:78",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 53,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 78,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:78:80",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 54,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "x ",
+"nextOffset": 80,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:80:81",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 55,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 81,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:81:82",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 56,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "m",
+"nextOffset": 82,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:82:84",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 57,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "po",
+"nextOffset": 84,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:84:85",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 58,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 85,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:85:86",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 59,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 86,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:86:87",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 60,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 87,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:87:88",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 61,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "P",
+"nextOffset": 88,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:88:89",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 62,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 89,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:89:90",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 63,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 90,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:90:91",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 64,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 91,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:91:92",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 65,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 92,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:92:93",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 66,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 93,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:93:94",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 67,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 94,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:94:95",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 68,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "a",
+"nextOffset": 95,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:95:96",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 69,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 96,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:96:97",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 70,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 97,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:97:98",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 71,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "o",
+"nextOffset": 98,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:98:99",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 72,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 99,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:99:100",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 73,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ";",
+"nextOffset": 100,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:100:101",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 74,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 101,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:101:102",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 75,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 102,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:102:103",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 76,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "=",
+"nextOffset": 103,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:103:104",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 77,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "P",
+"nextOffset": 104,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:104:105",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 78,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 105,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:105:106",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 79,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 106,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:106:107",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 80,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 107,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:107:110",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 81,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e \r",
+"nextOffset": 110,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:110:111",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 82,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 111,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:111:113",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 83,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "ta",
+"nextOffset": 113,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:113:114",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 84,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 114,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:114:115",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 85,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 115,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:115:116",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 86,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "o",
+"nextOffset": 116,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:116:117",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 87,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 117,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:117:118",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 88,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "(",
+"nextOffset": 118,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:118:119",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 89,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 119,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:119:120",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 90,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "2",
+"nextOffset": 120,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:120:121",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 91,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "0",
+"nextOffset": 121,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:121:122",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 92,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "2",
+"nextOffset": 122,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:122:123",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 93,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "6",
+"nextOffset": 123,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:123:124",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 94,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 124,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:124:125",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 95,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "Q",
+"nextOffset": 125,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:125:126",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 96,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "3",
+"nextOffset": 126,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:126:127",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 97,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 127,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:127:128",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 98,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "P",
+"nextOffset": 128,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:128:129",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 99,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 129,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:129:131",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 100,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "od",
+"nextOffset": 131,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:131:132",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 101,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "u",
+"nextOffset": 132,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:132:133",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 102,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "c",
+"nextOffset": 133,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:133:134",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 103,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 134,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:134:135",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 104,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 135,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:135:136",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 105,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "R",
+"nextOffset": 136,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:136:137",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 106,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 137,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:137:138",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 107,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "v",
+"nextOffset": 138,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:138:139",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 108,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 139,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:139:140",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 109,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 140,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:140:141",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 110,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "w",
+"nextOffset": 141,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:141:142",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 111,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ".",
+"nextOffset": 142,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:142:143",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 112,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 143,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:143:144",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 113,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 144,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:144:145",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 114,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 145,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:145:146",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 115,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "x",
+"nextOffset": 146,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:146:147",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 116,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 147,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:147:148",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 117,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ")",
+"nextOffset": 148,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:148:149",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 118,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ";",
+"nextOffset": 149,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:149:150",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 119,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 150,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:150:151",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 120,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 151,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:151:152",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 121,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 152,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:152:153",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 122,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 153,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:153:155",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 123,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "nt",
+"nextOffset": 155,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:155:156",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 124,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "(",
+"nextOffset": 156,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:156:157",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 125,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 157,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:157:158",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 126,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 158,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:158:159",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 127,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "l",
+"nextOffset": 159,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:159:160",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 128,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 160,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:160:161",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 129,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 161,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:161:162",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 130,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 162,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:162:163",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 131,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 163,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:163:164",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 132,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 164,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:164:165",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 133,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ",",
+"nextOffset": 165,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:165:166",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 134,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "l",
+"nextOffset": 166,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:166:167",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 135,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 167,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:167:168",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 136,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 168,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:168:169",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 137,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "(",
+"nextOffset": 169,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:169:170",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 138,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 170,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:170:171",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 139,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ".",
+"nextOffset": 171,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:171:172",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 140,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 172,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:172:173",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 141,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "l",
+"nextOffset": 173,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:173:174",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 142,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 174,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:174:175",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 143,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 175,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:175:176",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 144,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 176,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:176:177",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 145,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 177,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:177:178",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 146,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ")",
+"nextOffset": 178,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:178:179",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 147,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ")",
+"nextOffset": 179,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:179:180",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 148,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ";",
+"nextOffset": 180,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:180:181",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 149,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": " ",
+"nextOffset": 181,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:181:182",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 150,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 182,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:182:183",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 151,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "r",
+"nextOffset": 183,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:183:184",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 152,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 184,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:184:185",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 153,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "n",
+"nextOffset": 185,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:185:187",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 154,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t(",
+"nextOffset": 187,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:187:188",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 155,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 188,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:188:189",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 156,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 189,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:189:190",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 157,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 190,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:190:191",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 158,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "z",
+"nextOffset": 191,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:191:192",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 159,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 192,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:192:193",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 160,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "'",
+"nextOffset": 193,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:193:194",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 161,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ",",
+"nextOffset": 194,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:194:196",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 162,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p.",
+"nextOffset": 196,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:196:197",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 163,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 197,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:197:198",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 164,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "l",
+"nextOffset": 198,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:198:199",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 165,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 199,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:199:200",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 166,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 200,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:200:201",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 167,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 201,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:201:202",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 168,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 202,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:202:203",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 169,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "w",
+"nextOffset": 203,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:203:204",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 170,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 204,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:204:205",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 171,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 205,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:205:206",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 172,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 206,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:206:207",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 173,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "h",
+"nextOffset": 207,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:207:208",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 174,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ",",
+"nextOffset": 208,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:208:209",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 175,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "p",
+"nextOffset": 209,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:209:212",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 176,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ". \r",
+"nextOffset": 212,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:212:213",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 177,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "s",
+"nextOffset": 213,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:213:214",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 178,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "l",
+"nextOffset": 214,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:214:215",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 179,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 215,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:215:216",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 180,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "d",
+"nextOffset": 216,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:216:217",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 181,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 217,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:217:218",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 182,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "_",
+"nextOffset": 218,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:218:219",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 183,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "h",
+"nextOffset": 219,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:219:220",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 184,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "e",
+"nextOffset": 220,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:220:221",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 185,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "i",
+"nextOffset": 221,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:221:222",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 186,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "g",
+"nextOffset": 222,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:222:223",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 187,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "h",
+"nextOffset": 223,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:223:224",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 188,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "t",
+"nextOffset": 224,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:224:225",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 189,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": ")",
+"nextOffset": 225,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:225:226",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 190,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "\"",
+"nextOffset": 226,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "1321:console:226:499",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 191,
+"type": "runtime.console",
+"payload": {
+"processId": "1321",
+"data": "\r\n\u001b[?2004l\rTraceback (most recent call last):\r\n  File \u001b[35m\"/home/user/workspace/generate_deck.py\"\u001b[0m, line \u001b[35m1\u001b[0m, in \u001b[35m<module>\u001b[0m\r\n    from pptx import Presentation\r\n\u001b[1;35mModuleNotFoundError\u001b[0m: \u001b[35mNo module named 'pptx'\u001b[0m\r\n\u001b[?2004huser@e2b:~/workspace$ ",
+"nextOffset": 499,
+"truncated": false
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:5",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 192,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "running",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "stopping",
+"port": 5173,
+"previewUrl": null,
+"processId": "1321",
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:29.572861+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": "project_command_failed"
+},
+"cancelRequested": false,
+"stateVersion": 5,
+"updatedAt": "2026-09-25T11:18:29.573993+00:00"
+}
+},
+{
+"schemaVersion": 1,
+"eventId": "pop-f5db8f8b39264dba82092cadcdc16169:state:6",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"seq": 193,
+"type": "runtime.state",
+"payload": {
+"operationId": "pop-f5db8f8b39264dba82092cadcdc16169",
+"status": "failed",
+"runtime": {
+"runtimeId": "rt-pop-f5db8f8b39264dba82092cadcdc16169",
+"workspaceId": "ws-prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"projectId": "prj-1bde8fd81f095a4d9be54c5c8be9c8f3",
+"revision": "prv-e11742152fe040369d2cd58f5f60cd56",
+"status": "failed",
+"port": 5173,
+"previewUrl": null,
+"processId": null,
+"health": "unknown",
+"lastHeartbeat": "2026-09-25T11:18:29.582497+00:00",
+"expiresAt": 1790335984.4097044,
+"errorCode": "project_command_failed"
+},
+"cancelRequested": false,
+"stateVersion": 6,
+"updatedAt": "2026-09-25T11:18:29.586430+00:00"
+}
+}
+]

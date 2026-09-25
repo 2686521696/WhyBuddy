@@ -171,11 +171,18 @@ def _strip_preview_host(result: dict) -> dict:
     return result
 
 
+SHELL_ERROR_TEXT = {
+    "project_shell_multiline_not_supported": "一次只能跑一行命令（终端不收换行，heredoc 也不行）。多行脚本先用 file_write "
+        "写成文件（如 gen.py、run.sh），再执行一行命令运行它；或用 && 把几步连成一行。",
+}
+
+
 def tool_error(code: str) -> dict:
     """工具失败的回执：错误码，认得的再附一句人话。"""
     body = {"ok": False, "error": code[:240]}
-    if code in BROWSER_ERROR_TEXT:
-        body["hint"] = BROWSER_ERROR_TEXT[code]
+    hint = BROWSER_ERROR_TEXT.get(code) or SHELL_ERROR_TEXT.get(code)
+    if hint:
+        body["hint"] = hint
     return body
 
 
@@ -342,12 +349,39 @@ def _pointer_file(path, text, revision):
     }
 
 
-def _command_log_excerpt(store, operation_id, owner_id) -> str:
-    """操作日志末尾。bash 写出的文本不进源码树，file_read 找不到。"""
+_OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+
+def _terminal_text(raw: str) -> str:
+    """PTY 字节 → 人看到的屏幕文字：去控制码，回车覆盖只留最后一版。
+
+    终端在第 80 列折行时回显「空格 + \r」，那不是覆盖，是续行，拼回去。
+    """
+    text = _OSC.sub("", _ANSI_CSI.sub("", raw or "")).replace(" \r", "")
+    lines = []
+    for line in text.split("\n"):
+        parts = [part for part in line.split("\r") if part]
+        lines.append(parts[-1] if parts else "")
+    return "\n".join(lines)
+
+
+def _command_log_excerpt(store, operation_id, owner_id, last_seq=None) -> str:
+    """操作日志**末尾**，按屏幕文字。bash 写出的文本不进源码树，file_read 找不到。
+
+    ⚠ 2026-09-25 隔离真机 sr-20260925111249-E1Y12175TS：python3 generate_deck.py
+      缺 pptx 退出码 1，回执 excerpt 只有回显的那半行命令加控制码，报错一个字
+      没有；提示「完整输出在操作日志，用 project_logs 再取」，模型照做两次拿回
+      同一段——这里从 seq 0 读前 100 条，而 PTY 回显是一字节一个事件，前 100 条
+      全是回显。模型最后靠猜 pip install 才修好。现在从 lastSeq 往回读尾巴。
+    """
     op_id = str(operation_id or "").strip()
     if not op_id or store is None:
         return ""
-    events = store.list_events(op_id, owner_id=owner_id, after_seq=0, limit=100)
+    try:
+        after = max(0, int(last_seq) - 1000) if last_seq is not None else 0
+    except (TypeError, ValueError):
+        after = 0
+    events = store.list_events(op_id, owner_id=owner_id, after_seq=after, limit=1000)
     parts: list[str] = []
     for event in events:
         payload = event.payload if getattr(event, "payload", None) else {}
@@ -357,7 +391,7 @@ def _command_log_excerpt(store, operation_id, owner_id) -> str:
             parts.append(str(payload.get("text") or ""))
         elif event.type == "runtime.console":
             parts.append(str(payload.get("data") or payload.get("text") or ""))
-    text = "".join(parts)
+    text = _terminal_text("".join(parts)).strip("\n")
     if len(text) > FILE_READ_EXCERPT_CHARS:
         return text[-FILE_READ_EXCERPT_CHARS:]
     return text
@@ -513,7 +547,7 @@ def command_receipt_from(adapter, operation_id):
     owner = getattr(adapter, "owner_id", None)
     return _command_pointer(
         snap,
-        _command_log_excerpt(store, operation_id, owner),
+        _command_log_excerpt(store, operation_id, owner, snap.get("lastSeq")),
     )
 
 

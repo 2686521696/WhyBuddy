@@ -410,8 +410,13 @@ def sandbox_shell_script(command: str) -> str:
     text = command.strip()
     if not text or len(text) > 2000:
         raise ValueError("project_shell_command_not_allowed")
-    if any(char in text for char in ("\n", "\r", "\x00")):
+    if "\x00" in text:
         raise ValueError("project_shell_command_not_allowed")
+    if "\n" in text or "\r" in text:
+        # ⚠ 2026-09-25 E1Y12175TS：heredoc 多行命令被拒，回执只有
+        #   project_shell_command_not_allowed，跟空命令、超长、非受管命令同一个码，
+        #   模型只能猜。单独一个码，回执才能说清怎么改（见 BROWSER/SHELL 提示表）。
+        raise ValueError("project_shell_multiline_not_supported")
     if _SHELL_SUDO.search(text.lower()) or text.lower().startswith("sudo"):
         raise ValueError("project_sudo_forbidden")
     return text
