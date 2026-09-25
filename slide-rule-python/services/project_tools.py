@@ -143,7 +143,10 @@ def queue_blocker(adapter, operation_id) -> dict | None:
     """
     try:
         operation = adapter.store.get_operation(operation_id, owner_id=adapter.owner_id)
-        if operation.status != "queued":
+        # ⚠ 2026-09-25 K1N7JX1FPS：project_verify 被挂上「排在开发服务器后面，
+        #   先停掉它」。验收（和 live patch）是那台运行时的子操作，由它自己的
+        #   工人执行，从不排租约——停掉它反而把验收一起停了。
+        if operation.status != "queued" or operation.input.get("runtimeOperationId"):
             return None
         lease = adapter.store.get_lease(operation.projectId, owner_id=adapter.owner_id)
         holder_id = lease.processRefs.get("operationId") if lease else None
@@ -156,7 +159,8 @@ def queue_blocker(adapter, operation_id) -> dict | None:
         return None
     return {"operationId": holder.operationId, "kind": holder.kind, "status": holder.status,
         # 开发服务器 running 就是常驻：等它结束等于等到租约过期。
-        "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL}
+        "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL,
+        "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start"}
 
 
 def explain_queue(adapter, body):
@@ -167,7 +171,12 @@ def explain_queue(adapter, body):
     if blocker is None:
         return body
     hid = blocker["operationId"]
-    if blocker["neverYields"]:
+    if blocker["duplicateStart"]:
+        # ⚠ 2026-09-25 K1N7JX1FPS：这里原来也劝「先停掉挡路的」。模型照做，
+        #   停掉在跑的那台，排队的旧启动顶上来，它再发一个——6 起 4 停。
+        hint = (f"已经有开发服务器 {hid} 在跑，这条启动是多余的。预览、浏览器、验收都直接用 {hid}，"
+                f"不要停它；这条排队的用 shell_kill_process 带 {body['operationId']} 取消掉。")
+    elif blocker["neverYields"]:
         hint = (f"这条排在 {hid}（runtime.start，开发服务器，正在运行）后面。开发服务器不会自己结束，"
                 f"它不停，这条就不会开始，再查状态也还是 queued。要跑这条，先用 shell_kill_process 停掉 {hid}；"
                 "不要再提交新的启动，它也会排在同一个位置。")
@@ -617,7 +626,7 @@ class ProjectTools:
                 params = dict(owner_id=self.owner_id, expected_revision=parsed.expectedRevision,
                     approval_ref=parsed.approvalRef, idempotency_key=parsed.idempotencyKey)
                 if name == "project_start":
-                    operation = self.supervisor.submit(project.projectId, **params, port=parsed.port)
+                    return {"ok": True, **self._runtime_for_view(project, params, parsed.port)}
                 else:
                     operation = self.supervisor.submit_command(project.projectId, **params, command=parsed.command)
                 return {"ok": True, **self._snapshot(operation.operationId)}
@@ -766,11 +775,64 @@ class ProjectTools:
         return operation
 
     def _latest_operation(self, project, kinds=None):
-        operations = self.store.list_project_operations(
-            project.projectId, owner_id=self.owner_id, limit=100)
-        if kinds:
-            operations = [item for item in operations if item.kind in kinds]
-        return operations[-1] if operations else None
+        """按创建时间最近的一条。
+
+        ⚠ 2026-09-25：原来取 `list_project_operations(limit=100)[-1]`——那是按
+          operationId 排序，而 id 是随机 uuid，「最后一个」是随机一个，而且
+          超过 100 条就只在前 100 条里挑。shell_kill_process 不带 id 时停的、
+          browser_restart 停的、browser_view 回报的，都可能是随便哪条。
+        """
+        operations, after = [], ""
+        while True:
+            page = self.store.list_project_operations(project.projectId, owner_id=self.owner_id,
+                after_id=after, limit=100)
+            operations += [item for item in page if not kinds or item.kind in kinds]
+            if len(page) < 100:
+                break
+            after = page[-1].operationId
+        return max(operations, key=lambda item: item.createdAt) if operations else None
+
+    def _active_runtime(self, project):
+        """这个工程当前那台开发服务器（在跑或已在排队）；没有返回 None。
+
+        ⚠ 2026-09-25 隔离真机 sr-20260925043119-K1N7JX1FPS（记账网页）：
+          browser_navigate / deploy_expose_port / project_start 每次都新提交
+          一个 runtime.start，排在正在跑的那台后面。模型照回执停掉挡路的，
+          排队的旧启动顶上来，它再发一个——一轮里起了 6 次、停了 4 次，
+          收工时还有 3 个启动烂在队列里。一个工程同一时刻只该有一台。
+        ⚠ 不用 _latest_operation 挑：operationId 是随机 uuid，按 id 排的
+          「最后一个」是随机一个。先认租约持有者（工人就按它放行），
+          再认最早的 running，再认最早排队的。
+        """
+        lease = self.store.get_lease(project.projectId, owner_id=self.owner_id)
+        holder = lease.processRefs.get("operationId") if lease else None
+        active, after = [], ""
+        while True:
+            page = self.store.list_project_operations(project.projectId, owner_id=self.owner_id,
+                after_id=after, limit=100)
+            active += [op for op in page if op.kind == "runtime.start"
+                       and op.status not in _TERMINAL and not op.cancelRequested]
+            if len(page) < 100:
+                break
+            after = page[-1].operationId
+        for op in active:
+            if op.operationId == holder:
+                return op
+        running = [op for op in active if op.status == "running"]
+        return min(running or active, key=lambda op: op.createdAt) if active else None
+
+    def _runtime_for_view(self, project, params, port):
+        """看页面 / 开端口 / 启动：有现成的开发服务器就用它，没有才起一台。
+
+        同一把幂等键交过的，照旧走幂等：重放拿回原样回执，换参数报冲突。
+        """
+        key = params["idempotency_key"]
+        if self.store.operation_by_key(project.projectId, key, owner_id=self.owner_id) is None:
+            active = self._active_runtime(project)
+            if active is not None:
+                return self._snapshot(active.operationId) | {"runtimeReused": True}
+        operation = self.supervisor.submit(project.projectId, **params, port=port)
+        return self._snapshot(operation.operationId)
 
     def _operation_by_id(self, project, session_id, operation_id, kinds=None):
         if operation_id:
@@ -818,8 +880,7 @@ class ProjectTools:
             return command_receipt_from(self, operation.operationId)
         if name in {"deploy_expose_port", "deploy_apply_deployment"}:
             port = getattr(parsed, "port", None) or 5173
-            operation = self.supervisor.submit(project.projectId, **params, port=port)
-            result = self._snapshot(operation.operationId)
+            result = self._runtime_for_view(project, params, port)
             if name == "deploy_apply_deployment":
                 result["deployed"] = False
                 result["public"] = False
@@ -828,12 +889,11 @@ class ProjectTools:
         if name == "browser_navigate":
             if not leaked_browser_url_allowed(parsed.url):
                 raise ValueError("project_browser_external_url_forbidden")
-            operation = self.supervisor.submit(project.projectId, **params, port=5173)
-            return {**self._snapshot(operation.operationId), "url": parsed.url, "previewPrivate": True}
-        # browser_restart: cancel latest runtime, then start again.
-        latest = self._latest_operation(project, kinds=("runtime.start", "runtime.exec", "runtime.verify"))
-        if latest is not None:
-            self.supervisor.cancel(latest.operationId, owner_id=self.owner_id)
+            return {**self._runtime_for_view(project, params, 5173), "url": parsed.url, "previewPrivate": True}
+        # browser_restart：停掉当前那台，再起一台。明确要求重启才走这里。
+        active = self._active_runtime(project)
+        if active is not None:
+            self.supervisor.cancel(active.operationId, owner_id=self.owner_id)
         operation = self.supervisor.submit(project.projectId, **params, port=5173)
         return self._snapshot(operation.operationId)
 
@@ -888,7 +948,8 @@ class ProjectTools:
             return result
         if name == "browser_view":
             result = self._project_result(project)
-            latest = self._latest_operation(project)
+            # 看的是那台开发服务器，不是随便哪条操作（见 _active_runtime）。
+            latest = self._active_runtime(project) or self._latest_operation(project)
             if latest is not None:
                 result.update(self._snapshot(latest.operationId))
             page = self._preview_page(project)

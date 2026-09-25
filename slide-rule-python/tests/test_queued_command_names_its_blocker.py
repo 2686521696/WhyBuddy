@@ -39,7 +39,7 @@ def _hold_runtime(setup, project, kind="runtime.start", status="running"):
         runtimeId="rt-live", workspaceId=lease.workspaceId, projectId=project["projectId"],
         revision=project["revision"], status="ready" if kind == "runtime.start" else "executing",
         port=5173, health="revision_verified" if kind == "runtime.start" else "unknown",
-        lastHeartbeat="now")
+        processId="42", expiresAt=time.time() + 900, lastHeartbeat="now")
     setup.store.update_runtime_operation(
         operation.operationId, owner_id="alice", lease_generation=lease.generation,
         lease_owner=lease.leaseOwner, expected_status="queued", status=status,
@@ -48,7 +48,7 @@ def _hold_runtime(setup, project, kind="runtime.start", status="running"):
         lease_generation=lease.generation, lease_owner=lease.leaseOwner)
     setup.store.renew_lease(project["projectId"], owner_id="alice",
         lease_owner=lease.leaseOwner, generation=lease.generation, ttl_seconds=600,
-        process_refs={"operationId": operation.operationId})
+        sandbox_id="sb-live", mounted_revision=project["revision"], process_refs={"operationId": operation.operationId, "server": "42"})
     return operation.operationId
 
 
@@ -114,3 +114,32 @@ def test_nothing_in_the_way_means_no_blocker_sentence(setup, monkeypatch):
         "idempotencyKey": "k1", "command": "build"})
     assert result["status"] == "queued", result
     assert "blockedBy" not in result and "queueHint" not in result
+
+
+def test_a_verification_on_the_running_server_is_never_told_to_kill_it(setup, monkeypatch):
+    """⚠ 2026-09-25 K1N7JX1FPS：project_verify 被挂上「先停掉开发服务器」。
+    验收是那台运行时的子操作，从不排租约。走真的 project_verify 分发。"""
+    monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
+    project = create(setup)
+    holder = _hold_runtime(setup, project)
+    result = _dispatch(setup, "project_verify", {"runtimeOperationId": holder,
+        "expectedRevision": project["revision"], "approvalRef": setup.approval, "idempotencyKey": "verify-1"})
+    assert result["ok"] is True and result["status"] == "queued", result
+    assert result["kind"] == "runtime.verify"
+    assert "blockedBy" not in result and "queueHint" not in result
+
+
+def test_a_second_start_is_told_to_use_the_running_one_not_to_kill_it(setup, monkeypatch):
+    """⚠ 2026-09-25 K1N7JX1FPS：启动排在启动后面，原来也劝「先停掉挡路的」，
+    模型照做 → 6 起 4 停。排队的这条是遗留下来的（正常路径已不会再叠）。"""
+    monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
+    project = create(setup)
+    holder = _hold_runtime(setup, project)
+    extra = setup.store.create_operation(project["projectId"], owner_id="alice", kind="runtime.start",
+        idempotency_key="leftover", expected_revision=project["revision"], approval_ref=setup.approval,
+        input={"port": 5173}).operationId
+    result = _dispatch(setup, "project_status", {"operationId": extra})
+    hint = result["queueHint"]
+    assert result["blockedBy"]["operationId"] == holder
+    assert "不要停它" in hint and extra in hint
+    assert f"停掉 {holder}" not in hint
