@@ -461,7 +461,9 @@ def test_live_path_gates_are_in_source_after_stripping_comments():
 def test_project_create_tool_description_does_not_advertise_tasks_as_the_real_app():
     from services.project_tool_contracts import _DESCRIPTIONS
     desc = _DESCRIPTIONS["project_create"]
-    assert "only for a task-management web app" in desc
+    # 盯语义：任务模板只给「恰好是任务管理应用」的计划，别的都用默认 react-vite。
+    assert "only when the approved plan is exactly that task-management app" in desc
+    assert "react-vite is the default" in desc
     assert "Office files" in desc
     assert "do not pick react-vite-tasks" in desc
 
