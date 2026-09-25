@@ -236,3 +236,7 @@ data/gate-health.jsonl
 #     它照样看不见（callers 只返回测试文件）——§30 那条"零入度≠没人用"
 #     的坑它填不上，照它清理一样会删掉产线代码。
 .codegraph/
+
+# pytest-testmon 的执行轨迹库（scripts/test-affected.mjs 用），每台机器各建各的
+.testmondata
+.testmondata-*
