@@ -55,11 +55,34 @@ describe("spec-first 人话（Actions name vs id）", () => {
       ),
       "utf8"
     );
-    const block = py.slice(
-      py.indexOf("_SPEC_FIRST_LABELS"),
-      py.indexOf("_SKILL_LABELS")
+    // ⚠ 2026-09-25：上一版在 turn_narration.py 里 grep 字面键。08-30 那张表
+    //   改成从阶段账本派生（stage_legal.labels() 按 specfirst. 过滤），源码里
+    //   一个字面键都没了，keys=0，判据在 main 上一直红。现在分两段钉：
+    //   ① Python 叙述表确实取自账本；② 账本里每个 specfirst.* 这边都有人话。
+    const code = py
+      .replace(/^\s*#.*$/gm, "")
+      .replace(/"""[\s\S]*?"""/g, "");
+    const block = code.slice(
+      code.indexOf("_SPEC_FIRST_LABELS"),
+      code.indexOf("_SKILL_LABELS")
     );
-    const keys = [...block.matchAll(/"(specfirst\.[a-z]+)"/g)].map(m => m[1]);
+    expect(block, "叙述表不再取自阶段账本——下面读账本就钉不住它了").toMatch(
+      /_stage_labels\(\)[\s\S]*startswith\("specfirst\."\)/
+    );
+    const ledger = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../../../slide-rule-python/services/data/pipeline_stages.json",
+            import.meta.url
+          )
+        ),
+        "utf8"
+      )
+    );
+    const keys = Object.keys(ledger.stages ?? {}).filter(k =>
+      k.startsWith("specfirst.")
+    );
     expect(keys.length).toBeGreaterThan(5);
     for (const key of keys) {
       expect(SPEC_FIRST_LIVE_LABELS[key], `缺 ${key}`).toBeTruthy();
