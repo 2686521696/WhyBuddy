@@ -14,6 +14,7 @@ import re
 import shlex
 import time
 import uuid
+from urllib.parse import urlsplit
 from types import SimpleNamespace
 
 from pydantic import ValidationError
@@ -140,6 +141,34 @@ BROWSER_ERROR_TEXT = {
     "project_browser_preview_forbidden": "预览网关拒绝了这台主机的访问（401/403），访问票不被认。这是环境问题，不是应用自己的登录；"
         "改代码解决不了。",
 }
+
+
+PREVIEW_NOTE = "用户在界面右侧的预览面板里看这一页。给用户的回复里不要写预览地址或主机名，说「在右侧预览里看」。"
+
+
+def model_page_path(url) -> str | None:
+    """给模型的页面地址只留路径，不留主机。
+
+    ⚠ 2026-09-25 隔离真机 sr-20260925075204-ZNC56623QH：browser_view 把
+      runtime.previewUrl（internal 模式下工人记下的 E2B 公开主机
+      `5173-*.e2b.app`，中继拨不通时的后备）原样交给模型，模型写成「私有预览服务
+      已启动：[打开记账网页](https://5173-….e2b.app/)」给了用户——绕开了服务器
+      配置的预览网关（WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE）。线上 allowlist
+      模式下同一个链接是缺访问令牌的死链。查询串也不留（网关票据走 query）。
+    """
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        path = urlsplit(url.strip()).path or "/"
+    except ValueError:
+        return None
+    return path if path.startswith("/") else "/" + path
+
+
+def _strip_preview_host(result: dict) -> dict:
+    if "url" in result:
+        result["url"] = model_page_path(result.get("url"))
+    return result
 
 
 def tool_error(code: str) -> dict:
@@ -903,7 +932,8 @@ class ProjectTools:
         if name == "browser_navigate":
             if not leaked_browser_url_allowed(parsed.url):
                 raise ValueError("project_browser_external_url_forbidden")
-            return {**self._runtime_for_view(project, params, 5173), "url": parsed.url, "previewPrivate": True}
+            return {**self._runtime_for_view(project, params, 5173), "url": model_page_path(parsed.url),
+                    "previewPrivate": True, "previewNote": PREVIEW_NOTE}
         # browser_restart：停掉当前那台，再起一台。明确要求重启才走这里。
         active = self._active_runtime(project)
         if active is not None:
@@ -970,6 +1000,7 @@ class ProjectTools:
             result["interactive"] = page is not None
             if page is not None:
                 result["url"] = page["url"]
+                result["previewNote"] = PREVIEW_NOTE
                 interactor = getattr(self.supervisor, "browser_interactor", None)
                 # 观察类，fail-open（§7）：拿不到页面快照也把开发服务器状态交回去，
                 # 附上为什么拿不到。原来整条 browser_view 报错，runtime 状态一起丢了。
@@ -988,7 +1019,7 @@ class ProjectTools:
                     result["browserError"] = code
                     if code in BROWSER_ERROR_TEXT:
                         result["hint"] = BROWSER_ERROR_TEXT[code]
-            return result
+            return _strip_preview_host(result)
         operation = self._operation_by_id(project, session_id, parsed.id)
         if name == "shell_kill_process":
             if self.supervisor is None:
@@ -1037,9 +1068,9 @@ class ProjectTools:
             observed = interactor(action, page)
             if not isinstance(observed, dict):
                 raise ValueError("project_browser_action_failed")
-            return {"interactive": True, **observed}
+            return _strip_preview_host({"interactive": True, **observed})
         if local_playwright_available():
-            return run_browser_action(page["url"], action)
+            return _strip_preview_host(run_browser_action(page["url"], action))
         raise ValueError("project_browser_driver_unavailable")
 
     def _shell_stdin(self, project, parsed):

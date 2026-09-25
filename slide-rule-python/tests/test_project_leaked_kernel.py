@@ -100,9 +100,11 @@ def test_stdin_clicks_and_private_deploy_use_real_kernels(setup):
         "op": action["op"], "url": page["url"], "index": action.get("index"),
     }
     clicked = execute(setup, "browser_click", {"index": 0})
+    # ⚠ 2026-09-25 ZNC56623QH：模型只拿路径，预览主机不进回执
+    #   （见 test_preview_host_never_reaches_the_model）。
     assert clicked == {
         "ok": True, "interactive": True, "op": "click",
-        "url": "https://rt-1.preview.example.com/", "index": 0,
+        "url": "/", "index": 0,
     }
     setup.supervisor.preview_page = lambda project: {"url": "https://evil.example/", "revision": "rev"}
     assert execute(setup, "browser_click", {"index": 0}) == {

@@ -64,7 +64,7 @@ def test_browser_view_keeps_the_runtime_view_and_explains_the_browser(setup):
     assert viewed["interactive"] is False
     assert viewed["browserError"] == "project_browser_driver_unavailable"
     assert "不是应用代码" in viewed["hint"] and "别反复调 browser_*" in viewed["hint"]
-    assert viewed["url"] == "https://rt.preview.example.com/"
+    assert viewed["url"] == "/"  # 只给路径，见 test_preview_host_never_reaches_the_model
 
 
 def test_a_browser_action_error_carries_the_same_explanation(setup):
