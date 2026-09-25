@@ -355,7 +355,9 @@ describe("工程档对话：先开口再列动作，不把六步钟叠上去", (
         runtimeKind="project"
       />
     );
-    expect(html).toContain('data-testid="sliderule-model-speech"');
+    // ⚠ 2026-09-25：完成轮最后那句开口改画在折页外（splitClosingSpeech），
+    //   挂的是 session-story-closing。要钉的是「画出来、只一次」，不是哪个 testid。
+    expect(html).toMatch(/data-testid="(sliderule-model-speech|session-story-closing)"/);
     expect(visible(html).split(live).length - 1).toBe(1);
     expect(html).toContain('data-answer-present="false"');
 

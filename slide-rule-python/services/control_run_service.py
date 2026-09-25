@@ -33,7 +33,7 @@ from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
 from sliderule_llm.gateway_circuit import reject_reason
 from services.project_rollout import rollout_readiness
-from services.scope_authority import latest_control_plan
+from services.scope_authority import latest_control_plan, plan_execution_authorized
 
 log = logging.getLogger(__name__)
 
@@ -332,6 +332,16 @@ class ControlRunService:
         # 六字段 POST 没有业务目标 / runtimeKind。不盖进去，durable goal
         # 就会把「批准计划并执行」当成目标，kind 永远停在 conversation。
         stamped = stamp_control_goal_payload(payload, state)
+        # ⚠ 2026-09-25 luna 隔离真机 sr-20260925011309-62DQZAH83G：批准那一发
+        #   工程还没建，会话 runtimeKind 是 html-prototype，目标落成 conversation；
+        #   只有这一回合里真调了 project_create 才会升级。模型那回走了工厂、
+        #   没建工程——四跳零产出，run 却记成 completed：对话目标不问交付证据，
+        #   不续跑、没有结果卡。执行已批准的 write_plan 计划就是工程目标，由
+        #   服务端按批准状态定，不看前端传的 runtimeKind。只动目标类型，不改
+        #   payload 里的 runtimeKind（那个字段还有别的读者）。
+        stamped.pop("objectiveKind", None)  # 只认服务端这一处，不收前端带来的
+        if plan_execution_authorized(state) and latest_control_plan(state):
+            stamped["objectiveKind"] = "project"
         # ⚠ 2026-09-22 RFZYDAVHG9 的修法是让 submit 自己 claim（插入时就写租约），
         #   再直接 `create_task(self._produce(record))`。2026-09-23 revert：
         #     · 接单进程一崩，这一发冻满一个租约周期没人能接（崩溃恢复判据红）；

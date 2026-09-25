@@ -147,7 +147,8 @@ def payload_objective_text(payload: dict[str, Any]) -> str:
 
 
 def payload_objective_kind(payload: dict[str, Any]) -> str:
-    if payload.get("runtimeKind") == "project":
+    # objectiveKind 只由服务端 submit 盖（执行已批准计划 = 工程目标）。
+    if payload.get("objectiveKind") == "project" or payload.get("runtimeKind") == "project":
         return "project"
     return "conversation"
 

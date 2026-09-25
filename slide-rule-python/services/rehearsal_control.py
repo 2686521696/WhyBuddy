@@ -431,10 +431,26 @@ _ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
 _PROJECT_TOOLS: ContextVar[Any] = ContextVar("sliderule_project_tools", default=None)
 
 
+def _plan_runs_in_sandbox(state) -> bool:
+    """这份计划在沙盒里执行：本轮有工程能力，且会话里有 write_plan 写出的计划。
+
+    ⚠ 2026-09-25 luna 隔离真机 sr-20260925011309-62DQZAH83G：PPT 计划批准后、
+      project_create 之前，runtimeKind 还是 html-prototype，上一版只在
+      runtimeKind=project 时才挡工厂。清单里 workflow / rehearse / spec 跟
+      project_create 并排，模型挑了 workflow(structure-bind)，工厂回执又说
+      「pages 是唯一能把页面画出来的工具」——四跳 SPEC 0、页面 0，一条沙盒
+      命令都没跑。上一轮同一话题挑的是 project_create，7 分钟交付。
+      同一件事靠模型运气二选一，就是闭环里还挂着第二条路。
+    没有工程能力的 HTML 推演模式、没有 write_plan 计划的老会话不受影响。
+    """
+    return _PROJECT_TOOLS.get() is not None and bool(latest_control_plan(state))
+
+
 def _project_tool_error(name, state):
-    if getattr(state, "runtimeKind", None) == "project":
+    if getattr(state, "runtimeKind", None) == "project" or _plan_runs_in_sandbox(state):
         if resolve_tool_scope(name) == ToolScope.WRITE:
             return "project_html_factory_not_supported"
+    if getattr(state, "runtimeKind", None) == "project":
         if name == "report_done":
             return "project_verification_not_available"
     if name in PROJECT_TOOL_NAMES:

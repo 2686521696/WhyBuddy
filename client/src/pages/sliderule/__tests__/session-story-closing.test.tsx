@@ -150,11 +150,33 @@ describe("收尾总结不进折叠", () => {
     expect(splitClosingSpeech(blocks, true).closing).toBeNull();
   });
 
-  it("反向：纯对话没有工具组，没有要折的过程，也不拆", () => {
+  /**
+   * ⚠ 2026-09-25 第二轮真机：前面没有工程工具组（工厂工具不成组），模型如实说
+   *   「当前无法交付 PPTX……」，上一版不拆，整段折进「工作了 3m 42s」。
+   *   上一版这里的反向判据「纯对话不拆」写反了——把它改回去，本条变红。
+   */
+  it("前面没有工具组时，结束那句照样露在外面", async () => {
+    const honest =
+      "当前无法交付 PPTX：办公文件生成链连续执行后仍未产出 SPEC、页面或文件，页面数量为 0，因此不能声称文件已生成或完成核验。";
+    const el = await mount(
+      <SessionStory
+        turn={turnOf({
+          durationMs: 222_000,
+          steps: [
+            { id: "s1", kind: "model_speech", text: "我会按已批准的 10 页结构制作 PPT。" },
+            { id: "s2", kind: "model_speech", text: honest },
+          ],
+        })}
+        streaming={false}
+      />
+    );
+    expect(visibleText(el)).toContain("当前无法交付 PPTX");
     const blocks = deriveSessionStory(
       turnOf({ steps: [{ id: "s", kind: "model_speech", text: "你好，我能做 PPT 和网页。" }] })
     );
-    expect(splitClosingSpeech(blocks, false).closing).toBeNull();
+    const { process, closing } = splitClosingSpeech(blocks, false);
+    expect(closing?.text).toBe("你好，我能做 PPT 和网页。");
+    expect(process).toHaveLength(0);
   });
 
   it("反向：最后一块是工具组时没有收尾可拆", () => {

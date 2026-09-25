@@ -194,6 +194,18 @@ def env(tmp_path, monkeypatch):
     blobs._engine.dispose()
 
 
+def goal_already_done(monkeypatch):
+    """这条不测续跑。
+
+    ⚠ 2026-09-25：执行已批准计划的回合改由服务端定成工程目标（没交付就续跑）。
+      env 夹具正是「已批准、工程还没建」的会话，这几条测幂等 / 终态 / 断开订阅，
+      不是测续跑——把「目标已达成」钉成真，原来的断言一条不动。
+    """
+    async def done(self, record):
+        return True
+    monkeypatch.setattr(ControlRunService, "_goal_is_done", done)
+
+
 async def settled(service, run_id):
     for _ in range(1000):
         record = await asyncio.to_thread(service.store.get, run_id, TEST_USER_ID)
@@ -241,6 +253,7 @@ def test_submit_during_circuit_does_not_enqueue(env):
 
 
 def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
+    goal_already_done(monkeypatch)
     model_calls = []
     async def model(messages, **kwargs):
         model_calls.append(messages)
@@ -430,6 +443,9 @@ def test_legacy_finished_provider_failure_is_truthful_on_read_without_rewriting(
     ({"type": "control_text", "stopReason": "tool_rounds", "text": "Reached the budget"}, "waiting_user", None),
 ])
 def test_only_terminal_control_errors_change_the_durable_outcome(env, monkeypatch, event, status, error):
+    if status == "completed":
+        # 只有「工具失败但回合正常收尾」这一支会被续跑；硬闸那支本来就不续跑。
+        goal_already_done(monkeypatch)
     async def producer(*args, **kwargs):
         yield event
         yield {"type": "complete", "state": env.state.model_dump(mode="json")}
@@ -511,6 +527,7 @@ def test_rollout_rollback_keeps_existing_control_run_observable_without_worker(e
 
 
 def test_closing_subscription_does_not_stop_or_duplicate_the_model(env, monkeypatch):
+    goal_already_done(monkeypatch)
     async def run():
         started, release = asyncio.Event(), asyncio.Event()
         calls = []
@@ -545,6 +562,9 @@ def test_closing_subscription_does_not_stop_or_duplicate_the_model(env, monkeypa
 @pytest.mark.parametrize("hard_stop", [False, True], ids=["cooperative", "unconfirmed"])
 def test_stop_during_factory_wait_cancels_child_before_releasing_session(env, monkeypatch, hard_stop):
     from services import run_registry, run_cancel
+    # 工厂只在没有沙盒路的部署里还在（test_approved_plan_has_one_path）。
+    # 这条测的是那种部署里「工厂等待中途停止」，把沙盒路钉成不存在。
+    monkeypatch.setattr(control, "_plan_runs_in_sandbox", lambda state: False)
     monkeypatch.setattr(control, "resolve_archetype", lambda state: None)
     monkeypatch.setattr(run_registry, "_cancel_hard_grace_seconds", lambda: 0.05 if hard_stop else 5)
 
@@ -1332,5 +1352,38 @@ def test_owned_model_sample_retries_unavailable_then_keeps_going():
                 await owned_model_sample(model())
         finally:
             current_checkpoint.reset(token)
+
+    asyncio.run(run())
+
+
+def test_executing_an_approved_plan_is_a_project_goal(env):
+    """执行已批准计划的回合是工程目标——没交付就不算做完。
+
+    ⚠ 2026-09-25 luna 隔离真机 sr-20260925011309-62DQZAH83G：批准那一发工程还没建，
+      会话 runtimeKind=html-prototype，目标落成 conversation。模型走了工厂、没建工程，
+      四跳零产出，run 却记成 completed——对话目标不问交付证据。
+    判据走真的 service.submit，看落库的 goal.kind。
+    把 submit 里盖 objectiveKind 那两行删掉，第一段变红；
+    把 stamped.pop("objectiveKind") 删掉，最后一段变红。
+    """
+    from control_turn_support import seed_session
+
+    assert env.state.runtimeKind != "project"  # 真机那一刻：工程还没建
+
+    async def run():
+        service = env.service()
+        approved = await service.submit(
+            six_fields(env.state.sessionId, "批准计划并执行"), env.owner, "approved-kind")
+        assert approved["goal"]["kind"] == "project"
+
+        fresh = seed_session(new_sid("not-approved"), goal={"text": "做一份 PPT"})
+        plain = await service.submit(six_fields(fresh.sessionId, "你好"), env.owner, "plain-kind")
+        assert plain["goal"]["kind"] == "conversation"
+
+        # 前端自己带 objectiveKind 不算数：只认服务端按批准状态盖的那一处。
+        other = seed_session(new_sid("forged"), goal={"text": "做一份 PPT"})
+        forged = {**six_fields(other.sessionId, "你好"), "objectiveKind": "project"}
+        spoofed = await service.submit(forged, env.owner, "forged-kind")
+        assert spoofed["goal"]["kind"] == "conversation"
 
     asyncio.run(run())

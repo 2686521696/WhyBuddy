@@ -371,20 +371,22 @@ export function deriveSessionStory(
  *   页面全文里搜不到它——用户只看见结果卡，不知道核对了什么、文件在哪。
  *   Manus 的完成态是「过程折起 → 『已完成』那句 → 结果卡」，总结在外面。
  *
- * 只在**流停了**、最后一块是开口、前面**确实有过工具组**时才拆：
- *   · 还在流 → 最后一句可能只是「接着改筛选」，不是收尾
- *   · 没有工具组 → 纯对话，本来就没有要折的过程
+ * 只在**流停了**、最后一块是开口时才拆——还在流时最后一句可能只是
+ * 「接着改筛选」，不是收尾。
+ *
+ * ⚠ 2026-09-25 第二轮 luna 真机 sr-20260925011309-62DQZAH83G：上一版还要求
+ *   「前面确实有过工具组」，理由是纯对话没有要折的过程。可工厂工具
+ *   （workflow / rehearse / spec）不成工具组，模型那句如实的「当前无法交付
+ *   PPTX……阻塞点在……」照样被折进「工作了 3m 42s」，用户什么都没看见。
+ *   纯对话也一样：唯一那句回答被折起来，才是真的把东西弄丢了。
+ *   一轮结束时的最后一句话，不管前面是什么，都得露出来。
  */
 export function splitClosingSpeech(
   blocks: readonly SessionStoryBlock[],
   streaming: boolean
 ): { process: SessionStoryBlock[]; closing: SessionStorySpeech | null } {
   const last = blocks[blocks.length - 1];
-  if (
-    streaming ||
-    last?.kind !== "speech" ||
-    !blocks.some(block => block.kind === "tools")
-  ) {
+  if (streaming || last?.kind !== "speech") {
     return { process: [...blocks], closing: null };
   }
   return { process: blocks.slice(0, -1), closing: last };
