@@ -87,8 +87,11 @@ describe("isBlankSessionMeta（新建会话该复用谁）", () => {
       .replace(/^[ \t]*\/\/.*$/gm, "");
     const from = src.indexOf('data-testid="sidebar-session-new"');
     expect(from, "找不到新建会话按钮").toBeGreaterThan(-1);
-    const to = src.indexOf("新建会话", from);
-    expect(to, "找不到按钮文案收尾").toBeGreaterThan(from);
+    // ⚠ 2026-09-25：上一版以按钮文案「新建会话」收尾。0db6b06c 在 testid
+    //   后面加了 title="新建会话"，范围只剩 49 个字，onClick 整段落在外面，
+    //   判据在 main 上红了——代码一个字没错。收尾改认这颗按钮的 </button>。
+    const to = src.indexOf("</button>", from);
+    expect(to, "找不到按钮收尾").toBeGreaterThan(from);
     const handler = src.slice(from, to);
     expect(handler).toContain("decideNewSessionAction");
     expect(handler).toContain("createSessionId");

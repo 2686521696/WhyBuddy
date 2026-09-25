@@ -5,7 +5,7 @@
 SSE 生成器里调。单人开发看不出来——**两个人同时推演就互相卡**：对方的流
 一个字都不出，看起来像"服务挂了"。
 
-判据是**真并发**：两条控制面流一起发，墙钟必须接近一条的时间，不是两条相加。
+判据是**真并发**：两条控制面流一起发，两次阻塞调用的区间必须重叠。
 不数调用次数、不 grep 源码里有没有 run_in_threadpool——那两种写法把
 `run_in_threadpool` 写进注释就能养绿。
 
@@ -41,9 +41,12 @@ BLOCK_S = 0.6
 @pytest.fixture
 def harness(monkeypatch):
     h = ControlHarness(monkeypatch)
+    h.llm_spans = []
 
     def slow_blocking_llm(messages, **kwargs):
+        started = time.monotonic()
         time.sleep(BLOCK_S)
+        h.llm_spans.append((started, time.monotonic()))
         return llm_text("想好了")
 
     h.llm_impl = slow_blocking_llm
@@ -72,11 +75,22 @@ def _post_twice() -> float:
 
 
 def test_two_streams_do_not_serialize_on_the_blocking_llm(harness):
-    elapsed = _post_twice()
-    # 串行是 2×BLOCK_S=1.2s；并发约 0.6s。留足余量，只要**明显小于串行**即可，
-    # 不去钉一个精确墙钟（那种判据在忙机器上会自己红）。
-    assert elapsed < BLOCK_S * 1.7, (
-        f"两条控制面流像是串起来跑的：{elapsed:.2f}s ≥ {BLOCK_S * 1.7:.2f}s。"
+    """两次阻塞 LLM 调用必须**同时在跑**。
+
+    ⚠ 2026-09-25：上一版量的是两条流的总墙钟（< 1.7×BLOCK_S）。单独跑这个
+      文件时进程是冷的，第一发请求进 LLM 之前要 0.45s 初始化，总墙钟 1.06s
+      超线——而探针显示两次调用都在 0.45s 开始、1.05s 结束，完全重叠。
+      全量里进程已热才碰巧绿；main 上单独跑一直红。冷启动开销不是本条要测
+      的东西，所以直接量「两段调用区间重叠」：同步调用坐在事件循环上时，
+      第二次要等第一次返回才开始，区间不相交。
+    """
+    _post_twice()
+    spans = sorted(harness.llm_spans)
+    assert len(spans) == 2, spans
+    (first_start, first_end), (second_start, _second_end) = spans
+    overlap = first_end - second_start
+    assert overlap > BLOCK_S * 0.5, (
+        f"两次 LLM 调用几乎没有重叠（{overlap:.2f}s）：第二次在第一次结束后才开始。"
         "同步调用还坐在事件循环上——第二个人的推演要等第一个人跑完。"
     )
 
