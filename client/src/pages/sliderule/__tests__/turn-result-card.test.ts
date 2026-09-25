@@ -358,3 +358,61 @@ describe("通电：真的接在完成轮的渲染上（§3）", () => {
     expect(fn).toContain("isOfficeFileDeliverable");
   });
 });
+
+/**
+ * ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB（记账网页）：构建过了、
+ *   预览和独立浏览器都没起来，宿主 `/delivery` 判 eligible=false，后端结算
+ *   追了一句 goal_not_delivered——而对话流里这张卡照样写「✓ 任务已完成」。
+ *   卡上的「完成」只认宿主判定：没拿到判定（null）也不算完成。
+ *   把 verdictGated 那一行改回恒为 "done"，前三条变红。
+ */
+describe("网页工程：任务已完成只认宿主交付判定", () => {
+  const web = (delivered?: boolean | null) =>
+    resultCardModel(turn({ steps: [chip("project_patch")] }), {
+      runtimeKind: "project",
+      projectRevision: "prv-1",
+      ...(delivered === undefined ? {} : { delivered }),
+    });
+
+  it("判定没通过：出卡（东西确实写了），但不说已完成", () => {
+    expect(web(false)?.status).toBe("undelivered");
+  });
+
+  it("还没拿到判定：不当成已交付", () => {
+    expect(web(null)?.status).toBe("undelivered");
+  });
+
+  it("判定通过才是已完成", () => {
+    expect(web(true)?.status).toBe("done");
+  });
+
+  it("反向：历史轮次不传判定，不回头把旧卡改成未交付", () => {
+    expect(web(undefined)?.status).toBe("done");
+  });
+
+  it("反向：办公文件按产物库证据判，不受网页判定影响", () => {
+    const m = resultCardModel(
+      turn({ steps: [chip("project_create"), chip("shell_exec")] }),
+      {
+        runtimeKind: "project",
+        projectRevision: "prv-1",
+        deliverableKind: OFFICE_FILE,
+        hasOfficeArtifact: true,
+        delivered: false,
+      }
+    );
+    expect(m?.status).toBe("done");
+  });
+
+  it("通电：SlideRule 给最新一轮喂的是 /delivery 的判定，不是写死的值", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs
+      .readFileSync(path.resolve(process.cwd(), "client/src/pages/SlideRule.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(src).toMatch(/useProjectDeliveryVerdict\(/);
+    expect(src).toMatch(/delivered=\{turn\.id === ctx\.latestTurnId \? deliveryVerdict : undefined\}/);
+    expect(src).not.toMatch(/delivered=\{true\}/);
+  });
+});

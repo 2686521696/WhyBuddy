@@ -30,6 +30,7 @@ import { PlanTodoDock } from "./sliderule/PlanTodoDock";
 import { deriveProjectActivity } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import { useOfficeArtifactPresent } from "./sliderule/project-runtime/office-artifacts-client";
+import { useProjectDeliveryVerdict } from "./sliderule/project-runtime/delivery-verdict-client";
 import {
   shouldAutoCreateProject,
   shouldShowProjectComputer,
@@ -607,6 +608,8 @@ const ImSurfaceContext = React.createContext<{
   turns?: UiTurn[];
   deliverableKind?: string;
   hasOfficeArtifact?: boolean;
+  /** 网页工程的宿主交付判定；null = 还没拿到证据。 */
+  deliveryVerdict?: boolean | null;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -623,6 +626,7 @@ const ImSurfaceContext = React.createContext<{
   turns: [],
   deliverableKind: "web-app",
   hasOfficeArtifact: false,
+  deliveryVerdict: null,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -760,6 +764,7 @@ function ImAssistantMessage() {
     turns,
     deliverableKind,
     hasOfficeArtifact,
+    deliveryVerdict,
   } = ctx;
   const rawAnswer = assistantTextForTurn(turn, publishClosure, goalText, {
     runtimeKind,
@@ -782,6 +787,8 @@ function ImAssistantMessage() {
       hasPages={Boolean(turn.main)}
       deliverableKind={deliverableKind}
       hasOfficeArtifact={hasOfficeArtifact}
+      /* 宿主交付判定只挂最新一轮：它说的是工程此刻，贴到旧轮上就是张冠李戴。 */
+      delivered={turn.id === ctx.latestTurnId ? deliveryVerdict : undefined}
       onOpen={() => {
         window.dispatchEvent(
           new CustomEvent("sliderule:open-deliverable")
@@ -1103,6 +1110,12 @@ export function ClaudeChatSurface({
   const verifiedThumbnail = useProjectThumbnail(
     runtimeKind === "project" ? projectId : null
   );
+  const deliveryVerdict = useProjectDeliveryVerdict(
+    runtimeKind === "project" && !isOfficeFileDeliverable(deliverableKind)
+      ? projectId
+      : null,
+    isRunning
+  );
   const hasOfficeArtifact = useOfficeArtifactPresent(
     runtimeKind === "project" && isOfficeFileDeliverable(deliverableKind)
       ? projectId
@@ -1128,6 +1141,7 @@ export function ClaudeChatSurface({
       turns: uiTurns,
       deliverableKind,
       hasOfficeArtifact,
+      deliveryVerdict,
     }),
     [
       publishClosure,
@@ -1147,6 +1161,7 @@ export function ClaudeChatSurface({
       uiTurns,
       deliverableKind,
       hasOfficeArtifact,
+      deliveryVerdict,
     ]
   );
 

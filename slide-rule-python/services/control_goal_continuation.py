@@ -142,6 +142,59 @@ def unfinished_cap_waits_for_user(*, status: str, events: Any, goal_done: bool) 
     return status == "completed" and turn_was_capped(events)
 
 
+#: 服务端缺项码 → 人话。续跑提示给模型、收尾给用户，都读这一张。
+#: ⚠ 2026-09-25 记账网页真机 sr-20260925025649-74E9KCWHAB：续跑提示原样塞
+#:   「project_acceptance_profile_not_bound；project_verification_required」，
+#:   模型读不懂，把「已完成」原话又说了一遍。没收录的码照原样留着，不编。
+BLOCKER_TEXT: Dict[str, str] = {
+    "project_not_created": "还没有建工程",
+    "office_file_not_found": "还没有收回任何办公文件（.pptx / .docx / .xlsx）",
+    "project_plan_approval_required": "计划还没有批准",
+    "project_verification_required": "还没有对当前版本做独立浏览器验收（project_verify）",
+    "project_current_business_verification_required": "当前版本的独立浏览器验收没有通过",
+    "project_verification_evidence_incomplete": "验收证据对不上当前版本（构建或截图不完整）",
+    "project_acceptance_profile_not_bound": "这个工程还没有可用的验收档案",
+}
+
+
+def plain_blockers(blocked_reasons: Any) -> List[str]:
+    out: List[str] = []
+    if isinstance(blocked_reasons, list):
+        for item in blocked_reasons:
+            code = str(item or "").strip()
+            if not code:
+                continue
+            text = BLOCKER_TEXT.get(code, code)[:120]
+            if text not in out:
+                out.append(text)
+            if len(out) >= 6:
+                break
+    return out
+
+
+def unfinished_project_waits_for_user(*, status: str, goal: Any, goal_done: bool) -> bool:
+    """工程目标、回合正常收尾、证据说没交付：停成等用户，不许写 completed。
+
+    ⚠ 2026-09-25 记账网页真机 sr-20260925025649-74E9KCWHAB：宿主判定没交付，
+      续跑一次，模型把「已完成」原话又说一遍、一个工具没调——no_progress 停住，
+      run 和 goal 却都落成 completed，界面「✓ 任务已完成」。模型最后一句其实是
+      「暂时不能据此宣称……已经完成」：说实话的是模型，报假账的是宿主。
+      上面两条（时间片 / 硬闸）只兜住了两种停法，no_progress / 预算 / 熔断
+      都漏了。停的原因不重要：工程目标没有证据就不是完成。
+    """
+    if goal_done or status != "completed":
+        return False
+    return isinstance(goal, dict) and goal.get("kind") == "project"
+
+
+def undelivered_notice(blocked_reasons: Any) -> str:
+    """停成等用户时，告诉用户还缺什么。只说服务端算出来的，拿不到就只说状态。"""
+    reasons = plain_blockers(blocked_reasons)
+    head = "这一轮还没有达到可交付："
+    body = "；".join(reasons) if reasons else "服务端没有拿到交付证据"
+    return head + body + "。说「继续」我接着做，或者告诉我先停在这里。"
+
+
 def continuation_budget_left(goal: Any) -> int:
     spent = 0
     if isinstance(goal, dict):
@@ -252,14 +305,7 @@ def continuation_notice(blocked_reasons: Any, attempt: int) -> str:
       也不是重放用户原来那条 POST——模块头注写着：过期的派发意图是不确定性
       的证据，不是重放的许可。拿不到具体原因时只说状态，不编。
     """
-    reasons: List[str] = []
-    if isinstance(blocked_reasons, list):
-        for item in blocked_reasons:
-            text = str(item or "").strip()
-            if text and text not in reasons:
-                reasons.append(text[:120])
-            if len(reasons) >= 6:
-                break
+    reasons = plain_blockers(blocked_reasons)
     head = f"[自动续跑 第 {attempt} 次] 这个目标还没达到可交付状态。"
     if not reasons:
         return head + "服务端没有给出具体缺项；先用 project_status 查清当前状态再决定下一步。"

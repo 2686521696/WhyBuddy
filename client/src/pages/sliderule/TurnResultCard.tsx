@@ -74,6 +74,7 @@ export function TurnResultCard({
   thumbnailUrl,
   deliverableKind,
   hasOfficeArtifact,
+  delivered,
   onOpen,
   onRetry,
 }: {
@@ -86,6 +87,8 @@ export function TurnResultCard({
   thumbnailUrl?: string | null;
   deliverableKind?: string | null;
   hasOfficeArtifact?: boolean;
+  /** 宿主交付判定，只给最新一轮（见 delivery-verdict-client.ts）。 */
+  delivered?: boolean | null;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
@@ -99,6 +102,7 @@ export function TurnResultCard({
     thumbnailUrl,
     deliverableKind,
     hasOfficeArtifact,
+    delivered,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
@@ -171,9 +175,18 @@ export function TurnResultCard({
         className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-0.5"
         data-testid="turn-result-status"
       >
-        <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600">
-          <Check className="h-3.5 w-3.5" /> 任务已完成
-        </span>
+        {model.status === "done" ? (
+          <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600">
+            <Check className="h-3.5 w-3.5" /> 任务已完成
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 text-[12px] text-amber-600"
+            data-testid="turn-result-undelivered"
+          >
+            还没通过交付验收
+          </span>
+        )}
         {duration ? (
           <span className="tabular-nums text-[12px] text-[#9a9a9a]">
             {duration}

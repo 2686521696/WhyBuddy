@@ -137,8 +137,9 @@ def test_续跑提示词从服务端缺项生成不是请继续():
         ["project_verification_required", "project_plan_approval_required"], 2
     )
     assert "第 2 次" in text
-    assert "project_verification_required" in text
-    assert "project_plan_approval_required" in text
+    # ⚠ 2026-09-25：缺项改成人话（模型读不懂机器码）。盯语义：两条缺项都在。
+    assert "独立浏览器验收" in text
+    assert "计划还没有批准" in text
 
 
 def test_反向_拿不到缺项时不编原因():

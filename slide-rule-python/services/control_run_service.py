@@ -26,7 +26,8 @@ from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
     progress_mark, sampling_interrupted_checkpoint, should_continue,
-    unfinished_slice_waits_for_user, unfinished_cap_waits_for_user)
+    unfinished_slice_waits_for_user, unfinished_cap_waits_for_user,
+    unfinished_project_waits_for_user, undelivered_notice)
 from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
@@ -523,7 +524,8 @@ class ControlRunService:
                 self.project_store.get_project_for_session,
                 record.get("sessionId"), owner_id=record.get("ownerId"))
             if project is None:
-                return []
+                # 工程目标连工程都没有，这就是缺项——说不出来用户只能猜。
+                return ["project_not_created"]
             status = await asyncio.to_thread(
                 ProjectDeliveryService(self.project_store, record.get("ownerId")).status,
                 project.projectId)
@@ -813,6 +815,16 @@ class ControlRunService:
                                 status=status, events=latest_record.get("events"),
                                 goal_done=done):
                             status = "waiting_user"
+                        elif unfinished_project_waits_for_user(
+                                status=status, goal=goal, goal_done=done):
+                            # 见 unfinished_project_waits_for_user 头注。停下时把
+                            # 「还缺什么」用人话告诉用户（C 保证最后一句露在外面）。
+                            status = "waiting_user"
+                            blocked = await self._goal_blocked_reasons(latest_record)
+                            await asyncio.to_thread(self.store.append_event, run_id,
+                                self.worker_id, generation,
+                                {"type": "control_text", "text": undelivered_notice(blocked),
+                                 "stopReason": "goal_not_delivered"})
                         goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
                         await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
                             generation, status=goal_status)

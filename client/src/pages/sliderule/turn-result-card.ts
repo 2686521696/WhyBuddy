@@ -121,6 +121,11 @@ export function workedLabel(ms: unknown): string | null {
 }
 
 export type ResultCardModel = {
+  /**
+   * 卡外那行：`done` 画「✓ 任务已完成」；`undelivered` 画「还没通过交付验收」。
+   * 网页工程只认宿主判定（opts.delivered），见 resultCardModel。
+   */
+  status: "done" | "undelivered";
   /** 卡片标题：这一轮做出来的东西叫什么。 */
   title: string;
   /** 运行时徽章文案：工程档写「未发布」，HTML 档写「HTML 原型」。 */
@@ -164,6 +169,11 @@ export function resultCardModel(
     deliverableKind?: string | null;
     /** 产物库里有没有 .pptx / .docx / .xlsx。没有就是没有。 */
     hasOfficeArtifact?: boolean;
+    /**
+     * 宿主对网页工程的交付判定（`/delivery` 的 eligible）。只给最新一轮传；
+     * null / 不传 = 还没拿到证据，不许当成已交付。见 delivery-verdict-client.ts。
+     */
+    delivered?: boolean | null;
   } = {}
 ): ResultCardModel | null {
   if (!turn || turn.status === "streaming") return null;
@@ -182,7 +192,10 @@ export function resultCardModel(
   if (!produced) return null;
 
   const title = firstNonEmpty(opts.goalText, turn.user, "这一轮的成果");
+  // 网页工程「任务已完成」只认宿主判定；办公文件上面已经按产物库证据卡过。
+  const verdictGated = isProject && !office && opts.delivered !== undefined;
   return {
+    status: verdictGated && opts.delivered !== true ? "undelivered" : "done",
     title,
     badge: isProject ? "未发布" : "HTML 原型",
     worked: workedLabel(turn.durationMs),

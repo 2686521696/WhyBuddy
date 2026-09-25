@@ -74,6 +74,48 @@ describe("对照 Cursor 文件卡：发布在卡头，完成态在卡外", () =>
     return container;
   }
 
+  /**
+   * ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB：宿主判 eligible=false，
+   *   卡上照样「✓ 任务已完成」。判定没过时状态行必须说实话，而且不许留那个勾。
+   */
+  it("宿主判定没通过：状态行写还没通过验收，不写任务已完成", async () => {
+    const el = await mount(
+      <TurnResultCard
+        turn={turnOf()}
+        runtimeKind="project"
+        goalText="做一个记账小应用"
+        projectRevision="prv-1"
+        delivered={false}
+        onOpen={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const status = el.querySelector('[data-testid="turn-result-status"]');
+    expect(status?.textContent).not.toContain("任务已完成");
+    expect(status?.textContent).not.toContain("✓");
+    expect(
+      el.querySelector('[data-testid="turn-result-undelivered"]')?.textContent
+    ).toContain("还没通过交付验收");
+  });
+
+  it("反向：判定通过时照旧是任务已完成，没有未验收那行", async () => {
+    const el = await mount(
+      <TurnResultCard
+        turn={turnOf()}
+        runtimeKind="project"
+        goalText="做一个记账小应用"
+        projectRevision="prv-1"
+        delivered={true}
+        onOpen={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(el.querySelector('[data-testid="turn-result-status"]')?.textContent).toContain(
+      "任务已完成"
+    );
+    expect(el.querySelector('[data-testid="turn-result-undelivered"]')).toBeNull();
+  });
+
   it("工程档：发布是卡头黑钮，任务已完成不在卡片里", async () => {
     const el = await mount(
       <TurnResultCard

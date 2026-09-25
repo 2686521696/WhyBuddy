@@ -918,6 +918,7 @@ def test_cancel_during_source_write_waits_for_the_write_to_finish(env, monkeypat
 
 @pytest.mark.parametrize("receipt_saved", [True, False])
 def test_crash_after_project_submission_reconciles_receipt_or_interrupts(env, monkeypatch, receipt_saved):
+    goal_already_done(monkeypatch)
     first = env.service()
     real_append = env.store.append_event
     async def model(messages, **kwargs):
@@ -986,6 +987,7 @@ def test_questionnaire_keeps_the_original_request_on_resubscription(env, monkeyp
 
 
 def test_completion_can_carry_an_existing_html_session_larger_than_log_limit(env, monkeypatch):
+    goal_already_done(monkeypatch)
     from services.slide_rule_session import save_session
     env.state.specFirstPages = {"pages": {"home": "<main>" + "x" * 90000 + "</main>"}}
     save_session(env.state, server_write=True, require_durable=True)
@@ -1429,5 +1431,65 @@ def test_the_approving_click_itself_is_a_project_goal(env):
         assert cancelled["goal"]["kind"] == "conversation"
         stale = await service.submit(click(pending("stale"), req="plan-approval-old"), env.owner, "stale")
         assert stale["goal"]["kind"] == "conversation"
+
+    asyncio.run(run())
+
+
+def test_an_undelivered_project_goal_is_never_recorded_as_completed(env, monkeypatch):
+    """工程目标没交付：不管续跑怎么停下，都停成等用户，并用人话说缺什么。
+
+    ⚠ 2026-09-25 记账网页真机 sr-20260925025649-74E9KCWHAB：宿主判定没交付，续跑
+      一次，模型把「已完成」原话又说一遍——no_progress 停住，run 和 goal 都落成
+      completed，界面「✓ 任务已完成」。模型的最后一句其实是「暂时不能据此宣称
+      已经完成」：说实话的是模型，报假账的是宿主。
+    删掉 service 里 unfinished_project_waits_for_user 那一支，本条变红。
+    """
+    calls = []
+
+    async def model(messages, **kwargs):
+        calls.append(1)
+        return llm_text("已完成个人记账网页的实现。")
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "批准计划并执行"), env.owner, "undelivered")
+            assert record["goal"]["kind"] == "project"
+            final = await settled(service, record["runId"])
+            assert final["status"] == "waiting_user", final["status"]
+            assert final["goal"]["status"] == "waiting_user"
+            notes = [e for e in final["events"]
+                     if e.get("type") == "control_text" and e.get("stopReason") == "goal_not_delivered"]
+            assert notes, [e.get("type") for e in final["events"]]
+            assert "还没有建工程" in notes[-1]["text"]
+            assert "project_" not in notes[-1]["text"]  # 人话，不是机器码
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+
+
+def test_a_delivered_project_goal_still_completes(env, monkeypatch):
+    """反向：证据说交付了，照旧记 completed，也不补那句缺项。"""
+    goal_already_done(monkeypatch)
+
+    async def model(messages, **kwargs):
+        return llm_text("已完成。")
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "批准计划并执行"), env.owner, "delivered")
+            final = await settled(service, record["runId"])
+            assert final["status"] == "completed"
+            assert not [e for e in final["events"] if e.get("stopReason") == "goal_not_delivered"]
+        finally:
+            await service.shutdown()
 
     asyncio.run(run())
