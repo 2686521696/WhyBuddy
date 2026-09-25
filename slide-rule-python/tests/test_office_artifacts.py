@@ -349,9 +349,13 @@ def test_project_verify_blocked_in_source():
     assert 0 <= verify_at < reject_at < submit_at
     start_at = body.find('name == "project_start"')
     start_reject = body.find("OFFICE_START_NOT_APPLICABLE")
-    submit_runtime = body.find("self.supervisor.submit(")
+    # ⚠ 2026-09-25：project_start 起运行时挪进了 _runtime_for_view（有现成的
+    #   开发服务器就复用）。盯的仍是「先拒办公，再起运行时」。
+    submit_runtime = body.find("self._runtime_for_view(")
     assert 0 <= start_at
     assert 0 <= start_reject < submit_runtime
+    helper = _fn_body(TOOLS_SRC.read_text(encoding="utf-8"), "_runtime_for_view")
+    assert "self.supervisor.submit(" in helper
 
 
 def test_collect_office_lives_in_the_sandbox_script():
