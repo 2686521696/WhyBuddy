@@ -98,11 +98,14 @@ def test_durable_control_recovery_replaces_old_saved_stop_before_patch_instructi
             #   **带着服务端算出来的缺口**进到对话里——设计头注写的
             #   「模型得知道自己为什么又醒了，内容由 blockedReasons 生成，
             #   不是『请继续』」。那句话没了，续跑就退化成空转。
-            assert final["status"] == "completed" and len(initial_calls) == 1
+            # ⚠ 2026-09-25：续跑完目标仍未交付，现在如实停在 waiting_user，
+            #   不再记成 completed（修 1）。
+            assert final["status"] == "waiting_user" and len(initial_calls) == 1
             assert len(received) == 2, [len(m) for m in received]
             notice = received[1][-1]["content"]
             assert "还没达到可交付状态" in notice, notice
-            assert "project_verification_required" in notice, notice
+            # 缺口现在按人话写（plain_blockers），盯语义不盯码。
+            assert "独立浏览器验收" in notice, notice
             # 反向：续跑那一发同样不许把那条陈旧的停止指令带回来。
             assert "STALE:" not in "".join(m["content"] for m in received[1])
         finally:

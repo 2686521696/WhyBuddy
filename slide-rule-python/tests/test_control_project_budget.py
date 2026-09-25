@@ -72,7 +72,11 @@ def test_measured_status_read_patch_usage_reaches_real_source_write(setup, monke
 
     harness.llm_impl = model
     events = post(setup.state)
-    assert not stops(events), stops(events)
+    # ⚠ 2026-09-25：源码写了、独立验收没跑，这一轮现在如实交回用户
+    #   （goal_not_delivered，见 control_goal_continuation.undelivered_notice），
+    #   不再记成 completed。这条判据盯的是**预算**没把真写源码拦下：除了这一句
+    #   如实的「还没交付」，不许有任何别的停止。
+    assert [event["stopReason"] for event in stops(events)] == ["goal_not_delivered"], stops(events)
     # 第一轮就是 status/read/patch/收尾这 4 次。工程未交付时现在会自动续跑，
     # 后面可能再采样——计量仍盯这一轮的 checkpoint，不把续跑算进同一份墙钟。
     assert len(harness.llm_calls) >= 4
