@@ -19,6 +19,9 @@ pydantic-settings>=2.5.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
 pytest>=8.0.0
+# 按改动选测试（scripts/test-affected.mjs）与全量并行兜底（-n 4）
+pytest-testmon>=2.2.0
+pytest-xdist>=3.8.0
 
 # 目录窄化（services/block_narrowing.py）：按题意从 358 个区块里挑一小批注进
 # prompt。BM25 打分用它，numpy-only、无重依赖。
