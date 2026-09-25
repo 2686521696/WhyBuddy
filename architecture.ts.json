@@ -564,6 +564,7 @@
       "scripts/sliderule-store-api-smoke",
       "scripts/start-prod",
       "scripts/task-autopilot-frontend-progress",
+      "scripts/test-affected",
       "scripts/test-server",
       "scripts/ui-redesign-ia-progress"
     ],
