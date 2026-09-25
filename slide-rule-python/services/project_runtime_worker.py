@@ -827,7 +827,16 @@ class _RuntimeTask:
                 self.save("ready")
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
             if self.supervisor.preview_runtime is not None:
-                self.supervisor.preview_runtime.ensure(self)
+                try:
+                    self.supervisor.preview_runtime.ensure(self)
+                except PermissionError:
+                    # ⚠ 2026-09-25：取消落在上面 check() 与这里之间时，预览授权先
+                    #   看见 cancelRequested、抛 project_preview_unavailable，用户的
+                    #   取消被记成 failed。先复查一次：是取消就按取消收尾。
+                    #   （test_published_e2b_host_does_not_drop_the_relay_host 约
+                    #   1/10 卡死在等 stopped，就是这个窗口。）
+                    self.check()
+                    raise
             checkpoint_application_data(self)
             if run_next_project_verification(self):
                 next_health = 0
