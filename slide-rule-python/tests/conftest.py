@@ -30,6 +30,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("SLIDERULE_WEB_SEARCH", "off")
+# ⚠ 2026-09-25：第一次 `pytest -n 4`（xdist）跑全量，62 条红、串行全绿。
+#   主进程先导入本文件、把下面这些临时路径写进 os.environ，四个工作进程
+#   **继承**这份环境，setdefault 见有值就不动——四个进程写同一个
+#   sessions.json，报 `invalid_json: Extra data`，路由跟着 503。
+#   工作进程里，凡是本文件在主进程给的临时路径（按前缀认），先拿掉，让下面
+#   的 setdefault 各建一份。用户显式设的路径不带这些前缀，不受影响。
+if os.environ.get("PYTEST_XDIST_WORKER"):
+    for _key in ("SLIDERULE_SESSIONS_FILE", "APP_STORE_DATABASE_URL", "APP_STORE_FILE"):
+        if any(mark in os.environ.get(_key, "")
+               for mark in ("sliderule-tests-", "sliderule-appstore-tests-")):
+            os.environ.pop(_key)
 # 会话存储全套件隔离（E14 揭出的老毛病）：不少路由/驱动测试不各自
 # monkeypatch 存储路径，跑一遍 pytest 就往开发库灌几十个 fixture 会话，
 # 工作台「我的应用」全是垃圾卡。默认落临时目录；显式设置的测试不受影响。

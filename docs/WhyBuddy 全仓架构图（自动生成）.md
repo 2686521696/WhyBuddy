@@ -17,7 +17,7 @@ flowchart TB
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
     ts_client["ts/client<br/>1082 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
-    ts_scripts["ts/scripts<br/>67 个模块"]
+    ts_scripts["ts/scripts<br/>68 个模块"]
     ts_server["ts/server<br/>588 个模块"]
     ts_services["ts/services<br/>32 个模块"]
     ts_shared["ts/shared<br/>179 个模块"]

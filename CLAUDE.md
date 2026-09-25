@@ -133,6 +133,14 @@
 #   而这是"开局必读"里的第一条命令——2026-08-17 新会话照抄就卡住了。
 slide-rule-python/.venv/bin/python -m pytest slide-rule-python/tests/ -q -k "关键词"
 
+# 改代码时：按改动选测试（Python 走 testmon，前端走 vitest related，
+# 再补「测试按路径读的文件」与跨语言入口两路——只按 import 选会静默漏）
+node scripts/test-affected.mjs            # 看计划：工作区相对 HEAD 的改动
+node scripts/test-affected.mjs --run      # 照计划跑；testmon 第一次是全量，用来建库
+# ⚠ 选择是优化，不是闸：选漏没有提示。推送前照旧全量，并行跑：
+slide-rule-python/.venv/bin/python -m pytest slide-rule-python/tests/ -q -n 4
+#   （-n 4 约 4 分钟，串行约 17 分钟。工作进程各用各的临时库，见 conftest.py 头注）
+
 # 前端
 npx vitest run client/src/pages/sliderule/__tests__
 npx tsc --noEmit -p tsconfig.json
