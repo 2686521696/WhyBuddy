@@ -85,6 +85,21 @@ def overlay_live_control_phase(state, run_store=None):
     return state
 
 
+def _approves_pending_plan(payload, state) -> bool:
+    """这一发是否正在批准会话里那份待审批的计划（与 _accept_plan_answer 同一判据）。"""
+    answer = payload.get("toolAnswer") or payload.get("tool_answer")
+    if not isinstance(answer, dict) or answer.get("kind") != "plan_approval":
+        return False
+    if answer.get("outcome") != "approved":
+        return False
+    if getattr(state, "awaitReason", None) != "control_plan_approval":
+        return False
+    rows = getattr(state, "controlTranscript", None) or []
+    request = next((r for r in reversed(rows)
+                    if isinstance(r, dict) and r.get("kind") == "plan_approval"), {})
+    return bool(request.get("reqId")) and str(answer.get("reqId") or "") == request["reqId"]
+
+
 def public_control_run(record):
     # Model messages, tool arguments and provider handles never enter discovery.
     public = {key: record[key] for key in (
@@ -340,7 +355,15 @@ class ControlRunService:
         #   服务端按批准状态定，不看前端传的 runtimeKind。只动目标类型，不改
         #   payload 里的 runtimeKind（那个字段还有别的读者）。
         stamped.pop("objectiveKind", None)  # 只认服务端这一处，不收前端带来的
-        if plan_execution_authorized(state) and latest_control_plan(state):
+        # ⚠ 2026-09-25 第三轮真机 sr-20260925020530-S3ZKS8EM8P：上一版只认「已经
+        #   批准」。可「批准并执行」这一发本身就是批准——toolAnswer
+        #   {kind: plan_approval, outcome: approved, reqId}，由回合里的
+        #   _accept_plan_answer 才写进库。提交那一刻还没批准，目标照旧落成
+        #   conversation，run 又记成 completed。判据当时用的是「已批准好的」
+        #   夹具，正好绕开了真机时序（CLAUDE.md 一之二）。
+        if latest_control_plan(state) and (
+            plan_execution_authorized(state) or _approves_pending_plan(stamped, state)
+        ):
             stamped["objectiveKind"] = "project"
         # ⚠ 2026-09-22 RFZYDAVHG9 的修法是让 submit 自己 claim（插入时就写租约），
         #   再直接 `create_task(self._produce(record))`。2026-09-23 revert：

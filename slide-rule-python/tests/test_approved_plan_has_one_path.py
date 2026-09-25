@@ -73,3 +73,19 @@ def test_html_mode_without_project_tools_keeps_the_factory():
     assert rc._PROJECT_TOOLS.get() is None
     offered = _offered(_approved(OFFICE_FILE))
     assert "rehearse" in offered or "workflow" in offered, sorted(offered)
+
+
+def test_the_offered_project_create_says_it_is_the_office_tool(project_tools_on):
+    """办公计划批准后，模型看到的 project_create 必须说清它就是办公文件那台电脑。
+
+    ⚠ 2026-09-25 第三轮真机 sr-20260925020530-S3ZKS8EM8P：工厂挡掉之后，清单里
+      project_create 的描述第一句是「React/TypeScript/Vite project」。模型回
+      「当前工具集中没有可用于创建或导出 .pptx 文件的办公文件工具，只有网页
+      工程创建能力」，一跳没动就收工。盯语义：描述里要讲到办公文件、要讲到
+      写出的文件就是交付物。把描述改回只讲 React 项目，本条变红。
+    """
+    listed = rc.list_control_tools(_approved(OFFICE_FILE))
+    desc = next(t for t in listed if t["function"]["name"] == "project_create")["function"]["description"]
+    assert ".pptx" in desc
+    assert "deliverable" in desc
+    assert "empty workspace" in desc or "office-file plan" in desc

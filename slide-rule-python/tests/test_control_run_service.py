@@ -1387,3 +1387,47 @@ def test_executing_an_approved_plan_is_a_project_goal(env):
         assert spoofed["goal"]["kind"] == "conversation"
 
     asyncio.run(run())
+
+
+def test_the_approving_click_itself_is_a_project_goal(env):
+    """「批准并执行」那一发本身就是工程目标——批准要到回合里才写进库。
+
+    ⚠ 2026-09-25 第三轮真机 sr-20260925020530-S3ZKS8EM8P：上一版只认「已经批准」，
+      判据用的是已批准好的夹具。真机那一发提交时计划还在等审批，目标照旧落成
+      conversation。下面的请求体照抄那一发的 payload（runtimeKind / toolAnswer 原样）。
+    把 _approves_pending_plan 那一支删掉，第一段变红。
+    """
+    from control_turn_support import seed_session
+    from plan_approval_support import approved_plan_rows
+    from services.slide_rule_session import save_session
+
+    pending_rows = approved_plan_rows("做一份 PPT")[:2]  # plan_written + plan_approval 请求
+    req_id = pending_rows[1]["reqId"]
+
+    def pending(name):
+        state = seed_session(new_sid(name), goal={"text": "做一份 PPT"})
+        state.controlTranscript = list(state.controlTranscript or []) + pending_rows
+        state.awaitReason = "control_plan_approval"
+        save_session(state, server_write=True)
+        return state
+
+    def click(state, outcome="approved", req=req_id):
+        return {
+            "activeConnectors": [], "designSystemId": None, "installedSkills": [],
+            "preferredDevice": "desktop", "runtimeKind": "html-prototype",
+            "sessionId": state.sessionId,
+            "toolAnswer": {"kind": "plan_approval", "outcome": outcome, "reqId": req,
+                           "text": "批准计划并执行"},
+            "userText": "批准计划并执行",
+        }
+
+    async def run():
+        service = env.service()
+        approved = await service.submit(click(pending("approving")), env.owner, "approving")
+        assert approved["goal"]["kind"] == "project"
+        cancelled = await service.submit(click(pending("cancelling"), "cancelled"), env.owner, "cancelling")
+        assert cancelled["goal"]["kind"] == "conversation"
+        stale = await service.submit(click(pending("stale"), req="plan-approval-old"), env.owner, "stale")
+        assert stale["goal"]["kind"] == "conversation"
+
+    asyncio.run(run())
