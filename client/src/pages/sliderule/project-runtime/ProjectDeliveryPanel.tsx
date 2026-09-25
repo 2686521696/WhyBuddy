@@ -18,17 +18,30 @@ const TEXT: Record<string, string> = {
     "拒绝只读用户和未登录用户写入",
   "Build locked source and render without resource or page errors":
     "按锁文件构建源码，页面渲染没有资源或脚本错误",
+  "Build the current locked source": "按锁文件构建当前版本源码",
+  "Open the private preview of that exact revision": "打开这一版本的私有预览",
+  "Render visible content in an independent browser":
+    "独立浏览器里页面渲染出看得见的内容",
+  "Still render visible content after a page refresh": "刷新页面后内容仍在",
+  "No page errors and no failed requests": "没有页面脚本错误和失败的请求",
   "Additional user requirements": "本验收范围之外的追加需求",
   "Production deployment": "生产环境部署",
   "Production account operations": "生产账号与运营工作",
 };
 const REASONS: Record<string, string> = {
   project_plan_approval_required: "当前计划尚未批准",
-  project_acceptance_profile_not_bound: "工程尚未绑定这份任务应用验收范围",
+  project_acceptance_profile_not_bound: "工程模板没有对应的交付验收范围",
   project_verification_required: "尚无独立浏览器检查记录",
   project_current_business_verification_required:
-    "当前源码版本尚未通过任务业务检查",
+    "当前源码版本尚未通过独立浏览器验收",
   project_verification_evidence_incomplete: "构建或浏览器证据不完整",
+};
+// ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB：交付档原来只认任务
+//   应用，普通网页（记账页）永远没有可交付的证据。跟 Python
+//   project_acceptance.bound_delivery_profile 成对（§4）。
+const PROFILES: Record<string, string> = {
+  "whybuddy-tasks-acceptance@1": "react-vite-tasks@1",
+  "whybuddy-web-acceptance@1": "react-vite-app@1",
 };
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
@@ -52,7 +65,7 @@ function validRelease(value: any, projectId: string): value is Release {
       value.buildHash,
       value.createdAt,
     ].every(nonempty) &&
-    value.profileId === "whybuddy-tasks-acceptance@1" &&
+    Object.hasOwn(PROFILES, value.profileId) &&
     value.downloadPath ===
       `/api/sliderule${releasePath(projectId, value.releaseId)}`
   );
@@ -63,8 +76,8 @@ function validDelivery(value: any, projectId: string): value is Delivery {
     nonempty(value.revision) &&
     typeof value.eligible === "boolean" &&
     (value.verificationId === null || nonempty(value.verificationId)) &&
-    value.profile?.profileId === "whybuddy-tasks-acceptance@1" &&
-    value.profile.suiteVersion === "react-vite-tasks@1" &&
+    Object.hasOwn(PROFILES, value.profile?.profileId) &&
+    PROFILES[value.profile.profileId] === value.profile.suiteVersion &&
     [
       value.profile.requirements,
       value.profile.outsideScope,

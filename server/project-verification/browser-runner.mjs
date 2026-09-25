@@ -12,6 +12,13 @@ import { chromium, expect } from "@playwright/test";
 export const RUNNER_VERSION = "whybuddy-browser-v1:pw1.61.1";
 export const SUITE_VERSION = "react-vite-counter@1";
 export const TASK_SUITE_VERSION = "react-vite-tasks@1";
+// ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB（记账网页）：通用模板的
+//   工程只能跑计数器套件，而计数器是模板自带的 demo，换成记账页必然不过。
+//   普通网页的证据只认用户看得见的东西：页面渲染出内容、刷新后还在、没报错。
+//   跟 project_verification_gate.py 的 SUITE_ASSERTIONS 成对（§4）。
+export const APP_SUITE_VERSION = "react-vite-app@1";
+export const APP_ASSERTION_IDS = ["content_visible", "reload_renders", "no_page_errors", "no_failed_requests"];
+const SUITES = [SUITE_VERSION, TASK_SUITE_VERSION, APP_SUITE_VERSION];
 export const TASK_ASSERTION_IDS = ["setup_admin", "writer_login", "task_create", "task_edit", "task_filter",
   "task_refresh", "reader_create", "reader_login", "reader_api_session",
   "reader_ui_readonly", "reader_api_forbidden",
@@ -95,7 +102,7 @@ const bound = (promise, ms) => Promise.race([promise, new Promise((_, reject) =>
 export function validateInput(input, { allowLoopback = false } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input) ||
       Object.keys(input).some(key => !allowedKeys.has(key)) ||
-      !identifier(input.verificationId) || !identifier(input.revision) || ![SUITE_VERSION, TASK_SUITE_VERSION].includes(input.suiteVersion) ||
+      !identifier(input.verificationId) || !identifier(input.revision) || !SUITES.includes(input.suiteVersion) ||
       !input.scope || Object.keys(input.scope).sort().join() !== "origin,projectId,runtimeId" ||
       !identifier(input.scope.projectId) || !identifier(input.scope.runtimeId) || typeof input.entryUrl !== "string" || input.entryUrl.length > 8192)
     throw failure("project_browser_input_invalid");
@@ -114,7 +121,7 @@ export function validateInput(input, { allowLoopback = false } = {}) {
 
 export async function runVerification(input, options = {}) {
   const report = { verificationId: identifier(input?.verificationId) ? input.verificationId : "invalid",
-    revision: identifier(input?.revision) ? input.revision : "invalid", suiteVersion: input?.suiteVersion === TASK_SUITE_VERSION ? TASK_SUITE_VERSION : SUITE_VERSION,
+    revision: identifier(input?.revision) ? input.revision : "invalid", suiteVersion: SUITES.includes(input?.suiteVersion) ? input.suiteVersion : SUITE_VERSION,
     runnerVersion: RUNNER_VERSION, status: "blocked", errorCode: null,
     assertions: [], artifacts: {}, cleanupConfirmed: false, revisionBefore: null, revisionAfter: null };
   let browser, context, page, timer, timedOut = false, observing = true;
@@ -220,6 +227,8 @@ export async function runVerification(input, options = {}) {
     const increment = page.getByRole("button", { name: "Increment count", exact: true });
     if (input.suiteVersion === TASK_SUITE_VERSION) {
       await runTaskSuite({ page, context, verify, assertion, screenshot, origin });
+    } else if (input.suiteVersion === APP_SUITE_VERSION) {
+      await runAppSuite({ page, verify, assertion, screenshot });
     } else {
     await assertion("heading_visible", async () => {
       const heading = page.getByRole("heading", { level: 1 });
@@ -256,7 +265,8 @@ export async function runVerification(input, options = {}) {
     //   在收据里长得一模一样：缺的条目只是**不出现**。
     //   现在名单补齐，没执行到的显式记 not_run，超时再也装不成一套更短的判据。
     //   （§3：每写一条"应该有 X"，配一条"X 真的被用到了"。）
-    const roster = report.suiteVersion === TASK_SUITE_VERSION ? TASK_ASSERTION_IDS : ASSERTION_IDS;
+    const roster = report.suiteVersion === TASK_SUITE_VERSION ? TASK_ASSERTION_IDS
+      : report.suiteVersion === APP_SUITE_VERSION ? APP_ASSERTION_IDS : ASSERTION_IDS;
     const recorded = new Set(report.assertions.map(item => item.id));
     for (const id of roster) if (!recorded.has(id)) report.assertions.push({ id, status: "not_run" });
     let clean = true;
@@ -266,6 +276,20 @@ export async function runVerification(input, options = {}) {
     if (!clean) { report.status = "blocked"; report.errorCode = "project_browser_cleanup_pending"; }
   }
   return report;
+}
+
+// 用户看得见的内容：innerText 跳过 display:none / visibility:hidden 的字，
+// 白屏（React 挂掉只剩空 #root）和只藏着字的页面都过不了（§5：量渲染后的
+// DOM，不量源码）。页面文字一个字都不进收据，只有 passed / failed。
+export async function runAppSuite({ page, verify, assertion, screenshot }) {
+  const body = page.locator("body");
+  const hasContent = () => verify(body).toContainText(/\S/, { useInnerText: true });
+  await assertion("content_visible", hasContent);
+  await screenshot("app.png");
+  await assertion("reload_renders", async () => {
+    await page.reload({ waitUntil: "load" });
+    await hasContent();
+  });
 }
 
 async function runTaskSuite({ page, context, verify, assertion, screenshot, origin }) {

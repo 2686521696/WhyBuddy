@@ -130,3 +130,32 @@ def test_client_cannot_submit_passed_or_closure_with_release_request(setup):
     body = {"expectedRevision": record.revision, "verificationId": record.verificationId,
         "idempotencyKey": "forged", "publishClosure": {"status": "passed"}}
     assert setup.client.post(setup.url + "/releases", json=body).status_code == 422
+
+
+def test_a_plain_web_app_has_its_own_delivery_evidence(setup):
+    """⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB（记账网页）：通用模板
+    的工程永远报 project_acceptance_profile_not_bound——交付闸只认任务模板。
+    默认夹具就是真的通用模板（whybuddy-react-vite-1）。把 bound_delivery_profile
+    里通用模板那一支删掉，本条变红。"""
+    assert setup.store.get_revision(setup.project.projectId, owner_id="alice").templateVersion == "whybuddy-react-vite-1"
+    before = setup.client.get(setup.url + "/delivery").json()
+    assert not before["eligible"]
+    assert "project_acceptance_profile_not_bound" not in before["blockedReasons"]
+    assert before["blockedReasons"] == ["project_verification_required"]
+    record, *_ = proof(setup, "react-vite-app@1")
+    current = setup.client.get(setup.url + "/delivery").json()
+    assert current["eligible"], current["blockedReasons"]
+    assert current["profile"]["profileId"] == "whybuddy-web-acceptance@1"
+    assert current["profile"]["suiteVersion"] == "react-vite-app@1"
+    response = setup.client.post(setup.url + "/releases", json={"expectedRevision": record.revision,
+        "verificationId": record.verificationId, "idempotencyKey": "web-release"})
+    assert response.status_code == 201, response.text
+    assert response.json()["release"]["profileId"] == "whybuddy-web-acceptance@1"
+
+
+def test_a_counter_demo_pass_still_cannot_unlock_a_plain_web_app(setup):
+    """反向：模板计数器 demo 过了不等于用户的网页过了。"""
+    proof(setup, "react-vite-counter@1")
+    current = setup.client.get(setup.url + "/delivery").json()
+    assert not current["eligible"]
+    assert current["blockedReasons"] == ["project_current_business_verification_required"]

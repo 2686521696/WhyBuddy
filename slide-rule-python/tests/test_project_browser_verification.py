@@ -24,6 +24,8 @@ from project_build_support import enable_build_provider
 
 ASSERTIONS = ("heading_visible", "counter_initial", "counter_increment", "counter_second_increment",
               "reload_reset", "no_page_errors", "no_failed_requests")
+# 真模板（whybuddy-react-vite-1）派的是普通网页套件；替身模板照旧派计数器。
+APP_ASSERTIONS = ("content_visible", "reload_renders", "no_page_errors", "no_failed_requests")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
 
@@ -52,6 +54,13 @@ class Browser:
             while not self.release.wait(0.01):
                 kwargs["check_callback"]()
             kwargs["check_callback"]()
+            if kwargs.get("suite_version") == "react-vite-app@1":
+                return {"status": "failed" if self.failed else "passed", "cleanupConfirmed": True,
+                    "runnerVersion": "whybuddy-browser-v1:pw1.61.1",
+                    "errorCode": "project_browser_assertion_failed" if self.failed else None,
+                    "assertions": [{"id": name, "status": "failed", "detail": "assertion"}
+                        if self.failed and name == "content_visible" else {"id": name, "status": "passed"}
+                        for name in APP_ASSERTIONS], "artifacts": {"app.png": PNG}}
             return {"status": "failed" if self.failed else "passed", "cleanupConfirmed": True,
                 "runnerVersion": "whybuddy-browser-v1:pw1.61.1",
                 "errorCode": "project_browser_assertion_failed" if self.failed else None,
@@ -476,6 +485,10 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
         original_pid = parent().runtime.processId
         harness = ControlHarness(monkeypatch)
         seen = []
+        # ⚠ 2026-09-25：model() 里的 assert 抛出来会被控制循环接住（记一条
+        #   「control llm loop failed」），下面的计数照样成立——回调里的断言
+        #   等于没写。变异 suite_matches_profile 时逮到的。要钉的值带出来再断言。
+        final_eligible = []
 
         def model(messages, **kwargs):
             offered = {item["function"]["name"] for item in kwargs["tools"]}
@@ -495,7 +508,8 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
                 return llm_tool("project_verification", {"operationId": result["operationId"]}, f"evidence-{step}")
             if step == 3:
                 assert result["verification"]["status"] == "failed"
-                assert {"id": "counter_increment", "status": "failed", "expected": "1", "actual": "2"} in result["verification"]["assertions"]
+                # 真模板派普通网页套件：坏掉的源码表现为页面没渲染出内容。
+                assert {"id": "content_visible", "status": "failed"} in result["verification"]["assertions"]
                 return llm_tool("project_read", {"path": "src/main.tsx", "offset": 0, "limit": 8000}, "read-failure")
             if step == 4:
                 assert "BROKEN_COUNTER" in result["content"]
@@ -507,17 +521,20 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
                 return llm_tool("project_verify", {"runtimeOperationId": started.operationId,
                     "expectedRevision": result["revision"], "approvalRef": env.ref, "idempotencyKey": "model-after"}, "after")
             assert step == 9 and result["verification"]["status"] == "passed"
-            assert result["verification"]["deliveryEligible"] is False
-            return llm_text("The repaired source passed the page/counter suite; business acceptance remains separate.")
+            # ⚠ 2026-09-25 74E9KCWHAB：普通网页有了自己的交付证据。修好的版本过了
+            #   独立浏览器，就是可交付——原来这里钉的 False 正是那个坑。
+            final_eligible.append(result["verification"]["deliveryEligible"])
+            return llm_text("The repaired source passed the independent browser check.")
 
         harness.llm_impl = model
         events = control_post(env.state)
-        # ⚠ 2026-09-15：+1 是那一轮自动续跑（业务验收还没通过 → 目标未交付）。
-        #   跟 test_control_project_tools 同一个处理：把续跑正面钉住，
-        #   不是把数字改大了事。
+        # ⚠ 2026-09-15：原来这里有一轮自动续跑（业务验收还没通过 → 目标未交付）。
+        # ⚠ 2026-09-25 74E9KCWHAB：普通网页有了自己的交付证据，修好的版本过了
+        #   独立浏览器就是交付完成——不许再被续跑拖着多转一轮。反向钉住。
+        assert final_eligible == [True]
         assert [(e["attempt"], e["reason"]) for e in events
-                if e.get("type") == "control_continuation"] == [(1, "goal_not_delivered")]
-        assert len(seen) == 10 and len(harness.llm_calls) == 11, {
+                if e.get("type") == "control_continuation"] == []
+        assert len(seen) == 9 and len(harness.llm_calls) == 10, {
             "run": {key: value for key, value in env.control.store.get(events[0]["controlRunId"], TEST_USER_ID).items()
                     if key in {"status", "error"}},
             "seen": [(item.get("tool"), item.get("status"), item.get("error")) for item in seen],

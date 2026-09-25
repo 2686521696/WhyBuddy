@@ -16,7 +16,10 @@ SUITE_ASSERTIONS = {SUITE_VERSION: REQUIRED_ASSERTIONS,
     "react-vite-tasks@1": frozenset({"setup_admin", "writer_login", "task_create", "task_edit", "task_filter",
         "task_refresh", "reader_create", "reader_login", "reader_api_session",
         "reader_ui_readonly", "reader_api_forbidden",
-        "anonymous_api_forbidden", "no_page_errors", "no_failed_requests"})}
+        "anonymous_api_forbidden", "no_page_errors", "no_failed_requests"}),
+    # 普通网页：跟 browser-runner.mjs 的 APP_ASSERTION_IDS 成对（§4）。
+    "react-vite-app@1": frozenset({"content_visible", "reload_renders",
+        "no_page_errors", "no_failed_requests"})}
 
 
 def validate_build_evidence(build, *, revision, tree_hash, lockfile_hash, suite_version):

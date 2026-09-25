@@ -199,7 +199,7 @@ it("blocks preparation when the server has a verification gap", async () => {
   view.blockedReasons = ["project_current_business_verification_required"];
   await render();
   expect(button("准备交付包").disabled).toBe(true);
-  expect(container.textContent).toContain("当前源码版本尚未通过任务业务检查");
+  expect(container.textContent).toContain("当前源码版本尚未通过独立浏览器验收");
   expect(posts()).toHaveLength(0);
 });
 it.each([
@@ -207,6 +207,7 @@ it.each([
   "external-download",
   "deployed-lie",
   "contradictory-eligibility",
+  "profile-suite-mismatch",
 ])("rejects %s DTO instead of displaying a trusted release", async defect => {
   view.releases = [{ ...release }];
   if (defect === "foreign-project") view.releases[0].projectId = "other";
@@ -215,6 +216,9 @@ it.each([
   if (defect === "deployed-lie") view.releases[0].deployed = true;
   if (defect === "contradictory-eligibility")
     view.blockedReasons = ["project_verification_required"];
+  // 普通网页的交付档配任务套件——两边对不上就是伪造。
+  if (defect === "profile-suite-mismatch")
+    view.profile.profileId = "whybuddy-web-acceptance@1";
   await render();
   expect(button("准备交付包").disabled).toBe(true);
   expect(button("下载交付包")).toBeUndefined();
@@ -269,4 +273,32 @@ it("is wired into the shared Studio and app-center preview surface", async () =>
     container.querySelector('[data-testid="project-delivery-panel"]')
   ).not.toBeNull();
   expect(container.textContent).toContain("本次验收范围");
+});
+
+/**
+ * ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB（记账网页）：交付档只认
+ *   任务应用，普通网页永远拿不到可交付。载荷照 Python
+ *   ProjectDeliveryService.status() 对通用模板的原样输出。把 PROFILES 里
+ *   web 那一行删掉，本条变红（整个响应被当成畸形丢掉）。
+ */
+it("accepts a plain web app delivery bound to the web acceptance profile", async () => {
+  view.profile = {
+    profileId: "whybuddy-web-acceptance@1",
+    suiteVersion: "react-vite-app@1",
+    requirements: [
+      "Build the current locked source",
+      "Open the private preview of that exact revision",
+      "Render visible content in an independent browser",
+      "Still render visible content after a page refresh",
+      "No page errors and no failed requests",
+    ],
+    outsideScope: ["Additional user requirements", "Production deployment", "Production account operations"],
+    dataRecovery:
+      "Last durable checkpoint; normal stop checkpoints after stopping the application",
+  };
+  await render();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(button("准备交付包").disabled).toBe(false);
+  expect(container.textContent).toContain("独立浏览器里页面渲染出看得见的内容");
+  expect(container.textContent).not.toContain("通过真实接口新增、编辑和筛选任务");
 });

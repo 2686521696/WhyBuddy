@@ -634,8 +634,30 @@ describe("project browser verification consumer", () => {
     await poll();
     expect(status()).toBe("暂时无法读取检查状态");
   });
+  /**
+   * ⚠ 2026-09-25 74E9KCWHAB：普通网页（通用模板）的通过记录原来被当成畸形
+   *   响应丢掉——deliveryEligible 只认任务档。载荷照 Python
+   *   verification_with_current_authority 对通用模板的输出：specRevision=null。
+   */
+  it("accepts server-owned delivery eligibility for a plain web app on the app suite", async () => {
+    view = evidence();
+    const record = view.snapshot!.verification;
+    record.suiteVersion = "react-vite-app@1";
+    record.assertions = ["content_visible", "reload_renders", "no_page_errors", "no_failed_requests"]
+      .map(id => ({ id, status: "passed" as const }));
+    view.snapshot!.deliveryEligible = true;
+    await render();
+    expect(status()).toBe("页面检查通过");
+    expect(container.textContent).toContain("当前版本通过了独立浏览器验收");
+    expect(container.textContent).not.toContain("任务应用验收范围");
+    // 反向：普通网页套件配任务交付档，对不上就不认。
+    record.specRevision = "whybuddy-tasks-acceptance@1";
+    await poll();
+    expect(status()).toBe("暂时无法读取检查状态");
+  });
   it.each([
     { suite: null, title: "浏览器检查", action: "检查应用", scope: "检查范围尚未确定" },
+    { suite: "react-vite-app@1", title: "页面渲染检查", action: "检查页面", scope: "页面要渲染出看得见的内容" },
     { suite: "react-vite-counter@1", title: "页面与计数交互检查", action: "检查页面", scope: "仅检查固定模板的页面与计数交互" },
     { suite: "react-vite-tasks@1", title: "任务应用与权限检查", action: "检查任务应用", scope: "任务新增、编辑、筛选、刷新持久化和只读权限" },
   ])("shows only the authoritative $suite capability before first verification", async ({ suite, title, action, scope }) => {

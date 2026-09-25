@@ -67,7 +67,8 @@ def _observation_is_bounded(item) -> bool:
 _ASSERTION_SHAPES = ({"id", "status"}, {"id", "status", "detail"},
     {"id", "status", "detail", "expected", "actual"})
 SUITE_ARTIFACTS = {SUITE_VERSION: frozenset({"before.png", "after.png"}),
-    "react-vite-tasks@1": frozenset({"tasks-created.png", "tasks-reader.png"})}
+    "react-vite-tasks@1": frozenset({"tasks-created.png", "tasks-reader.png"}),
+    "react-vite-app@1": frozenset({"app.png"})}
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 6 * 1024 * 1024
 REMOTE_ROOT = "/home/user/whybuddy-browser"

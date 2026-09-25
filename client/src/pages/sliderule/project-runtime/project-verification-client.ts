@@ -38,6 +38,17 @@ const operationStatuses = new Set([
 ]);
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+// 能交付的只有「套件 × 源码绑定的交付档」对得上的那两种。跟 Python
+// project_acceptance.suite_matches_profile 成对（§4）。
+// ⚠ 2026-09-25 74E9KCWHAB：原来只认任务应用，普通网页的通过记录在这里被当成
+//   畸形响应整个丢掉。
+function deliverableSuite(record: any): boolean {
+  return (
+    (record?.suiteVersion === "react-vite-tasks@1" &&
+      record?.specRevision === "whybuddy-tasks-acceptance@1") ||
+    (record?.suiteVersion === "react-vite-app@1" && record?.specRevision == null)
+  );
+}
 const tasksAssertions = [
   "setup_admin",
   "writer_login",
@@ -184,9 +195,7 @@ export async function getProjectVerification(
       (typeof snapshot?.deliveryEligible === "boolean" &&
         (!snapshot.deliveryEligible ||
           (snapshot.effectiveStatus === "passed" &&
-            snapshot.verification?.suiteVersion === "react-vite-tasks@1" &&
-            snapshot.verification?.specRevision ===
-              "whybuddy-tasks-acceptance@1")) &&
+            deliverableSuite(snapshot.verification))) &&
         effectiveStatuses.has(snapshot.effectiveStatus) &&
         validRecord(snapshot.verification, projectId) &&
         snapshot.verification.operationId === body.operationId &&

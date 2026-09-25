@@ -11,7 +11,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 
-from services.project_acceptance import TASK_ACCEPTANCE_PROFILE, TASK_TEMPLATE_VERSION, acceptance_profile
+from services.project_acceptance import TASK_SUITE_VERSION, acceptance_profile, bound_delivery_profile
 from services.project_authority import approved_reference
 from services.project_export import source_archive
 from services.project_manifest import canonical_json, content_hash
@@ -35,7 +35,9 @@ class ProjectDeliveryService:
         reasons = []
         if not plan_execution_authorized(authority):
             reasons.append("project_plan_approval_required")
-        if revision.templateVersion != TASK_TEMPLATE_VERSION or revision.specRevision != TASK_ACCEPTANCE_PROFILE:
+        # ⚠ 2026-09-25 74E9KCWHAB：原来只认任务模板，普通网页这条永远成立。
+        bound = bound_delivery_profile(revision.templateVersion, revision.specRevision)
+        if bound is None:
             reasons.append("project_acceptance_profile_not_bound")
         snapshot = (self.records.get(verification_id, owner_id=self.owner_id, current_plan_ref=approved_reference(authority))
             if verification_id else self.records.latest(project_id, owner_id=self.owner_id,
@@ -44,7 +46,8 @@ class ProjectDeliveryService:
             reasons.append("project_verification_required")
         elif snapshot.verification.projectId != project_id:
             raise ProjectNotFound("project_verification_not_found")
-        elif snapshot.effectiveStatus != "passed" or snapshot.verification.suiteVersion != "react-vite-tasks@1":
+        elif (snapshot.effectiveStatus != "passed" or bound is None
+                or snapshot.verification.suiteVersion != bound[1]):
             reasons.append("project_current_business_verification_required")
         else:
             record = snapshot.verification
@@ -58,6 +61,10 @@ class ProjectDeliveryService:
                 reasons.append("project_verification_evidence_incomplete")
         return project, authority, revision, snapshot, reasons
 
+    def _profile(self, revision):
+        bound = bound_delivery_profile(revision.templateVersion, revision.specRevision)
+        return bound or (None, TASK_SUITE_VERSION)
+
     def status(self, project_id):
         project, _authority, revision, snapshot, reasons = self._evidence(project_id)
         extras = snapshot.verification.acceptanceRequirements if snapshot else []
@@ -68,7 +75,7 @@ class ProjectDeliveryService:
             saved["effectiveStatus"] = "ready" if not reasons and saved["revision"] == revision.revision and snapshot and saved["verificationId"] == snapshot.verification.verificationId else "stale"
             releases.append(saved)
         return {"projectId": project.projectId, "revision": revision.revision, "eligible": not reasons,
-            "profile": acceptance_profile(extras), "blockedReasons": reasons,
+            "profile": acceptance_profile(extras, self._profile(revision)[1]), "blockedReasons": reasons,
             "verificationId": snapshot.verification.verificationId if snapshot else None,
             "releases": releases, "deployment": {"status": "not_configured", "publicUrl": None}}
 
@@ -83,7 +90,7 @@ class ProjectDeliveryService:
         evidence = snapshot.verification
         value = {"releaseId": release_id, "projectId": project_id, "revision": revision.revision,
             "treeHash": revision.treeHash, "verificationId": verification_id,
-            "profileId": TASK_ACCEPTANCE_PROFILE, "planRef": approved_reference(authority),
+            "profileId": self._profile(revision)[0], "planRef": approved_reference(authority),
             "lockfileHash": evidence.build.lockfileHash, "buildHash": evidence.build.outputHash,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "downloadPath": f"/api/sliderule/projects/{project_id}/releases/{release_id}/download",

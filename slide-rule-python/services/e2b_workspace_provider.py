@@ -636,7 +636,7 @@ class E2BWorkspaceProvider:
         if suite_version == "react-vite-tasks@1":
             command = (f"npm start -- --host 0.0.0.0 --port {port} --static-dir {PROJECT_ROOT}/dist"
                 f" --data-dir /home/user/.whybuddy-verification/{verification_id}/data")
-        elif suite_version == "react-vite-counter@1":
+        elif suite_version in {"react-vite-counter@1", "react-vite-app@1"}:
             command = _python(STATIC_BUILD_SERVER_SCRIPT) + f" {port} {PROJECT_ROOT}/dist"
         else:
             raise ValueError("verification_suite_unsupported")

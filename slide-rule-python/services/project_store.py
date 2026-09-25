@@ -550,7 +550,7 @@ class ProjectStore:
                                      expected_revision: str, approval_ref: str, idempotency_key: str,
                                      suite_version: str = "react-vite-counter@1",
                                      acceptance_requirements: list[str] | None = None) -> ProjectOperation:
-        if suite_version not in {"react-vite-counter@1", "react-vite-tasks@1"}:
+        if suite_version not in {"react-vite-counter@1", "react-vite-tasks@1", "react-vite-app@1"}:
             raise ValueError("verification_suite_unsupported")
         return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
             expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,

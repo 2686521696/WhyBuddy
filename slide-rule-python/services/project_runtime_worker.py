@@ -48,7 +48,7 @@ from services.deliverable_kind import (
 from services.project_office_artifacts import ProjectOfficeArtifactStore, office_artifact_download_url
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
-from services.project_acceptance import normalize_acceptance_requirements
+from services.project_acceptance import normalize_acceptance_requirements, suite_for_template
 from services.project_tool_contracts import sandbox_shell_script
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
@@ -268,7 +268,7 @@ class ProjectRuntimeSupervisor:
             candidate = parent.model_copy(update={"approvalRef": approval_ref})
             self.authorizer(self.store, candidate, owner_id)
             revision = self.store.get_revision(parent.projectId, expected_revision, owner_id=owner_id)
-            suite_version = "react-vite-tasks@1" if revision.templateVersion == "whybuddy-react-vite-tasks-1" else "react-vite-counter@1"
+            suite_version = suite_for_template(revision.templateVersion)
             try:
                 operation = self.store.enqueue_runtime_verification(runtime_operation_id,
                     owner_id=owner_id, expected_revision=expected_revision, approval_ref=approval_ref,
