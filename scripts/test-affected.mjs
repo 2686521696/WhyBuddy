@@ -215,7 +215,9 @@ function main(argv) {
     failed |= sh(py, [`${PY_ROOT}/arch_graph.py`, "--check"]);
     failed |= sh("node", ["scripts/arch-graph-ts.mjs", "--check"]);
   }
-  if (p.python.testmon) failed |= sh(py, ["-m", "pytest", "--testmon", "-q", "-p", "no:cacheprovider", `${PY_ROOT}/tests`]);
+  // ⚠ testmon 要 cacheprovider（读 options["lf"]），这一路不能 -p no:cacheprovider：
+  //   2026-09-25 第一次建库直接 INTERNALERROR KeyError: 'lf'。
+  if (p.python.testmon) failed |= sh(py, ["-m", "pytest", "--testmon", "-q", `${PY_ROOT}/tests`]);
   if (p.python.extra.size) failed |= sh(py, ["-m", "pytest", "-q", "-p", "no:cacheprovider", ...list(p.python.extra)]);
   const abs = s => list(s).map(f => path.join(ROOT, f));
   if (p.client.related.size) failed |= sh("npx", ["vitest", "related", "--run", ...abs(p.client.related)]);
