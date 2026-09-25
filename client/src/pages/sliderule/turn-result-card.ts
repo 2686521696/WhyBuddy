@@ -32,6 +32,26 @@
 import type { UiTurn } from "./types";
 import { isOfficeFileDeliverable } from "./deliverable-kind";
 
+/** 跟 Python control_goal_continuation.ENVIRONMENT_ONLY_BLOCKERS 成对（§4）。 */
+const ENVIRONMENT_ONLY_BLOCKERS = new Set([
+  "project_verification_environment_blocked",
+]);
+
+/**
+ * 缺的只剩环境挡着的那一项：验收没能跑起来，不是没通过。
+ * ⚠ 2026-09-25 隔离真机 sr-20260925070944-QGT6D76EYV：收尾通知说「没能在这个环境里
+ *   跑起来」，结果卡却写「还没通过交付验收」。
+ */
+export function onlyEnvironmentBlocked(
+  reasons: readonly string[] | null | undefined
+): boolean {
+  return (
+    Array.isArray(reasons) &&
+    reasons.length > 0 &&
+    reasons.every(reason => ENVIRONMENT_ONLY_BLOCKERS.has(reason))
+  );
+}
+
 /** 这一轮真正**改了**工程才算出货。读状态 / 写计划 / 提问都不算。
  *
  * ⚠ 2026-09-23 真机（管理员账号，待办清单话题，10m 44s）：轨迹是
@@ -126,6 +146,11 @@ export type ResultCardModel = {
    * 网页工程只认宿主判定（opts.delivered），见 resultCardModel。
    */
   status: "done" | "undelivered";
+  /**
+   * 没交付的是哪一种：`environment` = 验收在这个环境里没能跑起来（不是应用的问题），
+   * 其余一律 `not_passed`。只在 status 为 undelivered 时有意义。
+   */
+  undeliveredWhy: "environment" | "not_passed";
   /** 卡片标题：这一轮做出来的东西叫什么。 */
   title: string;
   /** 运行时徽章文案：工程档写「未发布」，HTML 档写「HTML 原型」。 */
@@ -174,6 +199,8 @@ export function resultCardModel(
      * null / 不传 = 还没拿到证据，不许当成已交付。见 delivery-verdict-client.ts。
      */
     delivered?: boolean | null;
+    /** 宿主给的缺项码（/delivery 的 blockedReasons），只给最新一轮。 */
+    deliveryBlockedReasons?: readonly string[] | null;
   } = {}
 ): ResultCardModel | null {
   if (!turn || turn.status === "streaming") return null;
@@ -196,6 +223,9 @@ export function resultCardModel(
   const verdictGated = isProject && !office && opts.delivered !== undefined;
   return {
     status: verdictGated && opts.delivered !== true ? "undelivered" : "done",
+    undeliveredWhy: onlyEnvironmentBlocked(opts.deliveryBlockedReasons)
+      ? "environment"
+      : "not_passed",
     title,
     badge: isProject ? "未发布" : "HTML 原型",
     worked: workedLabel(turn.durationMs),

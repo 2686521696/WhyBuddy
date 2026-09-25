@@ -129,6 +129,27 @@ def present_project_tool_result(body: Any) -> Any:
     return out
 
 
+# browser_* 的错误码 → 一句话。写法同下面的 VERIFICATION_ERROR_TEXT。
+# ⚠ 2026-09-25 QGT6D76EYV：browser_view 只回 project_browser_action_failed，
+#   真因是这台主机的页面浏览器没装好。
+BROWSER_ERROR_TEXT = {
+    "project_browser_driver_unavailable": "这台主机上的页面浏览器起不来（浏览器组件没装好）。这是运行环境的问题，不是应用代码；"
+        "别反复调 browser_*，也别为此改代码或重启服务。开发服务器是否在跑看 runtime 状态，交付以 project_verify 的独立验收为准。",
+    "project_browser_preview_unreachable": "打不开预览地址（网络或预览网关不通）。开发服务器可能仍在正常运行；这是环境问题，"
+        "不是代码错误，别为此重启服务或改代码。",
+    "project_browser_preview_forbidden": "预览网关拒绝了这台主机的访问（401/403），访问票不被认。这是环境问题，不是应用自己的登录；"
+        "改代码解决不了。",
+}
+
+
+def tool_error(code: str) -> dict:
+    """工具失败的回执：错误码，认得的再附一句人话。"""
+    body = {"ok": False, "error": code[:240]}
+    if code in BROWSER_ERROR_TEXT:
+        body["hint"] = BROWSER_ERROR_TEXT[code]
+    return body
+
+
 # 独立验收的错误码 → 模型读得懂的一句话：是什么、不是什么、该怎么办。
 # ⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：回执只有
 #   project_browser_auth_failed，模型收尾写成「被模板登录鉴权阻断」——当成了应用
@@ -690,7 +711,7 @@ class ProjectTools:
         except PersistClosedError as exc:
             return {"ok": False, "error": str(exc.reason)[:240]}
         except (ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, PermissionError, ValueError) as exc:
-            return {"ok": False, "error": str(exc)[:240]}
+            return tool_error(str(exc))
 
     def _project_result(self, project):
         revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
@@ -950,12 +971,23 @@ class ProjectTools:
             if page is not None:
                 result["url"] = page["url"]
                 interactor = getattr(self.supervisor, "browser_interactor", None)
-                if callable(interactor):
-                    observed = interactor({"op": "snapshot"}, page)
-                    if isinstance(observed, dict):
-                        result.update(observed)
-                elif local_playwright_available():
-                    result.update(run_browser_action(page["url"], {"op": "snapshot"}))
+                # 观察类，fail-open（§7）：拿不到页面快照也把开发服务器状态交回去，
+                # 附上为什么拿不到。原来整条 browser_view 报错，runtime 状态一起丢了。
+                try:
+                    if callable(interactor):
+                        observed = interactor({"op": "snapshot"}, page)
+                        if isinstance(observed, dict):
+                            result.update(observed)
+                    elif local_playwright_available():
+                        result.update(run_browser_action(page["url"], {"op": "snapshot"}))
+                    else:
+                        raise ValueError("project_browser_driver_unavailable")
+                except ValueError as exc:
+                    code = str(exc)[:240]
+                    result["interactive"] = False
+                    result["browserError"] = code
+                    if code in BROWSER_ERROR_TEXT:
+                        result["hint"] = BROWSER_ERROR_TEXT[code]
             return result
         operation = self._operation_by_id(project, session_id, parsed.id)
         if name == "shell_kill_process":

@@ -12,12 +12,22 @@ import { requestProjectWorkspace } from "./project-workspace-client";
  *
  * 拉不到 / 形状不对 → null（不知道）。不知道不等于交付了：调用方把 null 当
  * 「还没拿到证据」，不许当成 true。
+ *
+ * ⚠ 2026-09-25 隔离真机 sr-20260925070944-QGT6D76EYV：验收被预览访问票挡住，
+ *   收尾通知说「没能在这个环境里跑起来」，结果卡却写「还没通过交付验收」。
+ *   把服务端的缺项码一起带回来，卡片用它分辨是哪一种——码表不另抄，只认
+ *   服务端给的那一个环境码（见 turn-result-card.ts 的 onlyEnvironmentBlocked）。
  */
+export interface DeliveryVerdict {
+  eligible: boolean;
+  blockedReasons: string[];
+}
+
 export function useProjectDeliveryVerdict(
   projectId: string | null | undefined,
   refreshKey?: unknown
-): boolean | null {
-  const [eligible, setEligible] = useState<boolean | null>(null);
+): DeliveryVerdict | null {
+  const [eligible, setEligible] = useState<DeliveryVerdict | null>(null);
   useEffect(() => {
     const id = String(projectId || "").trim();
     setEligible(null);
@@ -32,7 +42,14 @@ export function useProjectDeliveryVerdict(
         if (ac.signal.aborted) return;
         setEligible(
           body && body.projectId === id && typeof body.eligible === "boolean"
-            ? body.eligible
+            ? {
+                eligible: body.eligible,
+                blockedReasons: Array.isArray(body.blockedReasons)
+                  ? body.blockedReasons.filter(
+                      (item: unknown): item is string => typeof item === "string"
+                    )
+                  : [],
+              }
             : null
         );
       })

@@ -27,8 +27,17 @@ const { chromium } = %(require_playwright)s;
 const url = action.url;
 const origin = new URL(url).origin;
 
+// ⚠ 2026-09-25 隔离真机 sr-20260925070944-QGT6D76EYV：browser_view 回
+//   project_browser_action_failed。真因是本机 Playwright 1.61 要的 chromium 1228 没装
+//   （容器里是 1194），浏览器根本没起来——下面那句兜底 catch 把它抹成了「动作失败」。
+//   起不来、打不开、被拒，三件事分开报，模型才知道是环境不是代码。
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (_) {
+    throw new Error("project_browser_driver_unavailable");
+  }
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("framenavigated", (frame) => {
     if (frame === page.mainFrame()) {
@@ -38,7 +47,16 @@ const origin = new URL(url).origin;
       }
     }
   });
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+  let response;
+  try {
+    response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+  } catch (err) {
+    if (String(err && err.message || "").startsWith("project_browser_")) throw err;
+    throw new Error("project_browser_preview_unreachable");
+  }
+  if (response && (response.status() === 401 || response.status() === 403)) {
+    throw new Error("project_browser_preview_forbidden");
+  }
   const nodes = page.locator("a,button,input,select,textarea,[role='button'],[role='link']");
   const count = await nodes.count();
   const pick = async (index) => {

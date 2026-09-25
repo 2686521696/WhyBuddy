@@ -98,6 +98,25 @@ describe("对照 Cursor 文件卡：发布在卡头，完成态在卡外", () =>
     ).toContain("还没通过交付验收");
   });
 
+  it("验收被环境挡住：状态行说没能跑起来，不说没通过", async () => {
+    const el = await mount(
+      <TurnResultCard
+        turn={turnOf()}
+        runtimeKind="project"
+        goalText="做一个记账小应用"
+        projectRevision="prv-1"
+        delivered={false}
+        deliveryBlockedReasons={["project_verification_environment_blocked"]}
+        onOpen={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const line = el.querySelector('[data-testid="turn-result-undelivered"]')?.textContent ?? "";
+    expect(line).toContain("没能在这个环境里跑起来");
+    expect(line).not.toContain("没通过");
+    expect(el.textContent).not.toContain("任务已完成");
+  });
+
   it("反向：判定通过时照旧是任务已完成，没有未验收那行", async () => {
     const el = await mount(
       <TurnResultCard

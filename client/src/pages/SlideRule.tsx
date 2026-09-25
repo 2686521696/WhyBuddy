@@ -30,7 +30,10 @@ import { PlanTodoDock } from "./sliderule/PlanTodoDock";
 import { deriveProjectActivity } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import { useOfficeArtifactPresent } from "./sliderule/project-runtime/office-artifacts-client";
-import { useProjectDeliveryVerdict } from "./sliderule/project-runtime/delivery-verdict-client";
+import {
+  useProjectDeliveryVerdict,
+  type DeliveryVerdict,
+} from "./sliderule/project-runtime/delivery-verdict-client";
 import {
   shouldAutoCreateProject,
   shouldShowProjectComputer,
@@ -609,7 +612,7 @@ const ImSurfaceContext = React.createContext<{
   deliverableKind?: string;
   hasOfficeArtifact?: boolean;
   /** 网页工程的宿主交付判定；null = 还没拿到证据。 */
-  deliveryVerdict?: boolean | null;
+  deliveryVerdict?: DeliveryVerdict | null;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -788,7 +791,12 @@ function ImAssistantMessage() {
       deliverableKind={deliverableKind}
       hasOfficeArtifact={hasOfficeArtifact}
       /* 宿主交付判定只挂最新一轮：它说的是工程此刻，贴到旧轮上就是张冠李戴。 */
-      delivered={turn.id === ctx.latestTurnId ? deliveryVerdict : undefined}
+      delivered={
+        turn.id === ctx.latestTurnId ? (deliveryVerdict?.eligible ?? null) : undefined
+      }
+      deliveryBlockedReasons={
+        turn.id === ctx.latestTurnId ? deliveryVerdict?.blockedReasons : undefined
+      }
       onOpen={() => {
         window.dispatchEvent(
           new CustomEvent("sliderule:open-deliverable")

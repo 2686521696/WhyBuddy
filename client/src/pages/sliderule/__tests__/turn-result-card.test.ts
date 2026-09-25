@@ -412,7 +412,46 @@ describe("网页工程：任务已完成只认宿主交付判定", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
     expect(src).toMatch(/useProjectDeliveryVerdict\(/);
-    expect(src).toMatch(/delivered=\{turn\.id === ctx\.latestTurnId \? deliveryVerdict : undefined\}/);
+    expect(src).toMatch(
+      /delivered=\{\s*turn\.id === ctx\.latestTurnId \? \(deliveryVerdict\?\.eligible \?\? null\) : undefined\s*\}/
+    );
+    expect(src).toMatch(
+      /deliveryBlockedReasons=\{\s*turn\.id === ctx\.latestTurnId \? deliveryVerdict\?\.blockedReasons : undefined\s*\}/
+    );
     expect(src).not.toMatch(/delivered=\{true\}/);
+  });
+});
+
+/**
+ * ⚠ 2026-09-25 隔离真机 sr-20260925070944-QGT6D76EYV：验收被预览访问票挡住，收尾
+ *   通知说「没能在这个环境里跑起来」，卡上却写「还没通过交付验收」。缺项码取服务端
+ *   /delivery 原样的 blockedReasons。
+ */
+describe("没交付的是哪一种：没通过 / 没能跑起来", () => {
+  const web = (reasons?: string[]) =>
+    resultCardModel(turn({ steps: [chip("project_patch")] }), {
+      runtimeKind: "project",
+      projectRevision: "prv-1",
+      delivered: false,
+      deliveryBlockedReasons: reasons,
+    });
+
+  it("只剩环境挡着：说没能跑起来", () => {
+    expect(web(["project_verification_environment_blocked"])?.undeliveredWhy).toBe("environment");
+  });
+
+  it("反向：验收确实没过，照旧是没通过", () => {
+    expect(web(["project_current_business_verification_required"])?.undeliveredWhy).toBe("not_passed");
+  });
+
+  it("反向：环境挡着之外还缺别的，不能只怪环境", () => {
+    expect(
+      web(["project_verification_environment_blocked", "project_plan_approval_required"])?.undeliveredWhy
+    ).toBe("not_passed");
+  });
+
+  it("反向：没拿到缺项码，不猜", () => {
+    expect(web(undefined)?.undeliveredWhy).toBe("not_passed");
+    expect(web([])?.undeliveredWhy).toBe("not_passed");
   });
 });

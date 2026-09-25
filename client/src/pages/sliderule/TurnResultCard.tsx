@@ -75,6 +75,7 @@ export function TurnResultCard({
   deliverableKind,
   hasOfficeArtifact,
   delivered,
+  deliveryBlockedReasons,
   onOpen,
   onRetry,
 }: {
@@ -89,6 +90,8 @@ export function TurnResultCard({
   hasOfficeArtifact?: boolean;
   /** 宿主交付判定，只给最新一轮（见 delivery-verdict-client.ts）。 */
   delivered?: boolean | null;
+  /** 宿主缺项码，只给最新一轮。用来分辨「没通过」和「没能跑起来」。 */
+  deliveryBlockedReasons?: readonly string[] | null;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
@@ -103,6 +106,7 @@ export function TurnResultCard({
     deliverableKind,
     hasOfficeArtifact,
     delivered,
+    deliveryBlockedReasons,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
@@ -184,7 +188,9 @@ export function TurnResultCard({
             className="inline-flex items-center gap-1 text-[12px] text-amber-600"
             data-testid="turn-result-undelivered"
           >
-            还没通过交付验收
+            {model.undeliveredWhy === "environment"
+              ? "验收没能在这个环境里跑起来"
+              : "还没通过交付验收"}
           </span>
         )}
         {duration ? (
