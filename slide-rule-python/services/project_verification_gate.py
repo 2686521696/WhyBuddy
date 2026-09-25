@@ -22,6 +22,14 @@ SUITE_ASSERTIONS = {SUITE_VERSION: REQUIRED_ASSERTIONS,
         "no_page_errors", "no_failed_requests"})}
 
 
+# 独立验收没能在这个环境里跑起来的错误码：跟应用代码无关，改代码、重复验收都没用。
+# ⚠ 2026-09-25 隔离真机 sr-20260925061903-YNZ07ARRGR：验收被预览访问票挡住，
+#   收尾通知却说「独立浏览器验收没有通过」，还自动续跑了一轮——模型那一轮只能把
+#   同一句话再说一遍。交付判定、收尾通知、续跑都从这里认环境问题（§4 成对）。
+ENVIRONMENT_BLOCK_CODES = frozenset({"project_browser_auth_failed", "project_browser_not_configured",
+    "project_browser_key_missing"})
+
+
 def validate_build_evidence(build, *, revision, tree_hash, lockfile_hash, suite_version):
     if build is None:
         return None

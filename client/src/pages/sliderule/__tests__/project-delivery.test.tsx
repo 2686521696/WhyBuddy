@@ -302,3 +302,17 @@ it("accepts a plain web app delivery bound to the web acceptance profile", async
   expect(container.textContent).toContain("独立浏览器里页面渲染出看得见的内容");
   expect(container.textContent).not.toContain("通过真实接口新增、编辑和筛选任务");
 });
+
+/**
+ * ⚠ 2026-09-25 隔离真机 sr-20260925061903-YNZ07ARRGR：验收被预览访问票挡住，
+ *   原来一律写「没通过」。新缺项码要说成「没能跑起来」，不许露出机器码。
+ */
+it("says an environment-blocked check did not run, not that it failed", async () => {
+  view.eligible = false;
+  view.blockedReasons = ["project_verification_environment_blocked"];
+  await render();
+  expect(button("准备交付包").disabled).toBe(true);
+  expect(container.textContent).toContain("没能在这个环境里跑起来");
+  expect(container.textContent).not.toContain("project_verification_environment_blocked");
+  expect(container.textContent).not.toContain("尚未通过独立浏览器验收");
+});

@@ -545,8 +545,10 @@ class ControlRunService:
             # 便宜地先挡掉对话目标，省一次库查询。判据仍在纯函数里。
             return False
         done = await self._goal_is_done(record)
+        blocked = [] if done else await self._goal_blocked_reasons(record)
         wanted, reason = should_continue(
-            status=status, goal=goal, events=record.get("events"), goal_done=done)
+            status=status, goal=goal, events=record.get("events"), goal_done=done,
+            blocked_reasons=blocked)
         if not wanted:
             log.info("control goal not continued run=%s reason=%s", run_id, reason)
             return False

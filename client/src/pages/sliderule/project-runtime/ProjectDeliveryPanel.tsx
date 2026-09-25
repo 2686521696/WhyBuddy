@@ -35,6 +35,9 @@ const REASONS: Record<string, string> = {
   project_current_business_verification_required:
     "当前源码版本尚未通过独立浏览器验收",
   project_verification_evidence_incomplete: "构建或浏览器证据不完整",
+  // 跟 Python control_goal_continuation.BLOCKER_TEXT 成对（§4）。
+  project_verification_environment_blocked:
+    "独立浏览器验收没能在这个环境里跑起来（运行环境的问题，不是应用代码）",
 };
 // ⚠ 2026-09-25 隔离真机 sr-20260925025649-74E9KCWHAB：交付档原来只认任务
 //   应用，普通网页（记账页）永远没有可交付的证据。跟 Python

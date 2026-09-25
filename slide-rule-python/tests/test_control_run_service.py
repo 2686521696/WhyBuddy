@@ -1493,3 +1493,47 @@ def test_a_delivered_project_goal_still_completes(env, monkeypatch):
             await service.shutdown()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("blocked, continues", [
+    (["project_verification_environment_blocked"], False),
+    (["project_verification_required"], True),
+])
+def test_an_environment_blocked_check_is_handed_back_not_continued(env, monkeypatch, blocked, continues):
+    """⚠ 2026-09-25 隔离真机 sr-20260925061903-YNZ07ARRGR：验收被预览访问票挡住，
+    收尾却说「独立浏览器验收没有通过」，还自动续跑一轮——模型那一轮只能把同一句话
+    再说一遍。只剩环境挡着：不续跑、直接交回，并说「没能在这个环境里跑起来」。
+    反向：缺的是模型能补的（还没验收），照旧续跑一次。
+    把 service 传给 should_continue 的 blocked_reasons 删掉，第一组变红。"""
+    calls = []
+
+    async def model(messages, **kwargs):
+        calls.append(1)
+        return llm_text("构建已通过，独立浏览器验收被环境阻断。")
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def reasons(self, record):
+        return list(blocked)
+    monkeypatch.setattr(ControlRunService, "_goal_blocked_reasons", reasons)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "批准计划并执行"), env.owner, "env-" + str(continues))
+            final = await settled(service, record["runId"])
+            assert final["status"] == "waiting_user", final["status"]
+            notes = [e["text"] for e in final["events"]
+                     if e.get("type") == "control_text" and e.get("stopReason") == "goal_not_delivered"]
+            assert notes
+            if continues:
+                assert len(calls) == 2
+            else:
+                assert len(calls) == 1, "只剩环境挡着还续跑了"
+                assert "没能在这个环境里跑起来" in notes[-1]
+                assert "没有通过" not in notes[-1]
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())

@@ -152,9 +152,14 @@ BLOCKER_TEXT: Dict[str, str] = {
     "project_plan_approval_required": "计划还没有批准",
     "project_verification_required": "还没有对当前版本做独立浏览器验收（project_verify）",
     "project_current_business_verification_required": "当前版本的独立浏览器验收没有通过",
+    "project_verification_environment_blocked": "独立浏览器验收没能在这个环境里跑起来（运行环境的问题，不是应用代码）",
     "project_verification_evidence_incomplete": "验收证据对不上当前版本（构建或截图不完整）",
     "project_acceptance_profile_not_bound": "这个工程还没有可用的验收档案",
 }
+
+
+# 模型改不动的缺项：只剩这些时不自动续跑。
+ENVIRONMENT_ONLY_BLOCKERS = frozenset({"project_verification_environment_blocked"})
 
 
 def plain_blockers(blocked_reasons: Any) -> List[str]:
@@ -210,6 +215,7 @@ def should_continue(
     goal: Any,
     events: Any,
     goal_done: bool,
+    blocked_reasons: Any = None,
 ) -> tuple[bool, Optional[str]]:
     """这一回合结束之后，要不要自己接着跑。
 
@@ -229,6 +235,11 @@ def should_continue(
         return False, "not_a_project_goal"
     if goal_done:
         return False, "goal_done"
+    if (isinstance(blocked_reasons, list) and blocked_reasons
+            and all(str(item) in ENVIRONMENT_ONLY_BLOCKERS for item in blocked_reasons)):
+        # ⚠ 2026-09-25 YNZ07ARRGR：只剩环境挡着时续跑，模型那一轮只能把同一句话
+        #   再说一遍。缺的东西不在它手里，交回用户。
+        return False, "environment_blocked"
     if turn_was_capped(events):
         # 闸掐断的不许自己再要一份预算。见 turn_was_capped 头注。
         return False, "capped"

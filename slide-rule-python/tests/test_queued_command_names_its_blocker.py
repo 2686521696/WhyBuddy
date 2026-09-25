@@ -143,3 +143,28 @@ def test_a_second_start_is_told_to_use_the_running_one_not_to_kill_it(setup, mon
     assert result["blockedBy"]["operationId"] == holder
     assert "不要停它" in hint and extra in hint
     assert f"停掉 {holder}" not in hint
+
+
+def test_cancelling_a_command_stuck_behind_the_dev_server_really_cancels_it(setup, monkeypatch):
+    """⚠ 2026-09-25 隔离真机 sr-20260925061903-YNZ07ARRGR：npm test 排在常驻开发服务器
+    后面，模型照提示 project_cancel，回执仍是 queued，收工时还烂在队列里。
+    走真的分发。把 request_operation_cancel 里直接落终态那支删掉，本条变红。"""
+    monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
+    project = create(setup)
+    _hold_runtime(setup, project)
+    queued = _dispatch(setup, "shell_exec", {"command": "npm test -- --run"})
+    assert queued["status"] == "queued" and queued.get("blockedBy")
+    cancelled = _dispatch(setup, "project_cancel", {"operationId": queued["operationId"]})
+    assert cancelled["ok"] and cancelled["status"] == "cancelled", cancelled
+    assert "blockedBy" not in cancelled
+    assert setup.store.get_operation(queued["operationId"], owner_id="alice").status == "cancelled"
+
+
+def test_cancelling_a_queued_command_with_a_free_lease_still_leaves_cleanup_to_the_worker(setup):
+    """反向：租约空着时工人很快会认领它，照旧只打标记、由工人收尾（写 stopped、刷事件）。"""
+    project = create(setup)
+    op = setup.store.create_operation(project["projectId"], owner_id="alice", kind="runtime.exec",
+        idempotency_key="free-lease", expected_revision=project["revision"], approval_ref=setup.approval,
+        input={"command": "build"})
+    saved = setup.store.request_operation_cancel(op.operationId, owner_id="alice")
+    assert saved.status == "queued" and saved.cancelRequested is True

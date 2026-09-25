@@ -790,12 +790,36 @@ class ProjectStore:
             "leaseExpiresAt": rows[0]["lease_expires_at"]}
 
     def request_operation_cancel(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
+        """取消。被别的操作占着租约、从没被认领的排队操作直接落 cancelled；其余只打标记等工人收尾。
+
+        ⚠ 2026-09-25 隔离真机 sr-20260925061903-YNZ07ARRGR：npm test 排在常驻开发
+          服务器后面，模型照排队提示 project_cancel 它，回执仍是 queued，收工时
+          还烂在队列里——只打了 cancelRequested，而工人要等租约空出来才会认领
+          它、才会把它收成 cancelled，开发服务器不停就永远等不到。
+          没被认领（leaseGeneration 为空、没有待刷事件）就没碰过沙盒，没有要清理
+          的东西。与认领并发时 rev CAS 落空，重读后走原来的打标记路径。
+        """
         for _ in range(12):
             row = self._operation_row(operation_id, owner_id)
             operation = ProjectOperation.model_validate_json(row["payload"])
-            if operation.cancelRequested or operation.status in _TERMINAL_OPERATIONS:
+            if operation.status in _TERMINAL_OPERATIONS:
                 return operation
-            updated = operation.model_copy(update={"cancelRequested": True, "updatedAt": _now()})
+            never_claimed = (operation.status == "queued" and operation.leaseGeneration is None
+                             and operation.pendingEvent is None
+                             and operation.kind in {"runtime.start", "runtime.exec"})
+            # 只在「被另一条占着租约挡住」时直接落终态：这正是工人认领不到它的
+            # 情形（list_runnable_operations 按同一条件跳过）。租约空着时工人很快
+            # 会认领，照旧由它收尾——写 runtime=stopped、刷事件。
+            lease = self.get_lease(operation.projectId, owner_id=owner_id) if never_claimed else None
+            held_by_other = (lease is not None and lease.expiresAt > time.time()
+                             and lease.processRefs.get("operationId") not in (None, operation.operationId))
+            if never_claimed and held_by_other:
+                updated = operation.model_copy(update={"cancelRequested": True, "status": "cancelled",
+                                                       "updatedAt": _now()})
+            elif operation.cancelRequested:
+                return operation
+            else:
+                updated = operation.model_copy(update={"cancelRequested": True, "updatedAt": _now()})
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 returning id",
                        [_operation_payload(updated), operation_id, row["rev"]]):
                 return updated

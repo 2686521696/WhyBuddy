@@ -586,3 +586,28 @@ def test_a_passed_check_carries_no_error_hint(live, monkeypatch):
     assert verdict(live, child).effectiveStatus == "passed"
     seen = live.tools.execute("project_status", {"operationId": child, "waitSeconds": 0}, live.state)
     assert "errorHint" not in seen["verification"]
+
+
+def test_an_environment_blocked_check_is_its_own_delivery_reason(live, monkeypatch):
+    """⚠ 2026-09-25 YNZ07ARRGR：交付判定把「验收没跑起来」说成「验收没通过」。
+    走真工人、真验收记录；收据形状照真机。"""
+    from services.project_delivery import ProjectDeliveryService
+    browser, _ = install_browser(live, monkeypatch)
+    monkeypatch.setattr(browser, "run", lambda **kwargs: {"status": "blocked", "cleanupConfirmed": True,
+        "runnerVersion": "whybuddy-browser-v1:pw1.61.1", "errorCode": "project_browser_auth_failed",
+        "assertions": [], "artifacts": {}})
+    verdict(live, verify(live))
+    reasons = ProjectDeliveryService(live.store, "alice").status(live.project["projectId"])["blockedReasons"]
+    assert "project_verification_environment_blocked" in reasons
+    assert "project_current_business_verification_required" not in reasons
+
+
+def test_a_failed_assertion_is_still_a_business_failure(live, monkeypatch):
+    """反向：断言没过是应用的问题，照旧是「没通过」。"""
+    from services.project_delivery import ProjectDeliveryService
+    browser, _ = install_browser(live, monkeypatch)
+    browser.failed = True
+    verdict(live, verify(live))
+    reasons = ProjectDeliveryService(live.store, "alice").status(live.project["projectId"])["blockedReasons"]
+    assert "project_current_business_verification_required" in reasons
+    assert "project_verification_environment_blocked" not in reasons

@@ -17,7 +17,8 @@ from services.project_export import source_archive
 from services.project_manifest import canonical_json, content_hash
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound
-from services.project_verification_gate import validate_build_evidence, validate_verification_result
+from services.project_verification_gate import (ENVIRONMENT_BLOCK_CODES, validate_build_evidence,
+    validate_verification_result)
 from services.project_verification_store import ProjectVerificationStore
 from services.scope_authority import plan_execution_authorized
 
@@ -46,6 +47,10 @@ class ProjectDeliveryService:
             reasons.append("project_verification_required")
         elif snapshot.verification.projectId != project_id:
             raise ProjectNotFound("project_verification_not_found")
+        elif (snapshot.effectiveStatus == "blocked"
+                and snapshot.verification.errorCode in ENVIRONMENT_BLOCK_CODES):
+            # 验收没跑起来，不是没通过（见 ENVIRONMENT_BLOCK_CODES）。
+            reasons.append("project_verification_environment_blocked")
         elif (snapshot.effectiveStatus != "passed" or bound is None
                 or snapshot.verification.suiteVersion != bound[1]):
             reasons.append("project_current_business_verification_required")
