@@ -140,6 +140,8 @@ export function workedLabel(ms: unknown): string | null {
   return worked ? `工作了 ${worked}` : null;
 }
 
+export const OFFICE_BADGE = "办公文件";
+
 export type ResultCardModel = {
   /**
    * 卡外那行：`done` 画「✓ 任务已完成」；`undelivered` 画「还没通过交付验收」。
@@ -153,7 +155,13 @@ export type ResultCardModel = {
   undeliveredWhy: "environment" | "not_passed";
   /** 卡片标题：这一轮做出来的东西叫什么。 */
   title: string;
-  /** 运行时徽章文案：工程档写「未发布」，HTML 档写「HTML 原型」。 */
+  /**
+   * 徽章：网页工程写「未发布」，办公文件写「办公文件」，HTML 档写「HTML 原型」。
+   *
+   * ⚠ 2026-09-26 隔离真机 sr-20260926043506-7B49NNSE1M：PPT 交付的卡也标「未发布」。
+   *   发布是网页工程的事（canPublish 早就只给网页），文件没有发布这一说——
+   *   用户看了会去找「发布」按钮。徽章跟 canPublish 用同一个判据。
+   */
   badge: string;
   /** 「工作了 2m 45s」；拿不到用时就是 null。 */
   worked: string | null;
@@ -227,7 +235,7 @@ export function resultCardModel(
       ? "environment"
       : "not_passed",
     title,
-    badge: isProject ? "未发布" : "HTML 原型",
+    badge: office ? OFFICE_BADGE : isProject ? "未发布" : "HTML 原型",
     worked: workedLabel(turn.durationMs),
     canOpen: true,
     canPublish: isProject && !office,

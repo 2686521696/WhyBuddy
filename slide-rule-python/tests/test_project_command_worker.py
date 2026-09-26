@@ -516,7 +516,11 @@ def test_empty_office_scan_is_a_fact_and_failed_stderr_is_the_excerpt(command_se
     assert "No module named pptx" in excerpt
     snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
     receipt = _command_pointer(snap, excerpt)
-    assert "没有合格的办公文件" in receipt["hint"]
+    # ⚠ 2026-09-26 sr-20260926043506-7B49NNSE1M：这里原来要求失败命令也挂
+    #   「没有合格的办公文件」。失败本身才是消息，这句只是噪声；它留给
+    #   「成功跑完却没收回文件」那一种（test_scan_sentence_only_when_it_is_news）。
+    assert "没有合格的办公文件" not in receipt["hint"]
+    assert "officeScan" not in receipt
     assert "base64" not in receipt["hint"]
     assert receipt["excerpt"] != receipt.get("errorCode")
 

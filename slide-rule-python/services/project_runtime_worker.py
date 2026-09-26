@@ -41,6 +41,7 @@ from services.deliverable_kind import (
     WORKSPACE_TEMPLATE_VERSION,
     is_office_artifact_path,
     is_office_zip_bytes,
+    office_facts,
     office_e2b_template,
     orch_trace,
     skip_vite_dependency_install,
@@ -1047,6 +1048,13 @@ class _RuntimeTask:
             if stored not in kept:
                 kept.append(stored)
             self.result[bucket] = kept[:8]
+            # 这次新产出的文件，量一下里面到底有什么（office_facts 头注）。
+            # 没变的旧文件不量：那不是这条命令的产出，上一次收回时已经量过。
+            facts = None if unchanged else office_facts(payload, stored)
+            if facts and stored in self.result[bucket]:
+                measured = dict(self.result.get("officeFacts") or {})
+                measured[stored] = facts
+                self.result["officeFacts"] = measured
         _RuntimeTask._remember_held_office_files(self, report_miss)
 
     def _flush_stdin(self):

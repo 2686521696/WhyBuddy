@@ -33,6 +33,10 @@ def assert_live_guidance(messages, offered, *, has_project=True):
     assert "如实交回 operationId" in prompt
     assert "宣称完成" in prompt
     assert "修改前先取消活跃运行" not in prompt
+    # 2026-09-26 sr-20260926043506-7B49NNSE1M：模型当沙盒什么都有，写完脚本直接跑，
+    # 第一发 ModuleNotFoundError。按意思钉环境事实；只陈述、不排步骤。
+    assert "只保证语言运行时和标准库" in prompt and "装过的包会一直在" in prompt
+    assert "先 pip" not in prompt
     assert "私有预览和独立浏览器验收尚未接入" not in prompt
     # Readiness is assembled on the live control-turn path (including before
     # project creation), while browser acceptance remains a separate gate.
@@ -111,3 +115,10 @@ def test_durable_control_recovery_replaces_old_saved_stop_before_patch_instructi
         finally:
             await second.shutdown()
     asyncio.run(run())
+
+
+def test_the_sandbox_fact_is_a_project_fact_only():
+    """反向：还没进工程档的普通对话不谈沙盒里装了什么。"""
+    from models.v5_state import V5SessionState
+    chat = control._system_prompt(V5SessionState(sessionId="chat-only", goal={"text": "聊聊天", "status": "clear"}))
+    assert "只保证语言运行时和标准库" not in chat

@@ -197,6 +197,61 @@ def is_office_artifact_path(path: Any) -> bool:
     return office_artifact_suffix(path) is not None
 
 
+_CHART_PART = re.compile(r"^(?:ppt|word|xl)/charts/chart\d+\.xml$")
+_MEDIA_PART = re.compile(r"^(?:ppt|word|xl)/media/[^/]+$")
+_SLIDE_PART = re.compile(r"^ppt/slides/slide\d+\.xml$")
+_SHEET_PART = re.compile(r"^xl/worksheets/sheet\d+\.xml$")
+
+
+def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
+    """从文件字节里量出来的结构事实：几页 / 几张表、原生图表、图片、表格。
+
+    ⚠ 2026-09-26 隔离真机 sr-20260926043506-7B49NNSE1M：模型交付时说
+      「三个关键指标及可编辑图表」「内容与图表均为可编辑元素」。文件里
+      ppt/charts/ 一个都没有——指标图是矩形拼的，在 PowerPoint 里改不了数据。
+      它唯一做过的核验是 len(p.slides)，图表那半句没有任何工具结果撑着。
+      宿主手里本来就有这份字节，量出来放进回执，模型描述文件时有据可依。
+
+    量不出来（不是 zip、坏包）返回 None——这是增强项，fail-open（本仓 §七）。
+    """
+    ext = Path(str(path or "")).suffix.lower()
+    if ext not in OFFICE_EXTENSIONS or not is_office_zip_bytes(data):
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(bytes(data))) as archive:
+            names = archive.namelist()
+            facts: dict[str, Any] = {
+                "charts": sum(1 for n in names if _CHART_PART.match(n)),
+                "pictures": sum(1 for n in names if _MEDIA_PART.match(n)),
+            }
+            if ext == ".pptx":
+                slides = [n for n in names if _SLIDE_PART.match(n)]
+                facts["slides"] = len(slides)
+                facts["tables"] = sum(archive.read(n).count(b"<a:tbl>") for n in slides)
+            elif ext == ".docx":
+                body = archive.read("word/document.xml") if "word/document.xml" in names else b""
+                facts["tables"] = body.count(b"<w:tbl>")
+            else:
+                facts["sheets"] = sum(1 for n in names if _SHEET_PART.match(n))
+            return facts
+    except Exception:
+        return None
+
+
+def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
+    """回执里那一句。只写量出来的数，不评价。"""
+    parts: list[str] = []
+    if "slides" in facts:
+        parts.append(f"{facts['slides']} 页")
+    if "sheets" in facts:
+        parts.append(f"工作表 {facts['sheets']} 张")
+    parts.append(f"原生图表 {facts.get('charts', 0)} 个")
+    parts.append(f"图片 {facts.get('pictures', 0)} 张")
+    if "tables" in facts:
+        parts.append(f"表格 {facts['tables']} 个")
+    return f"{path}：" + "，".join(parts)
+
+
 def is_office_zip_bytes(data: Any) -> bool:
     return isinstance(data, (bytes, bytearray)) and bytes(data[:4]) == OFFICE_ZIP_MAGIC
 

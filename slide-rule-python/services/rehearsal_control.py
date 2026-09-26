@@ -2761,6 +2761,13 @@ async def _accept_plan_answer(state: V5SessionState, raw: Dict[str, Any]) -> str
     return outcome
 
 
+#: 沙盒里有什么：只保证运行时和标准库。工程档系统提示里的一句事实，网页 / 办公都适用。
+SANDBOX_PACKAGES_FACT = (
+    "沙盒只保证语言运行时和标准库，第三方包（pip / npm）不保证已装，"
+    "没装的在 import / require 时才报错；同一个沙盒里装过的包会一直在。"
+)
+
+
 #: 选了「其他（自己写）」却没写字就提交。走 409 那条：卡片不收回，告诉人差什么。
 QUESTION_OTHER_EMPTY = "question_other_empty"
 QUESTION_OTHER_EMPTY_TEXT = "选了「其他（自己写）」但还没写内容，写上你的答案再确认。"
@@ -3908,6 +3915,11 @@ def _system_prompt(state: V5SessionState) -> str:
         #   「提交完就说好了」。test_control_project_prompt 按意思钉着它。
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
+            # ⚠ 2026-09-26 隔离真机 sr-20260926043506-7B49NNSE1M（第 15 轮同样）：模型写完
+            #   脚本直接跑，第一发 ModuleNotFoundError，再装、再跑——它以为沙盒什么都有。
+            #   这里只陈述环境事实，不排步骤（与 WORKSPACE_README 同一口径，
+            #   test_office_file_is_not_a_task_app 钉着「不写先 pip」）。
+            f"{SANDBOX_PACKAGES_FACT}"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
             "任务管理网页的 templateId 是 react-vite-tasks。"
             "办公文件不是任务管理应用，.pptx / .docx / .xlsx 不会走这个模板。"

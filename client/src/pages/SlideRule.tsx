@@ -19,6 +19,7 @@ import {
   sessionIdFromHref,
 } from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
+import { liveStatusText } from "./sliderule/live-status";
 import {
   isPreviewableImageName,
   visibleUserMessage,
@@ -1085,14 +1086,19 @@ export function ClaudeChatSurface({
   const quietHintText = quietHint(
     useQuietSeconds(latestStepText + "|" + (liveAction?.label || ""), isRunning)
   );
-  const thinkingText =
-    liveAction?.label ||
-    latestStepText ||
-    (publishClosure
+  // 没有工具在跑时不许回落到一枚已完成的动作名（见 live-status.ts 头注）。
+  const thinkingText = liveStatusText({
+    liveActionLabel: liveAction?.label,
+    latestStep: latestTurn?.steps.at(-1),
+    latestStepText,
+    runtimeKind,
+    todo: controlTodo,
+    fallback: publishClosure
       ? publishClosure.blocked
         ? "发布闭环被阻塞，等待下一步修正"
         : "发布闭环完成"
-      : "正在推演...");
+      : "正在推演...",
+  });
 
   const items = useMemo<ImItem[]>(() => buildImItems(uiTurns), [uiTurns]);
   const isEmptyThread = uiTurns.length === 0 && !isRunning;

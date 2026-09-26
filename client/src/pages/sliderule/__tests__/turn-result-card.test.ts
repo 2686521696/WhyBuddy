@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import { OFFICE_FILE } from "../deliverable-kind";
 import {
   formatWorkedDuration,
+  OFFICE_BADGE,
   resultCardModel,
   turnDeliveredOfficeFile,
   turnDeliveredProject,
@@ -259,6 +260,9 @@ describe("有东西才出卡", () => {
     });
     expect(model).not.toBeNull();
     expect(model!.canPublish).toBe(false);
+    // 2026-09-26 sr-20260926043506-7B49NNSE1M：PPT 的卡曾标「未发布」——文件没有发布这一说。
+    expect(model!.badge).toBe(OFFICE_BADGE);
+    expect(model!.badge).not.toBe("未发布");
     expect(turnDeliveredOfficeFile(turn({ steps: [chip("bash")] }))).toBe(true);
   });
 

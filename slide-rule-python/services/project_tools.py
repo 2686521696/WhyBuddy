@@ -46,6 +46,7 @@ from services.deliverable_kind import (
     idle_office_exec_allows_source_write,
     operation_left_on_lease,
     is_office_artifact_path, is_office_file_plan,
+    office_facts_sentence,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
 from services.control_skills import catalog_skill_slug
@@ -298,6 +299,13 @@ def operation_snapshot(snapshot):
         files = saved.get(name)
         if isinstance(files, list) and files:
             result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+    measured = saved.get("officeFacts")
+    if isinstance(measured, dict) and measured:
+        result["officeFacts"] = {
+            str(path)[:240]: {k: v for k, v in facts.items() if isinstance(v, int)}
+            for path, facts in list(measured.items())[:8]
+            if isinstance(path, str) and isinstance(facts, dict)
+        }
     downloads = saved.get("officeDownloads")
     if isinstance(downloads, dict) and downloads:
         result["officeDownloads"] = {
@@ -476,6 +484,50 @@ def _download_sentence(result) -> str:
     )
 
 
+#: 只装依赖、不产出交付物的命令。每一段（&& ; || 隔开）都得是它才算。
+_INSTALL_SEGMENT = re.compile(
+    r"^(?:sudo\s+)?(?:"
+    r"(?:python3?\s+-m\s+)?pip3?\s+install"
+    r"|uv\s+pip\s+install"
+    r"|npm\s+(?:i|install|ci|add)"
+    r"|pnpm\s+(?:i|install|add)"
+    r"|yarn(?:\s+(?:install|add))?"
+    r"|apt(?:-get)?\s+(?:-\S+\s+)*install"
+    r")(?:\s|$)"
+)
+
+
+def _only_installs(command) -> bool:
+    """这条命令是不是只在装依赖。
+
+    ⚠ 2026-09-26 隔离真机 sr-20260926043506-7B49NNSE1M：`pip install python-pptx`
+      和前一条失败的 `python3 create_ppt.py` 的回执都挂着「这次扫描没有合格的
+      办公文件」。装依赖本来就不产出文件，失败的命令失败本身才是消息——
+      这句话在那两处只是噪声。它该出现的地方是：命令成功跑完、本该产出东西、
+      却什么都没收回（3d9bfd12 加它时就是为这个）。
+      `pip install X && python3 gen.py` 不算只装依赖——后半段是要产出的。
+    """
+    segments = [seg.strip() for seg in re.split(r"&&|\|\||;", str(command or "")) if seg.strip()]
+    return bool(segments) and all(_INSTALL_SEGMENT.match(seg) for seg in segments)
+
+
+def _office_facts_sentence(result) -> str:
+    """宿主从收回的文件字节里量出来的结构（deliverable_kind.office_facts 头注）。
+
+    ⚠ 只陈述数字，外加一条真实性边界：向用户描述文件时以这些数为准——
+      跟「排队≠完成」同一类，不是教模型下一步做什么。
+    """
+    measured = result.get("officeFacts") if isinstance(result, dict) else None
+    if not isinstance(measured, dict) or not measured:
+        return ""
+    rows = "；".join(
+        office_facts_sentence(path, facts)
+        for path, facts in list(measured.items())[:8]
+        if isinstance(facts, dict)
+    )
+    return f"文件实况（宿主从文件里量的）：{rows}。向用户描述这份文件时以这些数为准。"
+
+
 def _command_pointer(result, excerpt=""):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -495,6 +547,7 @@ def _command_pointer(result, excerpt=""):
             f"办公文件已收回：{named}。"
             "这就是交付，不要再把文件 base64 进日志或 file_write。"
             "同一个沙盒留给下一条命令，已安装的包还在。"
+            + _office_facts_sentence(result)
             + _download_sentence(result)
             + hint
         )
@@ -511,11 +564,17 @@ def _command_pointer(result, excerpt=""):
             + _download_sentence(result)
             + hint
         )
-    elif result.get("officeScan") == "empty":
+    hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
+    empty_scan_is_news = (
+        result.get("officeScan") == "empty"
+        and result.get("exitCode") in (0, "0")
+        and not hidden
+        and not _only_installs(result.get("command"))
+    )
+    if empty_scan_is_news:
         hint = "这次扫描没有合格的办公文件。" + hint
     elif result.get("officeScan") == "failed":
         hint = "这次没能扫办公文件。" + hint
-    hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
     if hidden:
         hint = hidden + hint
     out = {
@@ -525,6 +584,8 @@ def _command_pointer(result, excerpt=""):
     }
     if hidden:
         out["commandOk"] = False
+    if result.get("officeScan") == "empty" and not empty_scan_is_news:
+        out.pop("officeScan", None)
     out.pop("stdout", None)
     out.pop("stderr", None)
     out.pop("logPath", None)
