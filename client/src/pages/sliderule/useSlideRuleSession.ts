@@ -85,7 +85,7 @@ import {
   resolveChallengeSend,
 } from "./challenge-composer";
 import type { ControlQuestionWire, ControlPlanApprovalWire } from "@/lib/sliderule-marathon-driver";
-import type { QuestionnaireOutcome } from "./QuestionnaireCard";
+import { OTHER_LABEL, type QuestionnaireOutcome } from "./QuestionnaireCard";
 import type { PlanApprovalOutcome } from "./PlanApprovalPanel";
 import {
   FACTORY_HOP_LABELS,
@@ -679,8 +679,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         rows.find(r => r.id === qid)?.question || qid;
       let human = "";
       if (result.outcome === "accepted") {
+        // 选了「其他（自己写）」的题，气泡里是用户写的那句，不是标签原文。
         const parts = Object.entries(result.answers).map(
-          ([qid, picks]) => `${label(qid)}：${picks.join("、")}`
+          ([qid, picks]) => `${label(qid)}：${picks
+            .map(p => (p === OTHER_LABEL && result.notes[qid]?.trim()) || p)
+            .join("、")}`
         );
         human = parts.length ? parts.join("；") : "（没有选）";
       } else if (result.outcome === "cancelled") {

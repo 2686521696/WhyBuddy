@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialSessionState } from "@/lib/sliderule-runtime";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { useSlideRuleSession } from "../useSlideRuleSession";
-import type { QuestionnaireOutcome } from "../QuestionnaireCard";
+import { OTHER_LABEL, type QuestionnaireOutcome } from "../QuestionnaireCard";
 
 vi.mock("@/lib/use-auth", () => ({ useAuth: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/sliderule-narrator", () => ({
@@ -312,6 +312,23 @@ describe("questionnaire replies through the session hook", () => {
       answers: { audience: ["Managers"] },
     });
     expect(current.queuedTurns).toEqual([]);
+  });
+
+  it("the user's own words, not the Other label, are what the bubble says", async () => {
+    // 2026-09-26：左栏气泡是用户视角的记录。写了「Two teams」却显示「其他（自己写）」，
+    // 用户会以为自己那段字丢了。结构化答案照旧带标签，服务端靠它认出手打的话。
+    parkQuestion();
+    await mount();
+    await act(async () => {
+      current.submitQuestionnaire({
+        outcome: "accepted",
+        answers: { audience: [OTHER_LABEL], region: ["CN"] },
+        notes: { audience: "Two teams" },
+      });
+      await vi.waitFor(() => expect(posts).toHaveLength(1));
+    });
+    expect(posts[0].toolAnswer.text).toBe(`${QUESTIONS[0].question}：Two teams；${QUESTIONS[1].question}：CN`);
+    expect(posts[0].toolAnswer.answers).toEqual({ audience: [OTHER_LABEL], region: ["CN"] });
   });
 });
 

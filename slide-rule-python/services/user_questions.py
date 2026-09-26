@@ -198,6 +198,38 @@ def normalize_answers(raw: Any) -> Dict[str, List[str]]:
     return out
 
 
+def empty_other_answers(
+    answers: Dict[str, List[str]], notes: Optional[Dict[str, Any]] = None
+) -> List[str]:
+    """选了「其他（自己写）」却一个字没写的那几道题的 id。
+
+    ⚠ 2026-09-26 隔离真机 sr-20260926021240-CW3R92STR7（PPT 话题）：模型第三次问
+      「把数据填进模板」，没给预设选项，卡片自动选中 Other；确认键一直可点，
+      空着就交上来了。模型收到的是 `= 「其他（自己写）」`——标签原文，零信息——
+      只好在对话里再要一遍，然后停住等人，一轮 45 分钟就耗在这儿。
+      Other 的意思是「我自己写」，没写就不是答案。前端置灰是一半，这里是另一半
+      （本仓 §四：老前端、脚本手打的回执都会绕过前端）。
+    """
+    notes = notes or {}
+    return [
+        qid for qid, picks in answers.items()
+        if OTHER_LABEL in picks and not str(notes.get(qid) or "").strip()
+    ]
+
+
+def without_empty_other(
+    answers: Dict[str, List[str]], notes: Optional[Dict[str, Any]] = None
+) -> Dict[str, List[str]]:
+    """把空着的 Other 从答案里摘掉；摘空了的题就当没答（跳过 / 想聊聊那两条路用）。"""
+    empty = set(empty_other_answers(answers, notes))
+    out: Dict[str, List[str]] = {}
+    for qid, picks in answers.items():
+        kept = [p for p in picks if not (qid in empty and p == OTHER_LABEL)]
+        if kept:
+            out[qid] = kept
+    return out
+
+
 def _question_text(questions: Sequence[Dict[str, Any]], qid: str) -> str:
     for q in questions:
         if str(q.get("id") or "") == qid:
@@ -313,6 +345,8 @@ __all__ = [
     "unanswered_text",
     "coerce_questions",
     "normalize_answers",
+    "empty_other_answers",
+    "without_empty_other",
     "format_accepted",
     "format_chat_about_this",
     "format_skip_interview",

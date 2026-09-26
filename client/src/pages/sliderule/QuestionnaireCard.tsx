@@ -61,6 +61,20 @@ export function splitRecommended(label: string): { text: string; recommended: bo
     : { text: label, recommended: false };
 }
 
+/**
+ * 这道题答上了没有：至少选了一项；选了「其他（自己写）」就得真写了字。
+ *
+ * ⚠ 2026-09-26 隔离真机 sr-20260926021240-CW3R92STR7（PPT 话题）：模型第三次问
+ *   「把数据填进模板」，没给预设选项，下面那个 useEffect 自动选中 Other；
+ *   「确认继续」一直可点，空着就交了。模型收到 `= 「其他（自己写）」`——标签
+ *   原文，零信息——只好在对话里再要一遍，然后停住等人。服务端
+ *   `services/user_questions.py::empty_other_answers` 是另一半（本仓 §四）。
+ */
+export function isAnswered(picks: string[] | undefined, note: string | undefined): boolean {
+  if (!picks || picks.length === 0) return false;
+  return !picks.includes(OTHER_LABEL) || Boolean((note || "").trim());
+}
+
 export function QuestionnaireCard({
   questions,
   paused,
@@ -110,14 +124,28 @@ export function QuestionnaireCard({
     });
   };
 
+  /* 空着的 Other 不算选了（「别再问了」那条也走这里）；
+     手打的话只跟着选了 Other 的题走——先写了几个字又改选别的，那段字不作数。 */
   const answers = () => {
     const out: Record<string, string[]> = {};
     for (const row of questions) {
-      const picks = picked[row.id];
-      if (picks && picks.length) out[row.id] = picks;
+      const written = (notes[row.id] || "").trim();
+      const picks = (picked[row.id] || []).filter(p => p !== OTHER_LABEL || written);
+      if (picks.length) out[row.id] = picks;
     }
     return out;
   };
+  const writtenNotes = () => {
+    const out: Record<string, string> = {};
+    for (const row of questions) {
+      const written = (notes[row.id] || "").trim();
+      if (written && picked[row.id]?.includes(OTHER_LABEL)) out[row.id] = written;
+    }
+    return out;
+  };
+  const currentAnswered = isAnswered(current, notes[q.id]);
+  const allAnswered = questions.every(row => isAnswered(picked[row.id], notes[row.id]));
+  const waitingFor = current.includes(OTHER_LABEL) ? "写上你的答案再继续" : "先选一项再继续";
 
   const markClass = (selected: boolean) =>
     `mt-0.5 flex size-4 shrink-0 items-center justify-center border ${
@@ -184,6 +212,7 @@ export function QuestionnaireCard({
                   data-testid="sliderule-questionnaire-option"
                   data-recommended={recommended ? "true" : "false"}
                   data-other={isOther ? "true" : "false"}
+                  aria-pressed={selected}
                   onClick={() => toggle(opt.label)}
                   className={`flex w-full items-start gap-2.5 rounded-[8px] px-2.5 py-2 text-left text-[13px] leading-5 transition ${
                     selected
@@ -260,8 +289,10 @@ export function QuestionnaireCard({
             <button
               type="button"
               data-testid="sliderule-questionnaire-next"
+              disabled={!currentAnswered}
+              title={currentAnswered ? undefined : waitingFor}
               onClick={() => setStep(s => Math.min(total - 1, s + 1))}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#171717] px-3 text-[13px] text-white"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#171717] px-3 text-[13px] text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               下一题 <ChevronRight className="size-3.5" />
             </button>
@@ -269,10 +300,12 @@ export function QuestionnaireCard({
             <button
               type="button"
               data-testid="sliderule-questionnaire-submit"
+              disabled={!allAnswered}
+              title={allAnswered ? undefined : waitingFor}
               onClick={() =>
-                onSubmit({ outcome: "accepted", answers: answers(), notes })
+                onSubmit({ outcome: "accepted", answers: answers(), notes: writtenNotes() })
               }
-              className="inline-flex h-8 items-center rounded-[8px] bg-[#171717] px-3 text-[13px] text-white"
+              className="inline-flex h-8 items-center rounded-[8px] bg-[#171717] px-3 text-[13px] text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               确认继续
             </button>

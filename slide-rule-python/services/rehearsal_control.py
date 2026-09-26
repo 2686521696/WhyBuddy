@@ -90,11 +90,13 @@ from services.archetype_legal import (
 )
 from services.user_questions import (
     coerce_questions as coerce_user_questions,
+    empty_other_answers,
     format_accepted as format_answers_for_model,
     format_chat_about_this as format_chat_answers,
     format_skip_interview as format_skip_answers,
     normalize_answers as normalize_user_answers,
     unanswered_text as unanswered_question_text,
+    without_empty_other,
 )
 from services.action_stationarity import (IdenticalToolCallRun, ReadOnlyStreak,
     STOP_AFTER_READONLY_ROUNDS,
@@ -2759,6 +2761,11 @@ async def _accept_plan_answer(state: V5SessionState, raw: Dict[str, Any]) -> str
     return outcome
 
 
+#: 选了「其他（自己写）」却没写字就提交。走 409 那条：卡片不收回，告诉人差什么。
+QUESTION_OTHER_EMPTY = "question_other_empty"
+QUESTION_OTHER_EMPTY_TEXT = "选了「其他（自己写）」但还没写内容，写上你的答案再确认。"
+
+
 def _model_text_for_answer(
     raw: Dict[str, Any], state: V5SessionState
 ) -> Optional[str]:
@@ -2777,13 +2784,14 @@ def _model_text_for_answer(
     if not outcome and not isinstance(answers_raw, dict):
         return None
     questions = _last_asked_questions(state)
-    answers = normalize_user_answers(answers_raw)
     notes_raw = raw.get("notes")
     notes = (
         {str(k): str(v) for k, v in notes_raw.items()}
         if isinstance(notes_raw, dict)
         else {}
     )
+    # 空着的「其他（自己写）」不是答案，标签原文不许喂给模型（见 empty_other_answers）。
+    answers = without_empty_other(normalize_user_answers(answers_raw), notes)
     if outcome in ("cancelled", "cancel", "dismissed"):
         return unanswered_question_text(bool(raw.get("nonInteractive")))
     if outcome in ("chat", "chat_about_this"):
@@ -2905,6 +2913,16 @@ async def _stamp_user_answer(
                for r in state.controlTranscript)
     ):
         raise HTTPException(409, "question_answer_stale")
+    outcome = str(answer.get("outcome") or "").strip().lower()
+    notes = answer.get("notes") if isinstance(answer.get("notes"), dict) else {}
+    picks = normalize_user_answers(answer.get("answers"))
+    if outcome in ("", "accepted", "accept"):
+        # 选了 Other 却没写字：不收，卡片原样摊着（抛在任何写入之前）。
+        # 前端已置灰确认键；这半边挡老前端和脚本手打的回执。
+        if empty_other_answers(picks, notes):
+            raise HTTPException(409, QUESTION_OTHER_EMPTY)
+    else:
+        picks = without_empty_other(picks, notes)
     asked = next((r for r in reversed(state.controlTranscript) if r.get("reqId") == req_id and r.get("kind") in ("ask_user_question", "ask_user")), {})
     snapshot = asked.get("assumptionSnapshot")
     if isinstance(snapshot, list) and ((_sfp(state).get("spec") or {}).get("assumptions") != snapshot):
@@ -2917,7 +2935,7 @@ async def _stamp_user_answer(
         "text": user_text,
         "answerKind": kind,
         "question": question,
-        "answers": normalize_user_answers(answer.get("answers")),
+        "answers": picks,
         "outcome": answer.get("outcome"),
         "notes": answer.get("notes"),
     }
@@ -2933,8 +2951,6 @@ async def _stamp_user_answer(
     if isinstance(snapshot, list):
         sfp = copy.deepcopy(getattr(state, "specFirstPages", None) or {})
         spec = sfp.get("spec") or {}
-        picks = normalize_user_answers(answer.get("answers"))
-        notes = answer.get("notes") if isinstance(answer.get("notes"), dict) else {}
         for assumption in spec.get("assumptions") or []:
             qid = str(assumption.get("id") or "")
             values = picks.get(qid) or []
@@ -5437,7 +5453,10 @@ async def _run_control_turn_body(
         except HTTPException as exc:
             if exc.status_code != 409:
                 raise
-            yield {"type": "control_tool_result", "tool": "ask_user_question", "ok": False, "error": str(exc.detail)}
+            rejected = {"type": "control_tool_result", "tool": "ask_user_question", "ok": False, "error": str(exc.detail)}
+            if exc.detail == QUESTION_OTHER_EMPTY:
+                rejected["human"] = QUESTION_OTHER_EMPTY_TEXT
+            yield rejected
             yield _complete(state)
             return
         user_text = answer.get("text") or user_text
