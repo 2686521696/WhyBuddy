@@ -92,7 +92,8 @@ def test_leaf_defaults_unknown_to_web_app():
     assert "先 pip" not in WORKSPACE_README
     assert "必须先调" not in WORKSPACE_README
     assert "project_logs" in WORKSPACE_README
-    assert "一行" in WORKSPACE_README
+    # 多行命令能跑了（pty_line）：别再告诉模型只能一行
+    assert "一行" not in WORKSPACE_README
     assert office_file_uses_task_delivery(OFFICE_FILE)
     assert not office_file_uses_task_delivery(WEB_APP)
     assert skip_vite_dependency_install(
@@ -277,7 +278,7 @@ def test_office_file_ignores_vite_templates_on_create(project_setup):
     files = store.read_files(project.projectId, owner_id="alice")
     assert "package.json" not in files
     assert files["README.md"] == WORKSPACE_README
-    assert "一行" in files["README.md"]
+    assert "一行" not in files["README.md"]
 
 
 def test_stale_office_readme_is_replaced_before_the_tool_returns(project_setup):

@@ -50,9 +50,14 @@ def test_shell_exec_maps_managed_commands_and_runs_sandbox_bash(setup):
     assert nested == {"ok": False, "error": "project_sudo_forbidden"}
     elsewhere = execute(setup, "shell_exec", {"command": "check", "exec_dir": "/etc"})
     assert elsewhere == {"ok": False, "error": "project_shell_exec_dir_not_supported"}
-    newline = execute(setup, "shell_exec", {"command": "ls\nrm -rf /"})
-    assert newline["ok"] is False and newline["error"] == "project_shell_multiline_not_supported"
-    assert "file_write" in newline["hint"]
+    # 多行（heredoc）照原文入队：换行交给 PTY 那一层（pty_line），这里不再拒。
+    heredoc = "python3 - <<'PY'\nprint('ok')\nPY"
+    multi = execute(setup, "shell_exec", {"command": heredoc, "id": "multi-1", "is_background": True})
+    assert multi["ok"], multi
+    assert setup.store.get_operation(multi["operationId"], owner_id="alice").input["script"] == heredoc
+    # 反向：sudo 藏在第二行照样拒
+    hidden = execute(setup, "shell_exec", {"command": "ls\nsudo rm -rf /tmp/x"})
+    assert hidden == {"ok": False, "error": "project_sudo_forbidden"}
 
 
 def test_shell_wait_and_kill_use_the_operation_id(setup):

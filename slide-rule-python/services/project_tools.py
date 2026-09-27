@@ -172,10 +172,8 @@ def _strip_preview_host(result: dict) -> dict:
     return result
 
 
-SHELL_ERROR_TEXT = {
-    "project_shell_multiline_not_supported": "一次只能跑一行命令（终端不收换行，heredoc 也不行）。多行脚本先用 file_write "
-        "写成文件（如 gen.py、run.sh），再执行一行命令运行它；或用 && 把几步连成一行。",
-}
+# 多行命令不再拒（见 e2b_workspace_provider.pty_line），原先那条「改成一行」的提示随之删掉。
+SHELL_ERROR_TEXT: dict[str, str] = {}
 
 
 def missing_file(files, path) -> ProjectNotFound:
@@ -567,6 +565,9 @@ _SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&", "\n"})
 _PY_WRITES = re.compile(r"\.save\(|write|unlink|remove|rename|shutil|makedirs|mkdir|to_excel|savefig")
 
 
+_SED_WRITES = re.compile(r"(^|[;{}\s/0-9$])[wWe](\s|$)")
+
+
 def _inspect_segment(tokens: list[str]) -> bool:
     if not tokens:
         return True
@@ -581,6 +582,16 @@ def _inspect_segment(tokens: list[str]) -> bool:
         return any(re.fullmatch(r"-[A-Za-z]*[tlvZpc][A-Za-z]*", t) for t in tokens[1:])
     if program == "find":
         return not {"-delete", "-exec", "-execdir", "-ok"} & set(tokens)
+    if program == "sed":
+        # ⚠ 2026-09-27 第 31 轮：`sed -n '1,260p' generate_budget.py` 翻脚本，回执挂着
+        #   「那次生成没有写出文件」那一长段。不带 -i 的 sed 只往标准输出写；
+        #   脚本里的 w/W（写文件）、e（执行）一样不算只在看。
+        args = tokens[1:]
+        # -f 从文件读脚本：看不见里面有没有 w，不算。
+        if any(t.startswith(("--in-place", "--file")) or re.fullmatch(r"-[A-Za-z]*[if].*", t)
+               for t in args):
+            return False
+        return not any(_SED_WRITES.search(t) for t in args if not t.startswith("-"))
     return program in _INSPECT_PROGRAMS
 
 

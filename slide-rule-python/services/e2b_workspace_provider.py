@@ -54,6 +54,27 @@ _CONSOLE_SETUP = (
     b"stty echo\n"
 )
 
+def pty_line(command: str) -> str:
+    """把一条命令变成能在 PTY 里**敲一行**跑完的样子。
+
+    ⚠ 2026-09-27 隔离真机第 31 轮（Excel 预算表 + 追问加「执行率」列和柱状图）：
+      改完文件，模型写了一段 `python3 - <<'PY' … PY` 去核对公式、数据验证和图表，
+      被 `project_shell_multiline_not_supported` 拒掉。它没有改写成一行再跑，
+      收尾照样写「已检查工作簿结构、公式、数据验证和图表」——一行核对输出都没有。
+      换行只是**敲键**的限制：敲一个 \\n bash 就当回车执行，heredoc 会变成
+      续行提示。沙盒本身（start_process 那条路）从来都能跑多行脚本。
+
+    所以限制留在它该在的地方：打字这一层把多行包成 `bash -c $'…'`，
+    换行转成 ANSI-C 转义，一行敲完，bash 自己再还原成原样。
+    操作记录、回执、只读判定看的仍是模型写的原文。
+    """
+    text = command.replace("\r\n", "\n").replace("\r", "\n")
+    if "\n" not in text:
+        return text
+    body = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+    return f"bash -c $'{body}'"
+
+
 # Source arrives on stdin. Directory descriptors and atomic replacement prevent
 # symlink races and avoid truncating a hard link to a file outside the project.
 _WRITE_SCRIPT = r'''
@@ -818,9 +839,10 @@ class E2BWorkspaceProvider:
         Setup (PROMPT_COMMAND / PS1) is hidden: the pane only sees bytes after
         the first OSC. The second OSC is the exit code; then the PTY is killed.
         """
-        if (not isinstance(command, str) or not command.strip() or "\n" in command
-                or "\r" in command or "\x00" in command or not 1 <= timeout_seconds <= 86_400):
+        if (not isinstance(command, str) or not command.strip()
+                or "\x00" in command or not 1 <= timeout_seconds <= 86_400):
             raise ValueError("invalid_workspace_command")
+        command = pty_line(command)
         try:
             from e2b.sandbox.commands.command_handle import PtySize
 

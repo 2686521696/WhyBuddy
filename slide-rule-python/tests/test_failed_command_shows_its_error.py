@@ -57,11 +57,10 @@ def test_a_redrawn_progress_line_keeps_only_its_final_state():
     assert _terminal_text("Downloading 10%\r Downloading 55%\r Downloading 100%\nok") == " Downloading 100%\nok"
 
 
-def test_a_multiline_command_is_told_how_to_run_it():
-    body = tool_error("project_shell_multiline_not_supported")
-    assert "file_write" in body["hint"] and "一行" in body["hint"]
-    # 反向：其他拒绝原因不挂这句
+def test_other_shell_rejections_carry_no_stale_hint():
+    """多行命令不再拒（pty_line）。原先那句「改成一行」不许挂到别的拒绝原因上。"""
     assert "hint" not in tool_error("project_shell_command_not_allowed")
+    assert "hint" not in tool_error("project_shell_multiline_not_supported")
 
 
 def test_a_long_install_before_the_error_still_leaves_the_error_in_view():

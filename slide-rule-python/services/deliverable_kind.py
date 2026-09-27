@@ -37,7 +37,8 @@ OFFICE_START_NOT_APPLICABLE = "office_file_start_not_applicable"
 WORKSPACE_README = (
     "这是空工作区。源码树里没有 Vite。"
     "写文本用 file_write，跑命令用 bash。"
-    "bash 只接受一行；多行先 file_write 再 bash python3 那个文件。"
+    # ⚠ 2026-09-27 删掉「bash 只接受一行」：多行已在 PTY 层包成一行（pty_line）。
+    #   留着它，模型照旧绕开 heredoc 或干脆不核对——第 31 轮就是后者。
     "命令输出在 project_logs / shell_view（带 operationId），不进源码树。"
     "办公文件（.pptx / .docx / .xlsx）不进源码树。"
 )

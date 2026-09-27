@@ -152,3 +152,29 @@ def test_a_conversion_that_writes_elsewhere_keeps_the_full_warning():
 
 def test_unzip_to_stdout_redirected_into_an_office_file_is_a_write():
     assert not _only_inspects(f"unzip -p src.zip deck.pptx > {DECK}")
+
+
+# ── 第 31 轮（Excel 追问，sr 见 scratchpad dump31）的原样命令 ─────────────────
+ROUND31_SED = "sed -n '1,260p' generate_budget.py"
+
+
+def test_sed_printing_a_script_is_an_inspection():
+    """翻生成脚本的 `sed -n '1,260p'`：回执挂过「那次生成没有写出文件」那一长段。"""
+    assert _only_inspects(ROUND31_SED)
+    hint = _receipt_on_the_live_path(ROUND31_SED)["hint"]
+    assert LONG not in hint and "库里的办公文件没有变" in hint
+
+
+@pytest.mark.parametrize("command", [
+    "sed -i 's/Q3/Q4/' generate_budget.py",
+    "sed -ni 'p' generate_budget.py",
+    "sed --in-place=.bak 's/a/b/' generate_budget.py",
+    "sed -n 's/a/b/w out.py' generate_budget.py",
+    "sed '1w out.py' generate_budget.py",
+    "sed -f edits.sed generate_budget.py",
+    "sed -n '1,5p' generate_budget.py && python3 generate_budget.py",
+])
+def test_sed_that_can_write_keeps_the_full_warning(command):
+    """反向：原地改、脚本里 w 写文件、-f 看不见的脚本、后面接生成——都不算只在看。"""
+    assert not _only_inspects(command)
+    assert LONG in _receipt_on_the_live_path(command)["hint"]

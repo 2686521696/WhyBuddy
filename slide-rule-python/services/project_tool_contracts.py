@@ -403,7 +403,7 @@ def sandbox_shell_script(command: str) -> str:
 
     ⚠ 2026-09-17：第一版把自由 curl 直接拒掉。用户要的是 grok 那台
     沙箱机，不是再发明一份 npm script 白名单。E2B 是边界；sudo 仍拒。
-    start_console 不许换行，所以这里先挡，避免工人抛成 invalid_workspace_command。
+    start_console 敲不了换行，多行命令在那一层包成一行（pty_line），这里不挡。
     """
     if not isinstance(command, str):
         raise ValueError("project_shell_command_not_allowed")
@@ -412,11 +412,9 @@ def sandbox_shell_script(command: str) -> str:
         raise ValueError("project_shell_command_not_allowed")
     if "\x00" in text:
         raise ValueError("project_shell_command_not_allowed")
-    if "\n" in text or "\r" in text:
-        # ⚠ 2026-09-25 E1Y12175TS：heredoc 多行命令被拒，回执只有
-        #   project_shell_command_not_allowed，跟空命令、超长、非受管命令同一个码，
-        #   模型只能猜。单独一个码，回执才能说清怎么改（见 BROWSER/SHELL 提示表）。
-        raise ValueError("project_shell_multiline_not_supported")
+    # 多行（heredoc）放行。⚠ 2026-09-25 E1Y12175TS 起这里拒多行、回执教模型改写；
+    #   2026-09-27 第 31 轮真机模型被拒后干脆不核对了，收尾照样说「已检查」。
+    #   换行只是 PTY 打字的限制，由 e2b_workspace_provider.pty_line 在那一层处理。
     if _SHELL_SUDO.search(text.lower()) or text.lower().startswith("sudo"):
         raise ValueError("project_sudo_forbidden")
     return text
