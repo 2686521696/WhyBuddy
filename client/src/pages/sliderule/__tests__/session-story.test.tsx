@@ -86,7 +86,8 @@ describe("完成轮默认折起过程，点开才摊", () => {
     const el = await mount(<SessionStory turn={turnOf()} streaming={false} />);
     const duration = el.querySelector('[data-testid="session-story-duration"]');
     expect(duration?.textContent).toContain("工作了 3m 57s");
-    expect(duration?.textContent).toContain("编辑了 3 个文件");
+    // 中间那次 patch 失败了：没改到东西，单独报（2026-09-27 第 32 轮）
+    expect(duration?.textContent).toContain("编辑了 2 个文件 · 修改失败 1 次");
     expect(duration?.getAttribute("aria-expanded")).toBe("false");
     const body = el.querySelector('[data-testid="session-story-body"]');
     expect(body, "过程必须还在，只是折起来").not.toBeNull();
@@ -106,7 +107,7 @@ describe("完成轮默认折起过程，点开才摊", () => {
     expect(
       el.querySelector('[data-testid="session-story-tools-summary"]')
         ?.textContent
-    ).toContain("编辑了 3 个文件");
+    ).toContain("编辑了 2 个文件 · 修改失败 1 次");
   });
 
   it("工具组折着，点开才能看见失败那一行——不许 Map 盖掉", async () => {

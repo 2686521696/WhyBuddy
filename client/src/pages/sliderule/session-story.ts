@@ -58,6 +58,7 @@ import {
   projectActivityProgress,
   type ProjectActionRow,
 } from "./project-activity";
+import { validSourcePath } from "./project-runtime/preview-selection-bridge";
 import { workedLabel } from "./turn-result-card";
 import type { TurnStep, UiTurn } from "./types";
 
@@ -195,6 +196,52 @@ function countWhere(
   return rows.filter(row => tools.has(row.tool)).length;
 }
 
+/** 一行编辑动作的开场细节里点名的文件；`a、b 等 5 个文件` 另报总数。 */
+function namedPaths(detail: string | undefined): { paths: string[]; total: number } {
+  const raw = String(detail || "").trim();
+  const more = raw.match(/等\s*(\d+)\s*个文件$/);
+  const paths = raw
+    .replace(/等\s*\d+\s*个文件$/, "")
+    .split(/[、,，\s]+/)
+    .map(part => part.trim())
+    .filter(
+      path =>
+        validSourcePath(path) &&
+        (path.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(path))
+    );
+  return { paths, total: Math.max(paths.length, more ? Number(more[1]) : 0) };
+}
+
+/**
+ * 「编辑了 N 个文件」数的是**文件**，不是编辑次数。
+ *
+ * ⚠ 2026-09-27 隔离真机第 32 轮（Excel 追问：安全库存改成按近 30 天日均出库算）：
+ *   模型对 create_inventory_workbook.py 做了 9 次 str_replace、写了 1 个校验脚本，
+ *   脸上写「编辑了 7 个文件」。其中一次还是 project_str_replace_not_found——
+ *   什么都没改，也被算成一个文件。失败的单独报「修改失败 N 次」，不算编辑。
+ *   开场细节里没点名文件的，一次算一个（不知道是哪份，宁可按旧口径数）。
+ */
+function editedFiles(rows: readonly ProjectActionRow[]): { files: number; failed: number } {
+  const seen = new Set<string>();
+  let unnamed = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (!FILE_TOOLS.has(row.tool)) continue;
+    if (row.status === "failed") {
+      failed += 1;
+      continue;
+    }
+    const { paths, total } = namedPaths(row.detail);
+    if (!total) {
+      unnamed += 1;
+      continue;
+    }
+    for (const path of paths) seen.add(path);
+    unnamed += total - paths.length;
+  }
+  return { files: seen.size + unnamed, failed };
+}
+
 /**
  * 一组工具折起来时脸上写什么。认工具名，不解析 label。
  *
@@ -204,8 +251,9 @@ export function toolGroupSummary(rows: readonly ProjectActionRow[]): string {
   if (!rows.length) return "";
   const parts: string[] = [];
   if (countWhere(rows, CREATE_TOOLS)) parts.push("创建工程");
-  const files = countWhere(rows, FILE_TOOLS);
+  const { files, failed } = editedFiles(rows);
   if (files) parts.push(`编辑了 ${files} 个文件`);
+  if (failed) parts.push(`修改失败 ${failed} 次`);
   const cmds = countWhere(rows, EXEC_TOOLS);
   if (cmds) parts.push(`已运行 ${cmds} 个命令`);
   const reads = countWhere(rows, READ_TOOLS);
@@ -402,11 +450,14 @@ export function sessionStoryHasProcess(
 export function sessionStoryCollapsedHint(
   blocks: readonly SessionStoryBlock[]
 ): string {
-  return blocks
+  // ⚠ 2026-09-27 第 32 轮：原来把每组的摘要用「 · 」串起来——开口把工具切成
+  //   七组，脸上成了「已运行 1 个命令 · 读取 3 次 · 编辑了 7 个文件 · 读取 2 …」：
+  //   「读取」出现两遍，命令只数到第一组那 1 个（整轮跑了 8 个），后面被截断。
+  //   折起来的脸说的是**整轮**，就拿整轮的行汇总一次。
+  const rows = blocks
     .filter((block): block is SessionStoryTools => block.kind === "tools")
-    .map(block => block.summary)
-    .filter(Boolean)
-    .join(" · ");
+    .flatMap(block => block.rows);
+  return toolGroupSummary(rows);
 }
 
 /**

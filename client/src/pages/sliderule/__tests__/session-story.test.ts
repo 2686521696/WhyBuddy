@@ -106,7 +106,8 @@ describe("开口切开工具组，不许先倒完全部散文", () => {
       "failed",
       "done",
     ]);
-    expect(files?.summary).toBe("编辑了 3 个文件");
+    // 失败的那次什么都没改，单独报（2026-09-27 第 32 轮）；行照旧是三行。
+    expect(files?.summary).toBe("编辑了 2 个文件 · 修改失败 1 次");
     // 变异：按工具名 Map 归并 → 只剩 1 行，上面两条红。
   });
 
@@ -226,7 +227,7 @@ describe("组标题和摘要认工具名", () => {
         { id: "b", tool: "project_patch", label: "写入源码", status: "failed" },
         { id: "c", tool: "project_exec", label: "运行命令", status: "done" },
       ])
-    ).toBe("编辑了 2 个文件 · 已运行 1 个命令");
+    ).toBe("编辑了 1 个文件 · 修改失败 1 次 · 已运行 1 个命令");
   });
 
   it("技能行进组，脸上能读到技能名；旧的创建工程摘要还在", () => {
