@@ -72,7 +72,9 @@ def test_kernel_rejects_the_old_patch_envelope_and_identity_fields(setup):
         {"ownerId": "alice"},
     ):
         result = execute(setup, "project_write", {"path": "src/App.tsx", "content": "x\n", **extra})
-        assert result == {"ok": False, "error": "project_tool_arguments_invalid"}, extra
+        # 2026-09-27：回执多了一句 hint，点名是哪个参数不许带（arguments_invalid 头注）。
+        assert {k: result[k] for k in ("ok", "error")} == {"ok": False, "error": "project_tool_arguments_invalid"}, extra
+        assert next(iter(extra)) in result["hint"], result
 
 
 def test_reverse_project_patch_still_requires_the_hash(setup):

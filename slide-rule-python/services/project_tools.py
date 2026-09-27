@@ -178,6 +178,26 @@ SHELL_ERROR_TEXT = {
 }
 
 
+def arguments_invalid(exc: ValidationError) -> dict:
+    """参数没过校验：说清是哪个参数、给了什么、要求是什么。
+
+    ⚠ 2026-09-27 隔离真机 sr-20260927070207-AQFP20YTVE（网页第 26 轮）：模型读
+      `src/main.tsx` 给了 `"limit": 10000`，上限是 8000。回执只有
+      `project_tool_arguments_invalid`，没说哪错——同样形状又撞一次，然后改用
+      file_read 绕过去。同一个工具再也没用对。错误信息要能照着改（抄 grok 的
+      工具参数错误：带字段名和约束）。
+    给回来的值截短：file_write 的内容可能很长，不许整段回喂。
+    """
+    rows = []
+    for error in exc.errors()[:4]:
+        field = ".".join(str(part) for part in error.get("loc") or ()) or "参数"
+        value = error.get("input")
+        shown = "" if isinstance(value, dict) else f"={str(value)[:60]!s}"
+        rows.append(f"{field}{shown}（{error.get('msg')}）")
+    return {"ok": False, "error": "project_tool_arguments_invalid",
+            "hint": "参数不合法：" + "；".join(rows) + "。按要求改了再调。"}
+
+
 def tool_error(code: str) -> dict:
     """工具失败的回执：错误码，认得的再附一句人话。"""
     body = {"ok": False, "error": code[:240]}
@@ -928,8 +948,8 @@ class ProjectTools:
             if name == "project_read":
                 return {"ok": True, **self._read(files, revision, parsed)}
             return {"ok": True, **self._search(files, revision, parsed)}
-        except ValidationError:
-            return {"ok": False, "error": "project_tool_arguments_invalid"}
+        except ValidationError as exc:
+            return arguments_invalid(exc)
         except PersistClosedError as exc:
             return {"ok": False, "error": str(exc.reason)[:240]}
         except (ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, PermissionError, ValueError) as exc:
