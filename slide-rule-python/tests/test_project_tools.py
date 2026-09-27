@@ -625,5 +625,7 @@ def test_file_read_of_skill_catalog_path_returns_the_seed_not_not_found(setup):
     assert needle in (result.get("excerpt") or "")
     assert "不要在沙盒里 find" in result["hint"]
     missing = execute(setup, "file_read", {"file": "no-such-file.txt"})
-    assert missing == {"ok": False, "error": "project_file_not_found"}
+    # 2026-09-27：回执多了一句旁边真有什么（missing_file 头注），错误码不变。
+    assert {k: missing[k] for k in ("ok", "error")} == {"ok": False, "error": "project_file_not_found"}
+    assert "package.json" in missing["hint"]
     assert not setup.provider_calls

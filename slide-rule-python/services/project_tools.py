@@ -178,6 +178,32 @@ SHELL_ERROR_TEXT = {
 }
 
 
+def missing_file(files, path) -> ProjectNotFound:
+    """读不到的文件：错误码不变，附上旁边**真有**的东西。
+
+    ⚠ 2026-09-27 隔离真机网页第 23 / 26 / 30 轮：模型建完工程，跟 project_list 同一批
+      就去读 Vite 默认的 `src/App.tsx`、`src/index.css`——这个模板是 `src/main.tsx`、
+      `src/style.css`。回执只有 project_file_not_found，每一轮都是两发白读，再靠
+      下一轮的列表纠正。读一个目录（`src`）也是同一个错误码，没说那是目录。
+      只列事实（同目录下有哪些），不猜「你是不是想读 X」。
+    """
+    exc = ProjectNotFound("project_file_not_found")
+    target = str(path or "").strip().strip("/")
+    names = [str(name) for name in (files or {})]
+    inside = sorted({name[len(target) + 1:].split("/", 1)[0] + ("/" if "/" in name[len(target) + 1:] else "")
+                     for name in names if target and name.startswith(target + "/")})
+    if inside:
+        exc.hint = f"{target} 是目录，里面有：{', '.join(inside[:12])}。读文件要给完整路径。"
+        return exc
+    parent = target.rsplit("/", 1)[0] if "/" in target else ""
+    prefix = parent + "/" if parent else ""
+    siblings = sorted({name[len(prefix):].split("/", 1)[0] + ("/" if "/" in name[len(prefix):] else "")
+                       for name in names if name.startswith(prefix)})
+    if siblings:
+        exc.hint = f"{target} 不存在。{parent or '工程根目录'} 下现有：{', '.join(siblings[:12])}。"
+    return exc
+
+
 def arguments_invalid(exc: ValidationError) -> dict:
     """参数没过校验：说清是哪个参数、给了什么、要求是什么。
 
@@ -953,7 +979,10 @@ class ProjectTools:
         except PersistClosedError as exc:
             return {"ok": False, "error": str(exc.reason)[:240]}
         except (ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, PermissionError, ValueError) as exc:
-            return tool_error(str(exc))
+            body = tool_error(str(exc))
+            if isinstance(getattr(exc, "hint", None), str):
+                body["hint"] = exc.hint
+            return body
 
     def _project_result(self, project):
         revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
@@ -1451,7 +1480,7 @@ class ProjectTools:
             #   得到 project_file_not_found，模型接着 bash `find /`。
             skill_body = _skill_body_for_catalog_path(path, self.owner_id)
             if skill_body is None:
-                raise ProjectNotFound("project_file_not_found")
+                raise missing_file(files, path)
             files = {**files, path: skill_body}
             skill_read = True
         if not explicit_read_window(args):
@@ -1489,7 +1518,7 @@ class ProjectTools:
             raise ValueError("project_sudo_forbidden")
         path = workspace_file_path(args.file, files)
         if path not in files:
-            raise ProjectNotFound("project_file_not_found")
+            raise missing_file(files, path)
         matches = file_content_matches(files[path], args.regex)
         return {"revision": revision.revision, "path": path, "matches": matches,
             "truncated": len(matches) >= 40}
@@ -1543,7 +1572,7 @@ class ProjectTools:
     def _read(self, files, revision, args):
         path = source_path(args.path)
         if path not in files:
-            raise ProjectNotFound("project_file_not_found")
+            raise missing_file(files, path)
         text = files[path]
         if not explicit_read_window(args):
             return _pointer_file(path, text, revision)
