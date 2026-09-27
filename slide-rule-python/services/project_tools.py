@@ -790,13 +790,18 @@ def _missing_program(excerpt, exit_code):
     ⚠ 2026-09-27 隔离真机第 32、36、39 轮：模型三次拿 `rg --files` 找文件，都是
       exit 127，回执只有 project_command_failed。它每次都要再花一步才改用别的。
     """
-    if exit_code not in (127, "127"):
-        return ""
     match = _NOT_FOUND.search(_terminal_text(str(excerpt or "")))
     if match is None:
         return ""
-    return (f"沙盒里没有 {match.group(1)} 这个程序（exit 127）。"
-            "换一个装好的（grep、find、python3），或先装它再用。")
+    if exit_code in (127, "127"):
+        return (f"沙盒里没有 {match.group(1)} 这个程序（exit 127）。"
+                "换一个装好的（grep、find、python3），或先装它再用。")
+    # ⚠ 2026-09-27 隔离真机第 72 轮 sr-20260927205053-CRAS63F0NQ（家庭开支 Excel，追问撤掉
+    #   备注列）：`rg -n '备注|E2|…' create_monthly_expenses.py || true` 再接重新生成——想先查
+    #   脚本里还有没有残留引用。rg 不在，`|| true` 把 127 吞成 0，回执一个字没提；模型当作
+    #   「查过了」往下走。第 32、36、39 轮也是 rg。退出码被盖住，输出里的那句还在。
+    return (f"沙盒里没有 {match.group(1)} 这个程序，这条里用它的那一段没跑"
+            "（退出码被 || true 或后面的命令盖住了）。换 grep / find / python3 重做那一步。")
 
 
 LOG_POINTER_HINT = "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。"

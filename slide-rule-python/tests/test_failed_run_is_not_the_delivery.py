@@ -69,3 +69,28 @@ def test_other_failures_do_not_claim_a_missing_program():
                         "officeFiles": [XLSX], "officeFacts": FACTS},
                        ROUND39_FAILED, "python3 scripts/create_tracker.py")
     assert "沙盒里没有" not in receipt["hint"]
+
+
+# ⚠ 2026-09-27 隔离真机第 72 轮：`rg … || true` 接重新生成，rg 不在，退出码被吞成 0，
+#   回执没提——模型以为残留引用查过了。命令与屏幕输出原样。
+ROUND72_COMMAND = ("rg -n '备注|E2|E501|A1:E1|range\\(1, 6\\)|家庭晚餐|地铁和公交|日用品|本月水电费|电影|手机话费' "
+                   "create_monthly_expenses.py || true\npython3 create_monthly_expenses.py")
+ROUND72_SCREEN = ("user@e2b:~/workspace$ bash -c $'rg -n …'\n"
+                  "bash: line 1: rg: command not found\nCreated 家庭月度开支.xlsx\nuser@e2b:~/workspace$ ")
+BOOK72 = "家庭月度开支.xlsx"
+
+
+def test_a_masked_missing_program_is_still_named():
+    receipt = _receipt({"exitCode": 0, "officeFiles": [BOOK72],
+                        "officeFacts": {BOOK72: {"charts": 1, "pictures": 0, "sheets": 3, "pivotTables": 0}}},
+                       ROUND72_SCREEN, ROUND72_COMMAND)
+    assert "沙盒里没有 rg 这个程序" in receipt["hint"] and "没跑" in receipt["hint"]
+    assert "办公文件已收回" in receipt["hint"]  # 收回照旧说
+
+
+def test_a_clean_run_does_not_claim_a_missing_program():
+    """反向：输出里没有 command not found 就不提。"""
+    receipt = _receipt({"exitCode": 0, "officeFiles": [BOOK72]},
+                       "user@e2b:~/workspace$ python3 create_monthly_expenses.py\nCreated 家庭月度开支.xlsx\n",
+                       "python3 create_monthly_expenses.py")
+    assert "沙盒里没有" not in receipt["hint"]
