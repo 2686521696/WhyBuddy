@@ -447,6 +447,54 @@ def _terminal_text(raw: str) -> str:
     return "\n".join(lines)
 
 
+#: npm 跑脚本时固定先打这一行：`> whybuddy-project@0.1.0 build`。
+_NPM_BUILD_HEADER = re.compile(r"(?m)^> \S+ build\s*$")
+BUILD_LOG_TAIL_CHARS = 1500
+
+
+def _build_log_tail(store, runtime_operation_id, owner_id, *, since=None, until=None) -> str:
+    """验收里那次 `npm run build` 失败时的输出尾巴（tsc 报错就在这里）。
+
+    ⚠ 2026-09-27 隔离真机第 50 轮（民宿预订管理 + 追问按房型和日期筛空房）：
+      project_verify 回 project_build_failed，回执只有 buildExitCode=2，一行报错都没有。
+      模型去 project_logs 翻开发服务器那条操作的日志——一个字符一个事件、夹着 ANSI，
+      还混着开发服务器重启的输出——翻了两页才看到 tsc 的错。
+    构建进程的输出以 runtime.log 记在开发服务器那条操作上，带 processId；
+    认 npm 固定的脚本头，取最后一个跑 build 的进程，按屏幕文字给尾巴。
+    同一条开发服务器操作上会有好几次验收构建（第 50 轮：一次过、一次挂、一次过），
+    只看这次验收构建证据的起止时间窗（since/until，同为 ISO 串）里的日志。
+    """
+    if store is None or not runtime_operation_id:
+        return ""
+    by_pid: dict[str, list[str]] = {}
+    order: list[str] = []
+    after = 0
+    try:
+        while True:
+            page = store.list_events(runtime_operation_id, owner_id=owner_id, after_seq=after, limit=1000)
+            for event in page:
+                payload = event.payload if isinstance(getattr(event, "payload", None), dict) else {}
+                pid = str(payload.get("processId") or "")
+                stamp = str(getattr(event, "timestamp", "") or "")
+                if (since and stamp < since) or (until and stamp > until):
+                    continue
+                if event.type == "runtime.log" and pid:
+                    if pid not in by_pid:
+                        by_pid[pid] = []
+                        order.append(pid)
+                    by_pid[pid].append(str(payload.get("text") or ""))
+            if len(page) < 1000:
+                break
+            after = page[-1].seq
+    except Exception:
+        return ""
+    for pid in reversed(order):
+        text = _terminal_text("".join(by_pid[pid])).strip("\n")
+        if _NPM_BUILD_HEADER.search(text):
+            return text[-BUILD_LOG_TAIL_CHARS:]
+    return ""
+
+
 def _command_log_excerpt(store, operation_id, owner_id, last_seq=None) -> str:
     """操作日志**末尾**，按屏幕文字。bash 写出的文本不进源码树，file_read 找不到。
 
@@ -1221,6 +1269,11 @@ class ProjectTools:
                             if item.status == "failed" and item.expected is not None and item.actual is not None else {})}
                         for item in record.assertions],
                     "artifactIds": [item.artifactId for item in record.artifactRefs]}
+                if record.build is not None and record.build.status == "failed" and record.build.buildExitCode:
+                    tail = _build_log_tail(self.store, record.runtimeOperationId, self.owner_id,
+                                           since=record.build.startedAt, until=record.build.completedAt)
+                    if tail:
+                        result["verification"]["buildLogTail"] = tail
         return result
 
     def _poll_operation(self, operation, seconds):
