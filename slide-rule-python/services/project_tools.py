@@ -593,7 +593,7 @@ def _office_facts_sentence(result) -> str:
     return f"文件实况（宿主从文件里量的）：{rows}。向用户描述这份文件时以这些数为准。"
 
 
-def _command_pointer(result, excerpt=""):
+def _command_pointer(result, excerpt="", full_command=None):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
     ⚠ 2026-09-20 真机：excerpt 写成 errorCode，模型只看见
@@ -617,7 +617,7 @@ def _command_pointer(result, excerpt=""):
             + hint
         )
     elif (isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]
-          and _only_inspects(result.get("command"))):
+          and _only_inspects(full_command if isinstance(full_command, str) else result.get("command"))):
         # 只是在看（unzip -t / ls / python3 -c 读页数）：本来就不产出文件，
         # 「本该重新生成」「不要写占位」那一段对它是噪声（_only_inspects 头注）。
         # 库里有什么、链接在哪，照样说——sr-20260924190011 缺的就是这个。
@@ -681,7 +681,26 @@ def command_receipt_from(adapter, operation_id):
     return _command_pointer(
         snap,
         _command_log_excerpt(store, operation_id, owner, snap.get("lastSeq")),
+        full_command=_saved_command(store, operation_id, owner),
     )
+
+
+def _saved_command(store, operation_id, owner):
+    """操作记录里**没截断**的那条命令。
+
+    ⚠ 2026-09-27 隔离真机 sr-20260927052041-2V6K4Z5SPY：快照给模型的 command 截在
+      240 字（operation_snapshot），而核对用的 `python3 -c "…读页数、查关键字…"` 有
+      397 字——截断处引号不配对，_only_inspects 解析失败，照规矩退回全段警告。
+      第一版判据只喂了短命令，修复在真机上最常见的那种核对命令上一次都没生效
+      （本仓 §一之二）。判断要用全文；全文只在这儿用，不加进快照——快照是白名单，
+      project_status 直接把它交给模型。
+    """
+    try:
+        operation = store.snapshot_operation(operation_id, owner_id=owner)["operation"]
+    except Exception:
+        return None
+    command = (getattr(operation, "result", None) or {}).get("command")
+    return command if isinstance(command, str) else None
 
 
 def _wait_backoff(elapsed: float) -> float:

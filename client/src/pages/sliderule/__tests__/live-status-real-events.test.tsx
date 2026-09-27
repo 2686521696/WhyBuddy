@@ -54,6 +54,16 @@ const THINKING_GAP_AFTER = EVENTS.findIndex(
   e => e.type === "control_tool_result" && String(e.command || "").startsWith("pip install")
 );
 
+/**
+ * 第 21 轮（sr-20260927052041-2V6K4Z5SPY）执行 run 的开头：建工程 → todo_write。
+ * 之后模型写了 2 分钟脚本。todo_write 的结果摘要（「◐ t1: …」）会作为一段
+ * model_speech 挂到步骤末尾——最后一步不是动作 chip，第二版的规则认不出这是空闲，
+ * 状态行退回「正在推演...」，下面明明挂着进行中的待办。
+ */
+const ROUND21: Array<Record<string, unknown>> = JSON.parse(
+  readFileSync(resolve(__dirname, "fixtures/round21-events-until-todo.json"), "utf8")
+);
+
 const SID = "live-status-real-events";
 let current: ReturnType<typeof useSlideRuleSession>;
 let root: Root;
@@ -111,7 +121,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function replayThrough(lastIndex: number) {
+async function replayThrough(lastIndex: number, events = EVENTS) {
   await act(async () => {
     root.render(<Harness />);
   });
@@ -121,7 +131,7 @@ async function replayThrough(lastIndex: number) {
     await vi.waitFor(() => expect(stream).toBeDefined());
   });
   await act(async () => {
-    for (const e of EVENTS.slice(0, lastIndex + 1)) stream!.enqueue(encode(e));
+    for (const e of events.slice(0, lastIndex + 1)) stream!.enqueue(encode(e));
   });
   await vi.waitFor(() =>
     expect(current.uiTurns.at(-1)?.steps.length ?? 0).toBeGreaterThan(0)
@@ -139,6 +149,7 @@ function statusLine(): string {
       latestTurn={turn}
       onChallenge={() => {}}
       runtimeKind="project"
+      controlTodo={current.sessionState.controlTodo}  // 与 SlideRule.tsx 同一来源
     />
   );
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -157,6 +168,16 @@ describe("真机那一轮的原样事件", () => {
     const text = statusLine();
     expect(text).toContain(THINKING_NEXT);
     expect(text).not.toContain("已执行工程命令");
+  });
+
+  it("todo_write 之后模型还在想：说在想下一步，带上进行中的那条待办（第 21 轮）", async () => {
+    await replayThrough(ROUND21.length - 1, ROUND21);
+    expect(ROUND21.at(-1)).toMatchObject({ type: "control_tool_result", tool: "todo_write" });
+    // 真机的输入形状：最后一步是 todo 摘要那段 model_speech，不是动作 chip。
+    expect(current.uiTurns.at(-1)?.steps.at(-1)?.kind).toBe("model_speech");
+    const text = statusLine();
+    expect(text).toContain(`${THINKING_NEXT}：搭建 PPT 生成脚本与统一视觉规范`);
+    expect(text).not.toContain("正在推演");
   });
 
   it("反向：下一个工具开始了，状态行说的是那个工具", async () => {

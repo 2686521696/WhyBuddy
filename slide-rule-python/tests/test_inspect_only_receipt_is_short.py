@@ -20,7 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.project_tools import _command_pointer, _only_inspects, operation_snapshot
+from services.project_tools import (
+    _command_pointer, _only_inspects, command_receipt_from, operation_snapshot)
 
 DECK = "2026年第三季度产品复盘.pptx"
 URL = "/api/sliderule/projects/prj-1/artifacts/art-1"
@@ -75,3 +76,49 @@ def test_anything_that_might_have_generated_keeps_the_full_warning(command):
 ])
 def test_only_inspects(command, expected):
     assert _only_inspects(command) is expected
+
+
+# ── 真机那条核对命令有 397 字，快照里的 command 截在 240 ─────────────────────
+#: sr-20260927052041-2V6K4Z5SPY 那一轮操作记录里的原样命令（没截断）。
+ROUND21_VERIFY = 'python3 -c "from pptx import Presentation; p=Presentation(\'2026_Q3_产品复盘.pptx\'); print(\'slides=\',len(p.slides)); text=\'\\\\n\'.join(sh.text for sl in p.slides for sh in sl.shapes if hasattr(sh,\'text\')); checks=[\'2026 年第三季度\',\'12,800\',\'8.6%\',\'42%\',\'做成了 01\',\'做成了 02\',\'没做成的两件事\',\'下季度三件事\']; print(\'checks=\',[(c,c in text) for c in checks]); print(\'has_company_name=\', any(x in text for x in [\'公司\',\'产品名称\']))"'
+
+
+class _Store:
+    """假 store 只替换存储；_snapshot 照 ProjectTools._snapshot 的原样拼法走 operation_snapshot。"""
+
+    def __init__(self, command):
+        self.operation = SimpleNamespace(
+            operationId="pop-1", kind="runtime.exec", status="completed", expectedRevision="prv-1",
+            cancelRequested=False,
+            result={"command": command, "exitCode": 0,
+                    "officeFilesHeld": [DECK], "officeDownloads": {DECK: URL}})
+
+    def snapshot_operation(self, operation_id, *, owner_id):
+        return {"operation": self.operation, "lastSeq": 3}
+
+    def list_events(self, operation_id, *, owner_id, after_seq=0, limit=200):
+        return []
+
+
+def _receipt_on_the_live_path(command):
+    store = _Store(command)
+    adapter = SimpleNamespace(store=store, owner_id="alice",
+                              _snapshot=lambda op: operation_snapshot(store.snapshot_operation(op, owner_id="alice")))
+    return command_receipt_from(adapter, "pop-1")
+
+
+def test_the_real_long_verification_command_gets_the_short_receipt():
+    assert len(ROUND21_VERIFY) > 240
+    receipt = _receipt_on_the_live_path(ROUND21_VERIFY)
+    # 真机的输入形状：模型看见的 command 是截断的，截断版自己是认不出的——
+    # 第一版就是拿这个去判，所以真机上照旧挂了长句。
+    assert len(receipt["command"]) == 240 and not _only_inspects(receipt["command"])
+    assert LONG not in receipt["hint"]
+    assert f"库里的办公文件没有变：{DECK}" in receipt["hint"]
+
+
+def test_a_long_generating_command_still_gets_the_full_warning():
+    """反向：全文判下来是生成，照旧说全。"""
+    command = "python3 build_deck.py && " + ROUND21_VERIFY
+    receipt = _receipt_on_the_live_path(command)
+    assert LONG in receipt["hint"]

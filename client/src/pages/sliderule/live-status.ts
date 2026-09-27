@@ -31,6 +31,11 @@
  *   不为空：工具一结束，liveAction 被改写成过去式「已执行工程命令」，第一个分支
  *   就把它当「正在」返回了——修复在真机上一次都没走到（本仓 §一之二）。
  *   现在认 liveAction.settled；判据改成用那一轮的原样事件驱动真 hook。
+ *
+ * ⚠ 2026-09-27 第三版。真机 sr-20260927052041-2V6K4Z5SPY：模型先 todo_write 再
+ *   写 2 分钟脚本。todo 的结果摘要作为一段 model_speech 挂在步骤末尾，第二版只认
+ *   「最后一步是收尾的动作 chip」才算空闲，于是退回「正在推演...」。现在工程档里
+ *   只要没有工具在跑、最后一步又没有可显示的字，就是在想下一步。
  */
 import type { TurnStep } from "./types";
 
@@ -66,7 +71,9 @@ export function liveStatusText({
   fallback: string;
 }): string {
   if (liveActionLabel && !liveActionSettled) return liveActionLabel;
-  if (runtimeKind === "project" && isSettledAction(latestStep)) {
+  // 最后一步没有可显示的字，也是空闲：第 21 轮 todo_write 的摘要作为 model_speech
+  // 挂在末尾，第二版只认「最后一步是收尾的动作 chip」，状态行退回「正在推演...」。
+  if (runtimeKind === "project" && (isSettledAction(latestStep) || !latestStepText)) {
     const doing = (todo || [])
       .find(t => t.status === "in_progress")
       ?.content?.trim();

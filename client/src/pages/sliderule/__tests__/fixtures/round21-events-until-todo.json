@@ -1,0 +1,94 @@
+[
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "seq": 1,
+  "tool": "project_create",
+  "toolCallId": "call_ZKX9x9wBtAK019feSO5shV8h",
+  "type": "control_tool_start"
+ },
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "projectId": "prj-c01d75e06c7050a8a4d8ddf37dd36ca1",
+  "projectRevision": "prv-a5446d6900904eeb90432aec7b958d32",
+  "runtimeKind": "project",
+  "seq": 2,
+  "sessionId": "sr-20260927052041-2V6K4Z5SPY",
+  "toolCallId": "call_ZKX9x9wBtAK019feSO5shV8h",
+  "type": "control_project_state"
+ },
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "fileCount": 1,
+  "ok": true,
+  "projectId": "prj-c01d75e06c7050a8a4d8ddf37dd36ca1",
+  "readmeBytes": 309,
+  "readmeSha": "207730eb7b162206",
+  "revision": "prv-a5446d6900904eeb90432aec7b958d32",
+  "runtimeKind": "project",
+  "seq": 3,
+  "sourceBytes": 309,
+  "templateVersion": "whybuddy-workspace-1",
+  "tool": "project_create",
+  "toolCallId": "call_ZKX9x9wBtAK019feSO5shV8h",
+  "type": "control_tool_result"
+ },
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "seq": 4,
+  "tool": "todo_write",
+  "toolCallId": "call_z97AMU51kxP9kKFDEINgEZcX",
+  "type": "control_tool_start"
+ },
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "line": "活儿清单 0/3 · 正在做：搭建 PPT 生成脚本与统一视觉规范",
+  "seq": 5,
+  "summary": "◐ t1: 搭建 PPT 生成脚本与统一视觉规范\n○ t2: 生成 10 页《2026 年第三季度产品复盘》PPTX\n○ t3: 校验页数、文本与文件可打开性并整理下载链接",
+  "todos": [
+   {
+    "content": "搭建 PPT 生成脚本与统一视觉规范",
+    "id": "t1",
+    "status": "in_progress"
+   },
+   {
+    "content": "生成 10 页《2026 年第三季度产品复盘》PPTX",
+    "id": "t2",
+    "status": "pending"
+   },
+   {
+    "content": "校验页数、文本与文件可打开性并整理下载链接",
+    "id": "t3",
+    "status": "pending"
+   }
+  ],
+  "toolCallId": "call_z97AMU51kxP9kKFDEINgEZcX",
+  "type": "control_todo"
+ },
+ {
+  "controlRunId": "ctr-4434a6f678fa564d8ba25953e3546762",
+  "count": 3,
+  "ok": true,
+  "seq": 6,
+  "summary": "◐ t1: 搭建 PPT 生成脚本与统一视觉规范\n○ t2: 生成 10 页《2026 年第三季度产品复盘》PPTX\n○ t3: 校验页数、文本与文件可打开性并整理下载链接",
+  "todos": [
+   {
+    "content": "搭建 PPT 生成脚本与统一视觉规范",
+    "id": "t1",
+    "status": "in_progress"
+   },
+   {
+    "content": "生成 10 页《2026 年第三季度产品复盘》PPTX",
+    "id": "t2",
+    "status": "pending"
+   },
+   {
+    "content": "校验页数、文本与文件可打开性并整理下载链接",
+    "id": "t3",
+    "status": "pending"
+   }
+  ],
+  "tool": "todo_write",
+  "toolCallId": "call_z97AMU51kxP9kKFDEINgEZcX",
+  "type": "control_tool_result"
+ }
+]
