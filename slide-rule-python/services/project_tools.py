@@ -1067,7 +1067,37 @@ class ProjectTools:
             body = tool_error(str(exc))
             if isinstance(getattr(exc, "hint", None), str):
                 body["hint"] = exc.hint
+            elif str(exc) == "project_plan_approval_required":
+                fix = self._approval_ref_mismatch(state, args)
+                if fix:
+                    body["hint"] = fix
             return body
+
+    def _approval_ref_mismatch(self, state, args) -> str:
+        """计划其实批准了、只是模型回传的 approvalRef 对不上：说清楚，给出原样那串。
+
+        ⚠ 2026-09-27 隔离真机第 47 轮（团队周报网页）：计划 14:20:15 批准；模型发
+          project_exec、project_verify 时把 64 位摘要抄错了四个字符（…21c9dc… → …21d9cd…），
+          回执只有 project_plan_approval_required。模型读成「还没批准 / 不许验收」，
+          放弃验收，这一轮停在「还没通过交付验收」。第 33 轮也撞过一次。
+          闸不放松：对不上照旧拒；只是把「没批准」和「抄错了」分开说。正确那串本来就
+          在 project_status 回执里给模型看（approvalRef），这里不多泄露什么。
+        """
+        passed = args.get("approvalRef") if isinstance(args, dict) else None
+        if not isinstance(passed, str) or not passed.strip():
+            return ""
+        try:
+            authority = load_authorized_session(
+                str(getattr(state, "sessionId", "") or ""), owner_id=self.owner_id)
+        except Exception:
+            return ""
+        if not plan_execution_authorized(authority):
+            return ""
+        expected = approved_reference(authority)
+        if passed == expected:
+            return ""
+        return (f"计划已经批准，是你传的 approvalRef 对不上（多半是抄错了，一个字符都不能差）。"
+                f"原样用这个：{expected}")
 
     def _project_result(self, project):
         revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
