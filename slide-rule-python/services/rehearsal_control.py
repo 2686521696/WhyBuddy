@@ -6010,8 +6010,16 @@ async def _dispatch_tool(
         if not text:
             yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "message_text_required"}
             return
-        yield {"type": "control_tool_start", "tool": name, "summary": text[:160]}
-        yield {"type": "control_text", "text": text}
+        # ⚠ 2026-09-27 隔离真机 sr-20260927055919-BC2H6NDWZT：这段话在左栏出现两遍——
+        #   开场事件把全文塞进 summary，画成「通知用户」那行的明细；紧跟着的
+        #   control_text 又画成一段开口。而 control_text 只流出去、不落库，刷新后
+        #   只剩 chip 明细里那份。通知的内容就是对用户说的话：只作开口说一遍，
+        #   并且落库，刷新前后一样（§四）。
+        spoken = _with_deliverable_links(state, text)
+        yield {"type": "control_tool_start", "tool": name}
+        _append_transcript(state, {"role": "assistant", "kind": "control_text", "text": spoken})
+        await _apersist(state)
+        yield {"type": "control_text", "text": spoken}
         yield {"type": "control_tool_result", "tool": name, "ok": True}
         return
     if name == "idle":
