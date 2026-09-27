@@ -266,7 +266,9 @@ class FileFindNameArguments(ToolArguments):
 #:   tty 规范模式一行最多 4095 字节；但 _console_boot 等提示符出来才敲，此时 readline
 #:   把终端切成原始模式，不受这个限。实测（本地 bash -i + 真 PTY，同一行 _CONSOLE_SETUP，
 #:   pty_line + typing_chunks 原样敲）：1388 / 6209 / 10109 字的 heredoc（UTF-8 1.9 / 8.5 /
-#:   13.7 KB）三条都跑完、exit 0。取 8000，跟 file_read 一次的窗口同量级。
+#:   13.7 KB）三条都跑完、exit 0。E2B 真沙盒（E2BWorkspaceProvider.start_console 原样）
+#:   6716 / 8556 字两条同形状 heredoc 都跑完、exit 0，打字加运行各 4.6 s。
+#:   取 8000，跟 file_read 一次的窗口同量级。
 SHELL_COMMAND_MAX_CHARS = 8000
 
 
