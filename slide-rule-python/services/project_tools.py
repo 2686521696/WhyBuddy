@@ -661,6 +661,24 @@ def _office_facts_sentence(result) -> str:
     return f"文件实况（宿主从文件里量的）：{rows}。向用户描述这份文件时以这些数为准。"
 
 
+_NOT_FOUND = re.compile(r"(?:^|\n)(?:[\w/.-]+: )?(?:line \d+: )?([\w.+-]{1,40}): command not found")
+
+
+def _missing_program(excerpt, exit_code):
+    """exit 127：说出来是哪个程序不在沙盒里。
+
+    ⚠ 2026-09-27 隔离真机第 32、36、39 轮：模型三次拿 `rg --files` 找文件，都是
+      exit 127，回执只有 project_command_failed。它每次都要再花一步才改用别的。
+    """
+    if exit_code not in (127, "127"):
+        return ""
+    match = _NOT_FOUND.search(_terminal_text(str(excerpt or "")))
+    if match is None:
+        return ""
+    return (f"沙盒里没有 {match.group(1)} 这个程序（exit 127）。"
+            "换一个装好的（grep、find、python3），或先装它再用。")
+
+
 def _command_pointer(result, excerpt="", full_command=None):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -676,7 +694,21 @@ def _command_pointer(result, excerpt="", full_command=None):
     command_text = full_command if isinstance(full_command, str) else result.get("command")
     inspects = _only_inspects(command_text)
     files = result.get("officeFiles")
-    if isinstance(files, list) and files:
+    failed_run = result.get("exitCode") not in (0, "0", None)
+    if isinstance(files, list) and files and failed_run:
+        # ⚠ 2026-09-27 隔离真机第 39 轮（项目进度 Excel，追问改成工作日工期）：生成脚本
+        #   写完 xlsx 后自检断言失败，exit 1。收回照旧（worker 头注：失败也可能已写出
+        #   文件，fail-open），可回执写的是「办公文件已收回……这就是交付」——一次失败的
+        #   运行被说成交付。那一轮模型没上当；下一次脚本在保存中途崩掉就未必。
+        named = ", ".join(str(item) for item in files[:8])
+        hint = (
+            f"命令失败了，但写出了新版：{named}，已替换库里的旧版。"
+            "它可能不完整：修好命令重跑，成功之前别对用户说它是交付。"
+            "不要把文件 base64 进日志或 file_write。"
+            + _office_facts_sentence(result)
+            + hint
+        )
+    elif isinstance(files, list) and files:
         named = ", ".join(str(item) for item in files[:8])
         hint = (
             f"办公文件已收回：{named}。"
@@ -722,6 +754,9 @@ def _command_pointer(result, excerpt="", full_command=None):
         hint = "这次没能扫办公文件。" + hint
     if hidden:
         hint = hidden + hint
+    missing = _missing_program(excerpt, result.get("exitCode"))
+    if missing:
+        hint = missing + hint
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
