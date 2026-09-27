@@ -47,6 +47,15 @@ class ProjectDeliveryService:
             reasons.append("project_verification_required")
         elif snapshot.verification.projectId != project_id:
             raise ProjectNotFound("project_verification_not_found")
+        elif (snapshot.verification.revision != revision.revision
+                and snapshot.verification.status == "blocked"
+                and snapshot.verification.errorCode in ENVIRONMENT_BLOCK_CODES):
+            # ⚠ 2026-09-27 隔离真机第 58 轮（喝水记录 + 紫色 + 撤销）：最近一次验收是旧版本、
+            #   而且是环境挡住的（验收浏览器拿不到访问票）。下面那支说「当前版本没验过」
+            #   会触发续跑叫模型去验收；可那次验收的 errorHint 明说「重复验收都解决不了」，
+            #   模型照做不验，只把收尾原话又说一遍——用户看见两段一样的话。宿主给的两句
+            #   话打架。环境问题不随版本变：照实报环境挡住，不续跑。
+            reasons.append("project_verification_environment_blocked")
         elif snapshot.verification.revision != revision.revision:
             # ⚠ 2026-09-27 隔离真机第 36 轮（习惯打卡网页 + 追问加「导出 CSV」）：
             #   改完代码没重新验收，最近那条验收是旧版本的。原来落进下面「没通过」

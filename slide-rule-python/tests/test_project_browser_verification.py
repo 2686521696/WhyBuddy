@@ -611,3 +611,23 @@ def test_a_failed_assertion_is_still_a_business_failure(live, monkeypatch):
     reasons = ProjectDeliveryService(live.store, "alice").status(live.project["projectId"])["blockedReasons"]
     assert "project_current_business_verification_required" in reasons
     assert "project_verification_environment_blocked" not in reasons
+
+
+def test_an_environment_blocked_check_stays_environment_blocked_after_a_code_change(live, monkeypatch):
+    """⚠ 2026-09-27 隔离真机第 58 轮（喝水记录 + 紫色 + 撤销）：上次验收是环境挡住的，
+    之后改了代码。原来报「当前版本没验过」→ 续跑叫模型去验收，而那次验收的 errorHint
+    明说「重复验收都解决不了」——模型照做不验，把收尾原话又说一遍。环境问题不随版本变。
+    反向（验收过了、再改代码 → project_verification_required）钉在 test_project_delivery。"""
+    from services.project_delivery import ProjectDeliveryService
+    from test_project_live_source_sync import patch_args
+    browser, _ = install_browser(live, monkeypatch)
+    monkeypatch.setattr(browser, "run", lambda **kwargs: {"status": "blocked", "cleanupConfirmed": True,
+        "runnerVersion": "whybuddy-browser-v1:pw1.61.1", "errorCode": "project_browser_auth_failed",
+        "assertions": [], "artifacts": {}})
+    verdict(live, verify(live))
+    patch = live.tools.execute("project_patch", patch_args(live), live.state)
+    assert patch["ok"]
+    eventually(lambda: live.store.get_operation(patch["operationId"], owner_id="alice").status == "completed")
+    reasons = ProjectDeliveryService(live.store, "alice").status(live.project["projectId"])["blockedReasons"]
+    assert "project_verification_environment_blocked" in reasons, reasons
+    assert "project_verification_required" not in reasons, reasons
