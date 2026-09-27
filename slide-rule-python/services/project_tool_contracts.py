@@ -262,9 +262,17 @@ class FileFindNameArguments(ToolArguments):
 #:   英文（REC / FOOD / PAPER + BOTTLE / WHICH BIN?），给中国小学生看。默认镜像其实装了
 #:   Noto CJK（E2B 探针：`fc-list :lang=zh` 列出 Noto Serif/Sans CJK SC 等，共 38 个字体；
 #:   WHYBUDDY_OFFICE_E2B_TEMPLATE 未设，办公工作区用的就是这个镜像）。它不知道，只好躲开中文。
+#: ⚠ 第 75 轮 sr-20260927212952-0P836MAD1P（防溺水 PPT，同一句追问）：第一版只说「有 Noto CJK，fc-list 查，载其中一个」。
+#:   模型照做了一半——PPT 文字字体改成 Noto Sans CJK SC、fc-match 也查到了文件，图里也改写
+#:   中文了；可 PIL 那两行还是 truetype(DejaVuSans-Bold.ttf)，四张图的中文全是方块，比
+#:   第 74 轮的英文还糟。说「载一个」不够，要给到能照抄的那一行：文件路径 + 调用。
+#:   路径是 E2B 探针 `fc-list :lang=zh file` 的原样输出；同一探针在沙盒里用这一行画「中防溺水」
+#:   出字形，DejaVuSans-Bold 画出来跟私用区码位（必是方块）逐字节相同。
+SANDBOX_CJK_FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 SANDBOX_FONTS_NOTE = (
-    "The sandbox image ships Chinese fonts (Noto CJK; list the files with fc-list :lang=zh) — "
-    "when drawing Chinese text into an image (PIL etc.) load one of those; DejaVu has no Chinese glyphs."
+    "Chinese text drawn into an image (PIL etc.) needs a Chinese font: use "
+    f"ImageFont.truetype('{SANDBOX_CJK_FONT}', size) (Noto Sans CJK; fc-list :lang=zh lists the others). "
+    "DejaVu has no Chinese glyphs — Chinese drawn with it comes out as empty boxes."
 )
 
 

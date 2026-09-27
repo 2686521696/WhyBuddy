@@ -77,3 +77,13 @@ def test_both_descriptions_say_where_the_chinese_fonts_are():
         assert SANDBOX_FONTS_NOTE in text, name
         assert "{sandbox_fonts}" not in text, name
         assert "fc-list :lang=zh" in text and "DejaVu" in text, name
+
+
+def test_the_font_note_gives_a_line_that_can_be_copied():
+    """⚠ 第 75 轮 sr-20260927212952-0P836MAD1P：第一版只说「有 Noto CJK，载一个」，模型 fc-match
+    查到了文件，PIL 那两行照旧 truetype(DejaVuSans-Bold.ttf)，图里的中文全成方块。
+    要给到能照抄的调用：路径 + ImageFont.truetype，并说清 DejaVu 画中文是方块。"""
+    from services.project_tool_contracts import SANDBOX_CJK_FONT, SANDBOX_FONTS_NOTE
+    assert SANDBOX_CJK_FONT.endswith(".ttc") and SANDBOX_CJK_FONT.startswith("/usr/share/fonts/")
+    assert f"ImageFont.truetype('{SANDBOX_CJK_FONT}'" in SANDBOX_FONTS_NOTE
+    assert "boxes" in SANDBOX_FONTS_NOTE
