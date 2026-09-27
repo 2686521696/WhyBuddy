@@ -261,7 +261,13 @@ class FileFindNameArguments(ToolArguments):
 #:   一条 heredoc，超了这个数，被 project_tool_arguments_invalid 打回——45 秒生成白花。
 #:   描述里当时还写着「newlines are rejected」（第 31 轮只改了校验、没改两处描述，§四），
 #:   上限一个字没提。描述从这个常量渲染，改数不改话对不上。
-SHELL_COMMAND_MAX_CHARS = 2000
+#: ⚠ 第 68 轮（门店销售 Excel 追问透视表）描述写上了上限，模型的核对脚本照样超——
+#:   它写的就是这么长。2000 没有标定过（第一版内核带进来的）。真正的约束在 PTY：
+#:   tty 规范模式一行最多 4095 字节；但 _console_boot 等提示符出来才敲，此时 readline
+#:   把终端切成原始模式，不受这个限。实测（本地 bash -i + 真 PTY，同一行 _CONSOLE_SETUP，
+#:   pty_line + typing_chunks 原样敲）：1388 / 6209 / 10109 字的 heredoc（UTF-8 1.9 / 8.5 /
+#:   13.7 KB）三条都跑完、exit 0。取 8000，跟 file_read 一次的窗口同量级。
+SHELL_COMMAND_MAX_CHARS = 8000
 
 
 class ShellExecArguments(ToolArguments):
