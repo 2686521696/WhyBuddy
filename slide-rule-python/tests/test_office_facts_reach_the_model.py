@@ -59,7 +59,8 @@ def test_a_native_chart_a_picture_and_a_table_are_counted():
     assert office_facts(deck, "a.pptx") == {"slides": 2, "charts": 1, "pictures": 1, "tables": 1}
     sheet = _zip({"xl/worksheets/sheet1.xml": b"<w/>", "xl/worksheets/sheet2.xml": b"<w/>",
                   "xl/charts/chart1.xml": b"<c/>"})
-    assert office_facts(sheet, "b.xlsx") == {"sheets": 2, "charts": 1, "pictures": 0}
+    # 第 66 轮起多量一项数据透视表（test_pivot_table_is_measured 头注）
+    assert office_facts(sheet, "b.xlsx") == {"sheets": 2, "charts": 1, "pictures": 0, "pivotTables": 0}
     doc = _zip({"word/document.xml": b"<w:body><w:tbl></w:tbl><w:tbl></w:tbl></w:body>"})
     assert office_facts(doc, "c.docx") == {"tables": 2, "charts": 0, "pictures": 0}
 

@@ -202,6 +202,7 @@ _CHART_PART = re.compile(r"^(?:ppt|word|xl)/charts/chart\d+\.xml$")
 _MEDIA_PART = re.compile(r"^(?:ppt|word|xl)/media/[^/]+$")
 _SLIDE_PART = re.compile(r"^ppt/slides/slide\d+\.xml$")
 _SHEET_PART = re.compile(r"^xl/worksheets/sheet\d+\.xml$")
+_PIVOT_PART = re.compile(r"^xl/pivotTables/pivotTable\d+\.xml$")
 
 
 def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
@@ -234,6 +235,7 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                 facts["tables"] = body.count(b"<w:tbl>")
             else:
                 facts["sheets"] = sum(1 for n in names if _SHEET_PART.match(n))
+                facts["pivotTables"] = sum(1 for n in names if _PIVOT_PART.match(n))
             return facts
     except Exception:
         return None
@@ -261,6 +263,16 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
                        if (key in facts or key == "charts") and not facts.get(key))
     # 用户在 Office 里点开拼出来的东西，改不了数据和行列——它就不是图表/表格。
     note = f"（形状、文本框拼的不算，别对用户叫它{missing}）" if missing else ""
+    if "pivotTables" in facts:
+        # ⚠ 2026-09-27 隔离真机第 66 轮（应收账款 Excel，追问「再加一个按月份汇总的
+        #   透视表工作表」）：openpyxl 写不出数据透视表，模型用 SUMIFS 做了一张「按月汇总」，
+        #   收尾一句没提它不是透视表——用户点开找不到字段列表、拖不了行列。回执里的实况
+        #   只有工作表 / 图表 / 图片，透视表那半句没有任何数撑着。跟上面同一类：量出来的数
+        #   + 一条真实性边界。
+        pivots = facts["pivotTables"]
+        note += f"，数据透视表 {pivots} 个" + (
+            "（公式写的汇总表不是透视表：用户要的是透视表，就照实说给的是公式汇总）"
+            if not pivots else "")
     return f"{path}：" + "，".join(parts) + note
 
 
