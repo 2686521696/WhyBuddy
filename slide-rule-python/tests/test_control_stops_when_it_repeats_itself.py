@@ -358,3 +358,45 @@ def test_接在回喂那一处_不是摆着好看():
     #   照源码原样写 `"stagnantCalls"` 会永远找不到（假红）。
     assert "'stagnantCalls': {key: getattr(stagnant_calls, key)" in src
     assert "resume.get('stagnantCalls', {})" in src
+
+
+# ── 四、跑完的命令重跑一遍：新操作的身份不是进展（2026-09-27）───────────────
+
+#: 隔离真机发布会 PPT 第 28 轮：文件生成之后，三条只读核对轮着跑了 34 分钟、
+#: 71 轮 shell_exec，三道闸一次没响。夹具是那一段的前 18 对原样（模型的调用
+#: 实参 + 流出去的回执，去掉 type 即 tool_body）。
+_ROUND28_LOOP = json.loads(
+    (pathlib.Path(__file__).parent / "fixtures" / "round28_verification_loop.json").read_text(encoding="utf-8"))
+
+
+def test_真机_跑完的核对命令轮着重跑_闸要响():
+    """变的只有 operationId / lastSeq / runtime.expiresAt / seq / toolCallId，
+    excerpt 一字不差。把 result_fingerprint 里摘这几个的那两段删掉 → 本条红。"""
+    ledger = StagnantCallLedger()
+    stopped_at = None
+    for i, pair in enumerate(_ROUND28_LOOP):
+        ledger.observe(call_signature(pair["call"]), result_fingerprint(pair["body"]))
+        if stopped_at is None and ledger.should_hard_stop():
+            stopped_at = i
+    assert stopped_at is not None, "真机那 71 轮就是这样烧过去的"
+    assert stopped_at < len(_ROUND28_LOOP)
+
+
+def test_反向_还在跑的命令_日志在涨就是进展():
+    """轮询一条 running 的命令：lastSeq 往上涨是新日志，不许被当成重复。"""
+    call = {"name": "shell_wait", "arguments": {"operationId": "op-1", "seconds": 30}}
+    ledger = _ledger_run([
+        (call, {"ok": True, "tool": "shell_wait", "status": "running", "commandFinished": False,
+                "operationId": "op-1", "lastSeq": 10 * (i + 1), "seq": 50 + i, "toolCallId": f"c{i}"})
+        for i in range(MAX_STAGNANT_REPEATS + 2)
+    ])
+    assert ledger.repeats == 1 and not ledger.should_hard_stop()
+
+
+def test_反向_跑完的命令结果变了就是进展():
+    """同一条命令重跑，输出不一样（比如改完文件再核对）：照旧是进展。"""
+    body = _ROUND28_LOOP[1]["body"]
+    a = result_fingerprint(body)
+    b = result_fingerprint({**body, "operationId": "pop-other", "lastSeq": 999,
+                            "excerpt": str(body.get("excerpt")) + "\nslides 9"})
+    assert a != b

@@ -258,6 +258,17 @@ class IdenticalToolCallRun:
 #: 直接喂这一份原文，不许自己拼。
 _VOLATILE_RESULT_KEYS = frozenset({"seq", "toolCallId", "controlRunId", "type"})
 
+#: 跑完了的命令，重跑一遍会得到一个**新的**操作：operationId、lastSeq 都是身份，
+#: 不是进展。只在 commandFinished 为真时摘——还在跑的那条，轮询时 lastSeq 往上涨
+#: 就是新日志到了，那是进展（test_反向_轮询不算打转）。
+#:
+#: ⚠ 2026-09-27 隔离真机 sr-20260927081236-…（发布会 PPT 第 28 轮）：文件生成之后，
+#:   模型把三条只读核对（读页数、unzip -t、查关键字）轮着跑了 34 分钟，每条二十多遍。
+#:   量下来重复之间变的只有 lastSeq / operationId / runtime.expiresAt / seq /
+#:   toolCallId，excerpt 一字不差——而指纹只摘了后两个，每一遍都像「新信息」，
+#:   这道闸一次没响。三道闸在那 71 轮里一共响了 0 次。
+_RERUN_IDENTITY_KEYS = frozenset({"operationId", "lastSeq"})
+
 #: 捅一下 / 掐断。**一次调用带回同一份结果**，第二次起就是零信息量。
 #:
 #: ⚠ 不是照抄 grok 的 4/8：那组数是给「连续轮数」那个轴的，而且 grok 的
@@ -320,6 +331,13 @@ def result_fingerprint(body: Any) -> str:
     if not isinstance(body, dict):
         return f"raw\x1f{body!r}"
     kept = {k: v for k, v in body.items() if k not in _VOLATILE_RESULT_KEYS}
+    if body.get("commandFinished") is True:
+        for key in _RERUN_IDENTITY_KEYS:
+            kept.pop(key, None)
+    runtime = kept.get("runtime")
+    if isinstance(runtime, dict) and "expiresAt" in runtime:
+        # 租约续期的时间戳：每次心跳都变，从来不是进展。
+        kept["runtime"] = {k: v for k, v in runtime.items() if k != "expiresAt"}
     try:
         return json.dumps(_canonical(kept), sort_keys=True, ensure_ascii=False)
     except (TypeError, ValueError):
