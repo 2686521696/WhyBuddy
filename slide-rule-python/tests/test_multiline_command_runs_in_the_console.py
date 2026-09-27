@@ -74,7 +74,8 @@ def test_the_console_never_types_a_newline_inside_the_command(setup_provider, mo
     deadline = time.time() + 2
     while provider.is_process_running(handle, "7") and time.time() < deadline:
         time.sleep(0.01)
-    typed = [chunk for chunk in fake.pty.sent if len(chunk) <= 4 and b"PROMPT_COMMAND" not in chunk]
+    setup = next(i for i, chunk in enumerate(fake.pty.sent) if b"PROMPT_COMMAND" in chunk)
+    typed = fake.pty.sent[setup + 1:]  # 设置行之后敲进去的全部（长命令成段敲，见 typing_chunks）
     # 只有最后那一下回车；命令中间敲一个 \n，bash 就当回车执行半段 heredoc
     assert typed[-1] == b"\n"
     assert b"\n" not in b"".join(typed[:-1])

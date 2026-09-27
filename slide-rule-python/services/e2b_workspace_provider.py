@@ -43,6 +43,12 @@ MAX_CONSOLE_CHUNK = 8192
 # Visible command typing. 0 in tests. Do not send the whole command in one write:
 # that would still execute, but the pane would jump, not type.
 CONSOLE_TYPE_INTERVAL = 0.02
+# ⚠ 2026-09-27 隔离真机第 43 轮（IT 制度 Word + 追问核对标题层级）：每个字符一次
+#   send_stdin 就是一次 E2B 往返，实测 ~0.127 s/字。852 字的 `python3 -c "…核对…"`
+#   总耗时 105 s，其中打字 103.3 s（811 次单字写入），命令本身不到半秒；模型的前台
+#   等待被打字吃光，只好 shell_wait 再等。办公话题的核对命令动辄四五百字，一轮光
+#   打字就是几分钟。打字效果留着，写入次数封顶：短命令照旧一字一敲，长命令成段地敲。
+CONSOLE_TYPE_MAX_WRITES = 32
 # OSC 777 is ours: first hit = bash ready, second = command exit. Never forward
 # it to the client — it is protocol, not something the user typed.
 _CONSOLE_OSC = re.compile(rb"\x1b\]777;wb;(\d+)\x07")
@@ -53,6 +59,12 @@ _CONSOLE_SETUP = (
     b"PS1='\\u@\\h:\\w\\$ '; "
     b"stty echo\n"
 )
+
+def typing_chunks(command: str) -> list[str]:
+    """把一行命令切成最多 CONSOLE_TYPE_MAX_WRITES 段来敲（见常量头注）。"""
+    size = max(1, math.ceil(len(command) / CONSOLE_TYPE_MAX_WRITES))
+    return [command[i:i + size] for i in range(0, len(command), size)]
+
 
 def pty_line(command: str) -> str:
     """把一条命令变成能在 PTY 里**敲一行**跑完的样子。
@@ -982,10 +994,10 @@ class E2BWorkspaceProvider:
             sandbox.pty.send_stdin(console.pid, _CONSOLE_SETUP)
             if not console.ready.wait(timeout=20):
                 raise TimeoutError("e2b_console_not_ready")
-            for char in command:
+            for chunk in typing_chunks(command):
                 if not console.running:
                     return
-                sandbox.pty.send_stdin(console.pid, char.encode("utf-8"))
+                sandbox.pty.send_stdin(console.pid, chunk.encode("utf-8"))
                 if CONSOLE_TYPE_INTERVAL:
                     time.sleep(CONSOLE_TYPE_INTERVAL)
             sandbox.pty.send_stdin(console.pid, b"\n")
