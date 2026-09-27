@@ -428,11 +428,20 @@ def operation_settled_notice(operations: Any) -> str:
       这句话是那一轮的合成提示；checkpoint 形状由 continuation_checkpoint 转。
     """
     rows: List[str] = []
+    # ⚠ 2026-09-27 第 33 轮：排在常驻开发服务器后面的命令也会叫醒（goal_released_by），
+    #   它**没有跑**。照旧写在「已结束」底下，模型会把 queued 读成跑完，收尾写「构建已通过」。
+    waiting: List[str] = []
     if isinstance(operations, list):
         for item in operations:
             oid = str(getattr(item, "operationId", "") or "").strip()
             kind = str(getattr(item, "kind", "") or "").strip()
             status = str(getattr(item, "status", "") or "").strip()
+            if status == "queued":
+                what = _operation_command(item)
+                piece = " ".join(part for part in (oid, kind, what) if part)
+                if piece and piece not in waiting:
+                    waiting.append(piece[:160])
+                continue
             saved = getattr(item, "result", None)
             extra = ""
             if isinstance(saved, dict) and "exitCode" in saved:
@@ -440,9 +449,24 @@ def operation_settled_notice(operations: Any) -> str:
             piece = " ".join(part for part in (oid, kind, status) if part) + extra
             if piece and piece not in rows:
                 rows.append(piece[:160])
-            if len(rows) >= 6:
+            if len(rows) + len(waiting) >= 6:
                 break
-    head = "[后台命令已结束]"
-    if not rows:
-        return head + " 没有可读的操作结果。先用 project_status 查清当前状态。"
-    return head + " " + "；".join(rows) + "。刚才排队时的 ok 只表示接单，不是跑完。"
+    parts: List[str] = []
+    if rows:
+        parts.append("[后台命令已结束] " + "；".join(rows) + "。刚才排队时的 ok 只表示接单，不是跑完。")
+    if waiting:
+        parts.append("[还没开始] " + "；".join(waiting) + "。它们排在常驻的开发服务器后面，"
+                     "服务器不停就不会开始，没有任何输出，不能当成已通过。"
+                     "要跑就先用 shell_kill_process 停掉开发服务器。")
+    if not parts:
+        return "[后台命令已结束] 没有可读的操作结果。先用 project_status 查清当前状态。"
+    return " ".join(parts)
+
+
+def _operation_command(operation: Any) -> str:
+    """排队那条是什么命令：shell 看 script，受管命令看 command。"""
+    data = getattr(operation, "input", None)
+    if not isinstance(data, dict):
+        return ""
+    text = data.get("script") or data.get("command") or ""
+    return text[:80] if isinstance(text, str) else ""

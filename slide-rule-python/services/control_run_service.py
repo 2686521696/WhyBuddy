@@ -13,6 +13,7 @@ import logging
 import time
 import uuid
 from contextlib import aclosing
+from types import SimpleNamespace
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
 from services.control_run_store import (
@@ -21,7 +22,7 @@ from services.control_run_store import (
     project_goal_promotion, session_goal_text, stamp_control_goal_payload)
 from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
-from services.project_tools import ProjectTools
+from services.project_tools import ProjectTools, queue_blocker
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
@@ -280,6 +281,34 @@ def operation_released_the_goal(operation) -> bool:
     return getattr(runtime, "status", None) == "ready"
 
 
+def goal_released_by(project_store, operation, owner_id) -> bool:
+    """目标还要不要等这个操作——`operation_released_the_goal` 再加一条排队规则。
+
+    ⚠ 2026-09-27 隔离真机第 33 轮（番茄钟网页 + 追问加暗色模式）：模型改完代码发
+      `npm run build`，排在正在服务的开发服务器（runtime.start，ready）后面。回执
+      说了「它不停，这条就不会开始」，模型没停它，写完收尾就交了。收尾侧看见
+      awaitingOperationIds 里那条 build 还是 queued，挂起等它——它要等开发服务器
+      被空闲回收（300 秒）才轮得到。左栏 4 分 43 秒一个字没有，跟上面 2026-09-16
+      那次是同一个病：等的其实是「沙盒死」。
+
+    排在常驻开发服务器后面的操作，跟那台服务器本身一样放行：挡路的不会让路，
+    等它就是等回收。判断复用回执那一侧的 `queue_blocker`（neverYields），
+    不另抄一份——回执说「不会开始」和这里放行必须是同一个结论。
+
+    挂起侧（`_produce` 收尾）和唤醒侧（`_requeue_settled_goals`）都走这里（§4）。
+    """
+    if operation_released_the_goal(operation):
+        return True
+    if getattr(operation, "status", None) != "queued":
+        return False
+    try:
+        blocker = queue_blocker(SimpleNamespace(store=project_store, owner_id=owner_id),
+                                operation.operationId)
+    except Exception:
+        return False
+    return bool(blocker and blocker["neverYields"])
+
+
 class ControlRunService:
     @classmethod
     def observer(cls, project_store):
@@ -451,7 +480,8 @@ class ControlRunService:
                 except Exception:
                     settled = False
                     break
-                if not operation_released_the_goal(operation):
+                if not await asyncio.to_thread(
+                        goal_released_by, self.project_store, operation, record["ownerId"]):
                     settled = False
                     break
             if settled:
@@ -795,7 +825,9 @@ class ControlRunService:
                             except Exception:
                                 pending = True
                                 break
-                            if not operation_released_the_goal(operation):
+                            if not await asyncio.to_thread(
+                                    goal_released_by, self.project_store, operation,
+                                    record["ownerId"]):
                                 pending = True
                                 break
                     if pending:
