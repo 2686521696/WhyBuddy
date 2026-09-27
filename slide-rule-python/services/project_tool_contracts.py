@@ -256,8 +256,16 @@ class FileFindNameArguments(ToolArguments):
     sudo: bool = False
 
 
+#: shell_exec / bash 一条命令的上限。
+#: ⚠ 2026-09-27 隔离真机第 66 轮（应收账款 Excel）：多行放开之后模型把整个生成脚本写成
+#:   一条 heredoc，超了这个数，被 project_tool_arguments_invalid 打回——45 秒生成白花。
+#:   描述里当时还写着「newlines are rejected」（第 31 轮只改了校验、没改两处描述，§四），
+#:   上限一个字没提。描述从这个常量渲染，改数不改话对不上。
+SHELL_COMMAND_MAX_CHARS = 2000
+
+
 class ShellExecArguments(ToolArguments):
-    command: str = Field(min_length=1, max_length=2000)
+    command: str = Field(min_length=1, max_length=SHELL_COMMAND_MAX_CHARS)
     id: str | None = Field(default=None, min_length=1, max_length=240)
     exec_dir: str | None = Field(default=None, max_length=240)
     sudo: bool = False
@@ -369,7 +377,7 @@ class GithubReplaceArguments(ToolArguments):
 
 
 class GithubBashArguments(ToolArguments):
-    command: str = Field(min_length=1, max_length=2000)
+    command: str = Field(min_length=1, max_length=SHELL_COMMAND_MAX_CHARS)
     sudo: bool = False
     is_background: bool = False
     timeout: float | None = Field(default=None, ge=0, le=SHELL_EXEC_MAX_FOREGROUND_SECONDS)
@@ -644,7 +652,7 @@ _DESCRIPTIONS = {
     "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
-    "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other one-line command runs as grok-build bash in /home/user/workspace. An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. Newlines and sudo are rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
+    "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other command runs as grok-build bash in /home/user/workspace; multi-line commands and heredocs are fine. The command is at most {command_max} characters — for a longer script, file_write it first, then run it (python3 that file). An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. sudo is rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
     "shell_view": "Read bounded output of a queued project command. id is the operationId from shell_exec; omit it to read the latest operation.",
     "shell_wait": "Wait up to seconds (max 30) for a queued project command. It returns the moment the command finishes, so one generous wait beats several short polls. id is the operationId; omit it to wait on the latest operation.",
     "shell_write_to_process": "Type into the live bash PTY of a queued project command. id is the operationId from shell_exec. press_enter defaults true. The worker delivers bytes on the next poll; a finished operation is rejected.",
@@ -667,7 +675,7 @@ _DESCRIPTIONS = {
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
-    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). The command is one PTY line — newlines are rejected (write a file with file_write, then python3 that file). An office workspace keeps the same sandbox across commands (installed packages stay). .pptx/.docx/.xlsx written in the workspace are listed on this receipt as officeFiles; that path is the deliverable — do not base64 the file into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. is_background=true returns running, not completion. sudo is rejected.",
+    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). Multi-line commands and heredocs are fine; the command is at most {command_max} characters — for a longer script, file_write it first, then python3 that file. An office workspace keeps the same sandbox across commands (installed packages stay). .pptx/.docx/.xlsx written in the workspace are listed on this receipt as officeFiles; that path is the deliverable — do not base64 the file into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. is_background=true returns running, not completion. sudo is rejected.",
     "grep": "Search saved source with a regular expression across the tree. Optional path is a file or directory prefix; optional glob limits names. This is not shell execution.",
     "list_dir": "List saved source paths under path. path may be '.' for the whole tree.",
     "glob": "Find saved source paths whose name or relative path matches pattern. Optional path limits the directory prefix.",
@@ -696,6 +704,7 @@ def interpolate_description(description: str) -> str:
         description
         .replace("{max_read_chars}", str(PROJECT_READ_MAX_CHARS))
         .replace("{fg_block_secs}", str(int(SHELL_EXEC_FOREGROUND_BLOCK_SECONDS)))
+        .replace("{command_max}", str(SHELL_COMMAND_MAX_CHARS))
     )
 
 

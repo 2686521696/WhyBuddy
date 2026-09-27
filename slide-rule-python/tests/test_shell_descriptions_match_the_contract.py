@@ -1,0 +1,68 @@
+"""shell_exec / bash 的描述要跟校验说同一件事：多行能跑，上限多少。
+
+⚠ 2026-09-27 隔离真机第 66 轮 sr-20260927192856-9BNQR8C0SD（应收账款 Excel）：模型把整个
+  生成脚本写成一条 `python3 - <<'PY' …` 发出去，超过 2000 字被 project_tool_arguments_invalid
+  打回，45 秒的生成白花，下一发才改成 file_write + python3 build_workbook.py。
+  那时两处描述还写着「one-line command」「newlines are rejected」——第 31 轮放开多行时
+  只改了校验（test_multiline_command_runs_in_the_console），描述没跟着改（§四）；上限一字没提。
+
+判据从校验侧取真值（Field 的 max_length、classify_shell_command），不抄数字。
+把描述改回「newlines are rejected」，第一条变红；把 {command_max} 换成写死的数字再改常量，第二条变红。
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from pydantic import ValidationError
+
+from services.project_tool_contracts import (
+    SHELL_COMMAND_MAX_CHARS,
+    GithubBashArguments,
+    ShellExecArguments,
+    classify_shell_command,
+    project_tool_definitions,
+)
+
+# 第 66 轮被打回那一发的开头，原样（后面是两千多字的 openpyxl 脚本）。
+ROUND66_HEAD = "python3 - <<'PY'\nfrom openpyxl import Workbook, load_workbook\n"
+
+
+def _descriptions():
+    out = {}
+    for item in project_tool_definitions():
+        fn = item.get("function", item)
+        if fn["name"] in {"shell_exec", "bash"}:
+            out[fn["name"]] = fn["description"]
+    assert set(out) == {"shell_exec", "bash"}
+    return out
+
+
+def test_neither_description_says_newlines_are_rejected():
+    # 校验侧的真值：多行 heredoc 是被接受的
+    assert classify_shell_command(ROUND66_HEAD + "print(1)\nPY")[0] == "shell"
+    for name, text in _descriptions().items():
+        lowered = text.lower()
+        # 盯语义不盯字面：第一版查 "newlines are rejected"，原话 "Newlines and sudo are
+        # rejected" 照样绿（§二）。同一句里出现 newline 和 reject 就算。
+        assert not re.search(r"newlines?\b[^.]*\breject", lowered), name
+        assert not re.search(r"one[- ]line (?:command|pty)", lowered), name
+        assert "heredoc" in lowered, name
+
+
+def test_both_descriptions_state_the_real_limit_and_the_way_around_it():
+    for model in (ShellExecArguments, GithubBashArguments):
+        limit = next(m.max_length for m in model.model_fields["command"].metadata if hasattr(m, "max_length"))
+        assert limit == SHELL_COMMAND_MAX_CHARS
+    for name, text in _descriptions().items():
+        assert f"at most {SHELL_COMMAND_MAX_CHARS} characters" in text, name
+        assert "file_write" in text, name
+
+
+def test_the_limit_is_really_enforced():
+    """反向：上限不是只写在描述里。"""
+    script = ROUND66_HEAD + "x = 1\n" * SHELL_COMMAND_MAX_CHARS + "PY"
+    with pytest.raises(ValidationError):
+        ShellExecArguments(command=script)
+    ShellExecArguments(command=ROUND66_HEAD + "print(1)\nPY")
