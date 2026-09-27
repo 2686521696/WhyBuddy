@@ -96,3 +96,23 @@ def test_a_notification_is_said_once_and_survives_a_reload(setup, monkeypatch):
     rows = load_session(setup.state.sessionId).controlTranscript
     assert [r.get("text") for r in rows if r.get("kind") == "control_text"].count(NOTIFY) == 1
     assert all(NOTIFY not in str(r.get("summary") or "") for r in rows if r.get("kind") == "tool_start")
+
+
+# ⚠ 2026-09-27 隔离真机第 68 轮 sr-20260927200602-F9YJD14NHC（门店销售 Excel 追问透视表）：
+#   模型抄了回执里的真地址，却在前面加了 sandbox:。按文件名配不上（末段是 art-id），
+#   原样交给用户，点不开。收尾原话、地址原样。
+ROUND68_BOOK = "门店销售明细.xlsx"
+ROUND68_URL = "/api/sliderule/projects/prj-d78277eeecab5db2b95c6444fd1053d2/artifacts/art-ee926db0f73071d34b0a559a893f563267e9688e"
+ROUND68_CLOSING = f"已核验：工作簿包含 3 个工作表、30 行销售明细、6 条产品月份汇总记录；汇总公式、格式和表格结构正确。\n\n[下载更新后的门店销售明细.xlsx](sandbox:{ROUND68_URL})"
+
+
+def test_a_real_link_with_a_sandbox_prefix_is_repaired():
+    out = rewrite_deliverable_links(ROUND68_CLOSING, {ROUND68_BOOK: ROUND68_URL})
+    assert f"[下载更新后的门店销售明细.xlsx]({ROUND68_URL})" in out
+    assert "sandbox:" not in out
+
+
+def test_a_sandbox_prefixed_address_the_host_never_gave_is_left_alone():
+    """反向：去掉 sandbox: 之后不是宿主给过的那串（这里 art-id 被改了一位），不猜。"""
+    forged = f"[下载](sandbox:{ROUND68_URL[:-1]}0)"
+    assert rewrite_deliverable_links(forged, {ROUND68_BOOK: ROUND68_URL}) == forged

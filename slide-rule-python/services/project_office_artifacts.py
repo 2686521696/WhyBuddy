@@ -330,6 +330,7 @@ def office_artifact_download_url(project_id: str, artifact_id: str) -> str:
 #: markdown 链接 `[字](地址)`；地址里不许有空白和右括号（模型写的都是这种）。
 _MD_LINK = re.compile(r"\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?\s*\)")
 _USABLE_TARGET = re.compile(r"^(?:https?:|mailto:|/api/)", re.IGNORECASE)
+_SANDBOX_SCHEME = re.compile(r"^sandbox:", re.IGNORECASE)
 
 
 def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
@@ -354,10 +355,19 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
         if name and isinstance(url, str) and url.startswith("/api/"):
             by_name.setdefault(name, url)
 
+    known = set(by_name.values())
+
     def swap(match: re.Match) -> str:
         label, target = match.group(1), match.group(2)
         if _USABLE_TARGET.match(target):
             return match.group(0)
+        # ⚠ 2026-09-27 隔离真机第 68 轮 sr-20260927200602-F9YJD14NHC（门店销售 Excel 追问
+        #   透视表）：模型把回执里的真地址抄成了 `sandbox:/api/sliderule/projects/…/artifacts/art-…`
+        #   ——前面多了个 sandbox:。下面按文件名配，最后一段是 art-id，配不上，原样交给
+        #   用户，点不开。去掉 scheme 后**逐字等于**宿主给的某个地址才换，不是猜。
+        bare = _SANDBOX_SCHEME.sub("", target, count=1)
+        if bare != target and bare in known:
+            return f"[{label}]({bare})"
         name = Path(unquote(target.split("?", 1)[0].split("#", 1)[0])).name
         url = by_name.get(name)
         return f"[{label}]({url})" if url else match.group(0)
