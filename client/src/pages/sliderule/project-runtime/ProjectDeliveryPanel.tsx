@@ -31,7 +31,8 @@ const TEXT: Record<string, string> = {
 const REASONS: Record<string, string> = {
   project_plan_approval_required: "当前计划尚未批准",
   project_acceptance_profile_not_bound: "工程模板没有对应的交付验收范围",
-  project_verification_required: "尚无独立浏览器检查记录",
+  // 最近一次验收是旧版本的也落在这里（改过代码没重验），见 project_delivery._evidence。
+  project_verification_required: "当前源码版本还没有做独立浏览器检查",
   project_current_business_verification_required:
     "当前源码版本尚未通过独立浏览器验收",
   project_verification_evidence_incomplete: "构建或浏览器证据不完整",

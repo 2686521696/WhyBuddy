@@ -47,6 +47,13 @@ class ProjectDeliveryService:
             reasons.append("project_verification_required")
         elif snapshot.verification.projectId != project_id:
             raise ProjectNotFound("project_verification_not_found")
+        elif snapshot.verification.revision != revision.revision:
+            # ⚠ 2026-09-27 隔离真机第 36 轮（习惯打卡网页 + 追问加「导出 CSV」）：
+            #   改完代码没重新验收，最近那条验收是旧版本的。原来落进下面「没通过」
+            #   那一支，续跑提示写「当前版本的独立浏览器验收没有通过」——模型记得上
+            #   一次是环境问题，读成「又是环境」，一个工具没调，把收尾原话又说了一遍，
+            #   用户看见两段几乎一样的总结。当前版本根本没验过，就说没验过。
+            reasons.append("project_verification_required")
         elif (snapshot.effectiveStatus == "blocked"
                 and snapshot.verification.errorCode in ENVIRONMENT_BLOCK_CODES):
             # 验收没跑起来，不是没通过（见 ENVIRONMENT_BLOCK_CODES）。

@@ -150,7 +150,7 @@ BLOCKER_TEXT: Dict[str, str] = {
     "project_not_created": "还没有建工程",
     "office_file_not_found": "还没有收回任何办公文件（.pptx / .docx / .xlsx）",
     "project_plan_approval_required": "计划还没有批准",
-    "project_verification_required": "还没有对当前版本做独立浏览器验收（project_verify）",
+    "project_verification_required": "还没有对当前版本做独立浏览器验收（project_verify）；改过代码后，旧版本的验收不算",
     "project_current_business_verification_required": "当前版本的独立浏览器验收没有通过",
     "project_verification_environment_blocked": "独立浏览器验收没能在这个环境里跑起来（运行环境的问题，不是应用代码）",
     "project_verification_evidence_incomplete": "验收证据对不上当前版本（构建或截图不完整）",

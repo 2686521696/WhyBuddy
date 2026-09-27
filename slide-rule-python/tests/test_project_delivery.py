@@ -113,6 +113,8 @@ def test_source_changes_or_revoked_plan_make_saved_release_stale(setup):
         spec_revision="whybuddy-tasks-acceptance@1", lease_generation=lease.generation, lease_owner=lease.leaseOwner)
     status = setup.client.get(setup.url + "/delivery").json()
     assert not status["eligible"] and status["releases"][0]["effectiveStatus"] == "stale"
+    # 改过代码：当前版本**没验过**，不是「没通过」（2026-09-27 第 36 轮，续跑提示靠这个码说人话）
+    assert status["blockedReasons"] == ["project_verification_required"]
     assert setup.client.post(setup.url + "/releases", json={**body, "idempotencyKey": "old"}).status_code == 409
     download = setup.client.get(status["releases"][0]["downloadPath"])
     assert download.status_code == 200

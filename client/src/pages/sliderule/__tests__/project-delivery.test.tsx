@@ -133,7 +133,7 @@ it("settles a delivery read failure and retries without retaining earlier eligib
   view.blockedReasons = ["project_verification_required"];
   await act(async () => resolveRetry(response(view)));
   expect(container.textContent).not.toContain("正在读取交付状态。");
-  expect(container.textContent).toContain("尚无独立浏览器检查记录");
+  expect(container.textContent).toContain("当前源码版本还没有做独立浏览器检查");
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(button("准备交付包").disabled).toBe(true);
   expect(posts()).toHaveLength(0);

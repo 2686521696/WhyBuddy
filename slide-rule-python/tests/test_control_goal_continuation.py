@@ -392,3 +392,13 @@ def test_采样中断反向_dispatching不许借这条重放工具():
         "messages": [{"role": "user", "content": "x"}],
     }) is None
     assert sampling_interrupted_checkpoint({"phase": "sampling", "messages": []}) is None
+
+
+def test_续跑提示说当前版本没验过而不是没通过():
+    """⚠ 2026-09-27 第 36 轮：改完代码没重验，提示写「验收没有通过」，模型读成
+    「又是环境问题」，一个工具没调把收尾原话又说一遍。没验过要说没验过、说怎么办。"""
+    from services.control_goal_continuation import continuation_notice
+
+    text = continuation_notice(["project_verification_required"], 1)
+    assert "还没有对当前版本" in text and "project_verify" in text and "旧版本的验收不算" in text
+    assert "没有通过" not in text
