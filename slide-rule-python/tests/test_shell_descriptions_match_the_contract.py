@@ -66,3 +66,14 @@ def test_the_limit_is_really_enforced():
     with pytest.raises(ValidationError):
         ShellExecArguments(command=script)
     ShellExecArguments(command=ROUND66_HEAD + "print(1)\nPY")
+
+
+def test_both_descriptions_say_where_the_chinese_fonts_are():
+    """⚠ 第 74 轮 sr-20260927211536-5XX8MCNCKE：PIL 载 DejaVu 画插图，图里只好全写英文，
+    给中国小学生看。镜像里其实有 Noto CJK。两处描述都要带上（§四），且是渲染出来的，
+    不是留着占位符。"""
+    from services.project_tool_contracts import SANDBOX_FONTS_NOTE
+    for name, text in _descriptions().items():
+        assert SANDBOX_FONTS_NOTE in text, name
+        assert "{sandbox_fonts}" not in text, name
+        assert "fc-list :lang=zh" in text and "DejaVu" in text, name
