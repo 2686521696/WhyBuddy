@@ -12,12 +12,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
+from urllib.parse import unquote
 
 from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
@@ -322,6 +325,44 @@ def office_artifact_download_url(project_id: str, artifact_id: str) -> str:
       拼的是同一个地址（路由在 routes/project_sources.py）。改一边要改另一边。
     """
     return f"/api/sliderule/projects/{project_id}/artifacts/{artifact_id}"
+
+
+#: markdown 链接 `[字](地址)`；地址里不许有空白和右括号（模型写的都是这种）。
+_MD_LINK = re.compile(r"\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?\s*\)")
+_USABLE_TARGET = re.compile(r"^(?:https?:|mailto:|/api/)", re.IGNORECASE)
+
+
+def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
+    """模型给用户的话里，指向办公文件的假地址换成宿主给的真下载地址。
+
+    ⚠ 2026-09-27 隔离真机 sr-20260927055919-BC2H6NDWZT：回执里写着真链接和
+      「不要写沙盒里的路径」，模型收尾照样给了
+      `[2026_Q3_Product_Review.pptx](sandbox:/mnt/data/2026_Q3_Product_Review.pptx)`——
+      连路径都是编的（/mnt/data 是别家沙盒的习惯）。前端把它画成不可点的字
+      （SessionStory 的 CLOSING_MARKDOWN），用户在收尾那句话里拿不到文件。
+      只靠提示词挡不住，宿主手里有真地址，就由宿主换。
+
+    只换**文件名对得上**本工程已收回文件的那种：`sandbox:`、`/mnt/…`、
+    `/home/user/…`、裸相对路径都算。对不上的不猜——猜错比不可点更糟。
+    http(s)、mailto、已经是 /api/ 的原样放过。
+    """
+    if not text or not downloads or "](" not in text:
+        return text
+    by_name: dict[str, str] = {}
+    for path, url in downloads.items():
+        name = Path(str(path)).name
+        if name and isinstance(url, str) and url.startswith("/api/"):
+            by_name.setdefault(name, url)
+
+    def swap(match: re.Match) -> str:
+        label, target = match.group(1), match.group(2)
+        if _USABLE_TARGET.match(target):
+            return match.group(0)
+        name = Path(unquote(target.split("?", 1)[0].split("#", 1)[0])).name
+        url = by_name.get(name)
+        return f"[{label}]({url})" if url else match.group(0)
+
+    return _MD_LINK.sub(swap, text)
 
 
 def new_artifact_id() -> str:

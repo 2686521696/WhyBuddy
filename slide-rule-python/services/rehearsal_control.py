@@ -88,6 +88,11 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.project_office_artifacts import (
+    ProjectOfficeArtifactStore,
+    office_artifact_download_url,
+    rewrite_deliverable_links,
+)
 from services.user_questions import (
     coerce_questions as coerce_user_questions,
     empty_other_answers,
@@ -1466,6 +1471,31 @@ def stamp_control_plan_kind(state: V5SessionState) -> bool:
     if changed:
         state.controlTranscript = stamped
     return changed
+
+
+def _with_deliverable_links(state: V5SessionState, text: str) -> str:
+    """模型对用户说的话里，办公文件的假地址换成真下载地址（rewrite_deliverable_links 头注）。
+
+    落库那一行和流出去的 control_text 用同一份结果——两处不一致，刷新前后
+    用户看到的链接就不一样（本仓 §四）。增强项，查不到就原样返回（§七 fail-open）。
+    """
+    if not text or "](" not in text:
+        return text
+    tools = _PROJECT_TOOLS.get()
+    project_id = getattr(state, "projectId", None)
+    store, owner = getattr(tools, "store", None), getattr(tools, "owner_id", None)
+    if not project_id or store is None or not owner:
+        return text
+    try:
+        rows = ProjectOfficeArtifactStore(store).list(project_id, owner_id=owner)
+    except Exception:
+        return text
+    downloads = {
+        row["path"]: office_artifact_download_url(project_id, row["artifactId"])
+        for row in rows
+        if isinstance(row, dict) and row.get("path") and row.get("artifactId")
+    }
+    return rewrite_deliverable_links(text, downloads)
 
 
 async def _invoke_control_llm(
@@ -5157,7 +5187,7 @@ async def _control_llm_loop(
                     ):
                         yield event
                     return
-                text = content or empty_text or CANNED_FAILURE
+                text = _with_deliverable_links(state, content or empty_text or CANNED_FAILURE)
                 _append_transcript(
                     state, {"role": "assistant", "kind": "control_text", "text": text}
                 )
@@ -5190,12 +5220,13 @@ async def _control_llm_loop(
             #   判据已经在消费侧 `assistant-text-for-turn.ts` 的 OPERATOR_SPEAK
             #   里，同一条规则不许有第二处实现（§4：改一半必然静默失效）。
             if content:
+                spoken = _with_deliverable_links(state, content)
                 _append_transcript(
                     state,
-                    {"role": "assistant", "kind": "control_text", "text": content},
+                    {"role": "assistant", "kind": "control_text", "text": spoken},
                 )
                 await _apersist(state)
-                yield {"type": "control_text", "text": content}
+                yield {"type": "control_text", "text": spoken}
 
             assistant_msg: Dict[str, Any] = {
                 "role": "assistant",
