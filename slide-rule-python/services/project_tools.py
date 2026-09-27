@@ -14,6 +14,7 @@ import re
 import shlex
 import time
 import uuid
+from difflib import SequenceMatcher
 from urllib.parse import urlsplit
 from types import SimpleNamespace
 
@@ -177,6 +178,9 @@ SHELL_ERROR_TEXT: dict[str, str] = {}
 
 #: 建工程回执里列出的路径上限。模板 9～30 个文件；再多就只给前面这些。
 CREATED_FILE_LIST_MAX = 60
+# operationId 是 pop- + 32 位十六进制：漏一位 ≈0.99、换两对 ≈0.94；两条不相干的
+# id 随机两万对实测最高 0.56（前缀 pop- 与偶然的公共子串）。0.9 把两者分开，不会把别的那条递出去。
+OPERATION_ID_TYPO_RATIO = 0.9
 
 
 def missing_file(files, path) -> ProjectNotFound:
@@ -795,6 +799,9 @@ def _missing_program(excerpt, exit_code):
             "换一个装好的（grep、find、python3），或先装它再用。")
 
 
+LOG_POINTER_HINT = "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。"
+
+
 def _command_pointer(result, excerpt="", full_command=None):
     """bash / shell_exec：exit + operationId + 日志尾。完整 stdout 留在操作日志。
 
@@ -804,7 +811,7 @@ def _command_pointer(result, excerpt="", full_command=None):
     """
     if not isinstance(result, dict):
         return result
-    hint = "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。"
+    hint = LOG_POINTER_HINT
     # ⚠ 2026-09-22 BABCJGGB44：回执没有文件路径，模型把 pptx base64 进日志。
     #   收回的路径必须写在模型看得见的这句话里，不能只藏在字段名里。
     command_text = full_command if isinstance(full_command, str) else result.get("command")
@@ -897,6 +904,13 @@ def _command_pointer(result, excerpt="", full_command=None):
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
         "hint": hint,
     }
+    if hint == LOG_POINTER_HINT and not str(excerpt or "").strip() and (
+            result.get("kind") == "runtime.patch" or result.get("status") == "queued"):
+        # ⚠ 2026-09-27 隔离真机第 65 轮：追问里 1 次 file_write + 5 次 file_str_replace，
+        #   每张回执都挂「完整输出在操作日志，用 project_logs 或 shell_view 再取」——改文件
+        #   没有输出；排在服务器后面的 build 还没开始，也没有。叫模型去翻一个空日志是噪声。
+        #   只剩这一句时整句不挂；有别的话（失败、办公文件）照旧整段交回。
+        out.pop("hint")
     if cut:
         out["excerptTruncated"] = True
         out["outputChars"] = total
@@ -1193,7 +1207,50 @@ class ProjectTools:
                 fix = self._approval_ref_mismatch(state, args)
                 if fix:
                     body["hint"] = fix
+            elif str(exc) == "project_operation_not_found":
+                fix = self._mistyped_operation_id(state, args)
+                if fix:
+                    body["hint"] = fix
             return body
+
+    def _mistyped_operation_id(self, state, args) -> str:
+        """传的 operationId 查无此条、却跟本会话某条只差一两个字符：说是抄错了，给原样那串。
+
+        ⚠ 2026-09-27 隔离真机第 65 轮 sr-20260927190013-AJ2QM1WR1Y（Markdown 笔记追问
+          「按标签筛选 + 置顶」）：npm run build 排在开发服务器后面，回执叫它用
+          shell_kill_process 带 pop-50d9…e985cf8d 取消。模型抄成 …e985cf8（漏了最后一个 d），
+          回执只有 project_operation_not_found。它没再试，收尾交了——那条 build 一直排在
+          队里，等服务器过期才会跑。跟第 47 轮 approvalRef 抄错是同一个病（见上）。
+          查不到照旧报错（错误码不变）；只在唯一一条足够接近时点名，不猜。
+        """
+        if not isinstance(args, dict):
+            return ""
+        passed = next((args[key] for key in ("id", "operationId", "runtimeOperationId")
+                       if isinstance(args.get(key), str) and args[key].strip()), "")
+        if not passed:
+            return ""
+        session_id = str(getattr(state, "sessionId", "") or "")
+        try:
+            project = self.store.get_project_for_session(session_id, owner_id=self.owner_id)
+            operations, after = [], ""
+            while True:
+                page = self.store.list_project_operations(project.projectId, owner_id=self.owner_id,
+                    after_id=after, limit=100)
+                operations += [op for op in page if op.sessionId == session_id]
+                if len(page) < 100:
+                    break
+                after = page[-1].operationId
+        except Exception:
+            return ""
+        if any(op.operationId == passed for op in operations):
+            return ""
+        close = [op for op in operations
+                 if SequenceMatcher(None, passed, op.operationId).ratio() >= OPERATION_ID_TYPO_RATIO]
+        if len(close) != 1:
+            return ""
+        match = close[0]
+        return (f"没有 {passed} 这条。本会话的 {match.operationId}（{match.kind}，{match.status}）"
+                f"跟它只差几个字符，多半是抄错了（一个字符都不能差）。原样用这个：{match.operationId}")
 
     def _approval_ref_mismatch(self, state, args) -> str:
         """计划其实批准了、只是模型回传的 approvalRef 对不上：说清楚，给出原样那串。
