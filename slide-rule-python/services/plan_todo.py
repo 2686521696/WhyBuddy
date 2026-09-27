@@ -393,6 +393,13 @@ def apply(
     return out, None
 
 
+def finished(rows: Any) -> bool:
+    """整张清单都做完了（完成或取消）。空清单不算——那是没列过。"""
+    items = normalize(rows)
+    done = {TodoStatus.COMPLETED.value, TodoStatus.CANCELLED.value}
+    return bool(items) and all(r["status"] in done for r in items)
+
+
 def summarize(rows: Any) -> str:
     """喂回模型的那一段。抄 grok `summarize_todo_state`：标记、id、文案都在。
 

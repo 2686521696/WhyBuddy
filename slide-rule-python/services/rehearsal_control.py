@@ -138,6 +138,7 @@ from services.hop_requirements import (
 from services.plan_todo import (
     MAX_TODO_ITEMS,
     apply as apply_todo,
+    finished as todo_finished,
     normalize as normalize_todo,
     one_line as todo_one_line,
     summarize as summarize_todo,
@@ -5560,6 +5561,16 @@ async def _run_control_turn_body(
             if getattr(state, "runtimePhase", None) == "awaiting":
                 state.runtimePhase = "idle"
         _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
+        if todo_finished(getattr(state, "controlTodo", None)):
+            # ⚠ 2026-09-27 隔离真机第 40–65 轮，追问轮几乎每一轮都这样：上一轮的清单
+            #   已经 4/4 做完，照旧作为「你列的活儿清单」回喂；模型接着就把**旧的**
+            #   四条翻回 ◐/○，左栏写「活儿清单 0/4 · 正在做：检查现有 React/Vite 工程
+            #   结构与依赖」——用户问的是「加按标签筛选和置顶」（第 65 轮）。首轮没列过
+            #   清单的追问（第 45、58、59 轮）列的都是这一轮自己的步骤。
+            #   做完的清单是上一件事的记录（transcript 里还在），不是这一件的计划。
+            #   抄 Claude Code 的 TodoWrite：全做完就清掉。没做完的照旧回喂——
+            #   「继续」要接着那张做。
+            state.controlTodo = []
         # ⚠ 2026-09-22 BABCJGGB44：上一轮 503 把会话停在 failed/error。
         #   这一轮工具都成功，模型 idle 交回，complete 仍是 phase=failed
         #   await=error、stop=None。驾驶把它当成又一次 llm_unavailable。
