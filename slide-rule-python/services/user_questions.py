@@ -59,6 +59,7 @@ model-visible string for one of the four user-action paths.」）：
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 #: 一次最多问几道。grok 没有硬上限，靠提示词管；我们给一个——真机上
@@ -130,6 +131,35 @@ def _coerce_option(raw: Any, index: int) -> Optional[Dict[str, str]]:
     return out
 
 
+#: 只表示「我自己写」的选项标签：我现在填写 / 我来填写 / 手动输入 / 自己写……
+_SELF_FILL_LABEL = re.compile(
+    r"^(?:我|由我)?(?:现在|马上|稍后|这就|自己|亲自|直接|手动|来)*"
+    r"(?:填写|填|输入|写|补充|提供)(?:一下)?(?:信息|内容|答案)?$"
+)
+#: 选项说明让用户去「其他」里写——那这个选项只是指向 Other 的路标。
+_POINTS_AT_OTHER = re.compile(r"[「“\"'（(]?其他[」”\"'）)]?\s*(?:（自己写）)?\s*(?:中|里|栏|一栏)")
+
+
+def _is_other_in_disguise(option: Dict[str, str]) -> bool:
+    """这个选项是不是「其他（自己写）」换了个说法。
+
+    ⚠ 2026-09-27 隔离真机 sr-20260927072026-61BV5J0D9R（发布会 PPT）：模型要用户填
+      产品名、竞品、联系方式，每道题只给一个选项「我现在填写（推荐）」，说明写着
+      「在“其他”中写出：名称｜行业｜一句话介绍」。这张卡上选它**没有输入框**
+      （只有 Other 才有），交上去的答案零信息；模型原样再问，三轮，45 分钟耗在
+      问卷里，计划都没出。真人点它也是同一堵墙。
+      Other 由渲染侧补（工具说明的承诺），这种选项只是它的复本，摘掉；摘空了的
+      题就是开放题，卡片自动选中 Other、给输入框。
+    """
+    label = str(option.get("label") or "").strip()
+    if label.endswith(RECOMMENDED_SUFFIX):
+        label = label[: -len(RECOMMENDED_SUFFIX)]
+    label = re.sub(r"[\s，。,.!！]", "", label)
+    if _SELF_FILL_LABEL.match(label):
+        return True
+    return bool(_POINTS_AT_OTHER.search(str(option.get("description") or "")))
+
+
 def coerce_questions(raw: Any) -> List[Dict[str, Any]]:
     """模型送来的这一笔归一成一串题。认不出的整题丢掉，认得出的留下。
 
@@ -153,7 +183,7 @@ def coerce_questions(raw: Any) -> List[Dict[str, Any]]:
         options: List[Dict[str, str]] = []
         for j, opt in enumerate(list(row.get("options") or [])[:MAX_OPTIONS]):
             got = _coerce_option(opt, j)
-            if got is not None:
+            if got is not None and not _is_other_in_disguise(got):
                 options.append(got)
         item: Dict[str, Any] = {
             "id": str(row.get("id") or "").strip() or f"q{i + 1}",
