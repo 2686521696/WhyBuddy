@@ -254,3 +254,40 @@ def test_真机那批文件的调用次数要真的降下来():
     assert calls == len(real), f"这批文件仍要 {calls} 次调用，一次一个才对"
     before = sum(-(-len(sources[r]) // 2000) for r in real)
     assert before > calls * 2, (before, calls)
+
+
+# ── 短文件：摘要就是全文，就说是全文（2026-09-27）────────────────────────────
+# 隔离真机第 6～37 轮的无窗读 10 次，5 次紧跟着带窗重读同一个文件；其中 3 次是
+# react-vite 模板的 package.json（476 字）——摘要已经是全文，回执却写 truncated=true、
+# 「这是路径和摘要，不是全文」。
+
+PLAIN = pathlib.Path(__file__).resolve().parents[2] / "project-templates" / "react-vite"
+
+
+def _windowless(path: str, text: str) -> dict:
+    from types import SimpleNamespace
+
+    from services.project_tool_contracts import FileReadArguments
+    from services.project_tools import ProjectTools
+
+    pointer = ProjectTools._file_read(
+        SimpleNamespace(owner_id="alice"), {path: text},
+        type("Rev", (), {"revision": "r1"})(), FileReadArguments(file=path))
+    return json.loads(bound_tool_result({"ok": True, "tool": "file_read", **pointer}, "file_read"))
+
+
+def test_短文件无窗读回执说这就是全文():
+    text = (PLAIN / "package.json").read_text(encoding="utf-8")
+    fed = _windowless("package.json", text)
+    assert fed["excerpt"] == text
+    assert fed["truncated"] is False
+    assert "不是全文" not in fed["hint"] and "就是全文" in fed["hint"]
+
+
+def test_长文件无窗读照旧只是摘要():
+    """反向：上下文预算那条不许被「短文件」顺手放开。"""
+    text = (TEMPLATE / "database.mjs").read_text(encoding="utf-8")
+    fed = _windowless("database.mjs", text)
+    assert fed["content"] == "" and fed["truncated"] is True
+    assert text not in json.dumps(fed, ensure_ascii=False)
+    assert "不是全文" in fed["hint"]

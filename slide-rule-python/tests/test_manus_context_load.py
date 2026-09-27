@@ -59,7 +59,9 @@ def test_default_file_read_is_path_and_excerpt_not_body(setup):
     assert pointer["content"] == ""
     assert "First task" in pointer["excerpt"]
     assert pointer["totalChars"] == len(setup.files["src/App.tsx"])
-    assert "offset" in pointer["hint"] or "start_line" in pointer["hint"]
+    # 夹具里的 App.tsx 很短，摘要就是全文：回执照实说（2026-09-27，见
+    # test_project_read_window_fits_real_sources 末尾）。长文件仍只给摘要、教怎么开窗。
+    assert pointer["excerpt"] == setup.files["src/App.tsx"] and pointer["truncated"] is False
     window = execute(setup, "file_read", {"file": "src/App.tsx", "start_line": 0, "end_line": 1})
     assert window["content"] == "First task\n"
 

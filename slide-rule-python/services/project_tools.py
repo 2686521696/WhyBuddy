@@ -175,6 +175,9 @@ def _strip_preview_host(result: dict) -> dict:
 # 多行命令不再拒（见 e2b_workspace_provider.pty_line），原先那条「改成一行」的提示随之删掉。
 SHELL_ERROR_TEXT: dict[str, str] = {}
 
+#: 建工程回执里列出的路径上限。模板 9～30 个文件；再多就只给前面这些。
+CREATED_FILE_LIST_MAX = 60
+
 
 def missing_file(files, path) -> ProjectNotFound:
     """读不到的文件：错误码不变，附上旁边**真有**的东西。
@@ -384,6 +387,11 @@ def _pointer_file(path, text, revision):
     excerpt = "".join(lines[:FILE_READ_EXCERPT_LINES])
     if len(excerpt) > FILE_READ_EXCERPT_CHARS:
         excerpt = excerpt[:FILE_READ_EXCERPT_CHARS]
+    # ⚠ 2026-09-27 统计隔离真机第 6～37 轮的无窗读：10 次里 5 次紧跟着带窗重读同一个
+    #   文件，其中 3 次是 476 字的 package.json——摘要已经是全文，回执却写
+    #   truncated=true、「这是路径和摘要，不是全文」。短文件就说是全文，别逼它再读一遍。
+    #   长文件照旧只给摘要（上下文预算，见 test_manus_context_load）。
+    whole = excerpt == text
     return {
         "revision": revision.revision,
         "path": path,
@@ -393,8 +401,9 @@ def _pointer_file(path, text, revision):
         "excerpt": excerpt,
         "content": "",
         "nextOffset": 0,
-        "truncated": len(text) > 0,
+        "truncated": not whole,
         "hint": (
+            "文件不长，excerpt 就是全文，不用再读。" if whole else
             "这是路径和摘要，不是全文。"
             "要原文带 offset/limit 或 start_line/end_line；搜内容用 file_find_in_content。"
         ),
@@ -846,6 +855,14 @@ class ProjectTools:
                 project = create_session_project(self.store, session_id,
                     owner_id=self.owner_id, approval_ref=parsed.approvalRef, template_id=parsed.templateId)
                 created = self._project_result(project)
+                # ⚠ 2026-09-27 隔离真机第 33/36/37 轮：回执只有 fileCount=9，模型建完
+                #   工程第一件事是并行猜读 src/App.tsx、src/index.css、src/main.jsx……
+                #   每轮 2～3 次 project_file_not_found。模板就 9 个文件，直接列出来。
+                paths = [item.path for item in self.store.get_revision(
+                    project.projectId, owner_id=self.owner_id).manifest.files]
+                created["files"] = paths[:CREATED_FILE_LIST_MAX]
+                if len(paths) > CREATED_FILE_LIST_MAX:
+                    created["filesTruncated"] = True
                 if created.get("templateVersion") == WORKSPACE_TEMPLATE_VERSION:
                     tree = self.store.read_files(project.projectId, owner_id=self.owner_id)
                     readme = tree.get("README.md") or ""
