@@ -75,8 +75,20 @@ def test_a_command_behind_the_dev_server_says_who_blocks_it(setup):
     assert result["blockedBy"] == {"operationId": holder, "kind": "runtime.start", "status": "running"}
     hint = result["queueHint"]
     assert holder in hint
-    # 语义：挡路的不会自己让路；出路是停掉它。
-    assert "不会自己结束" in hint and "shell_kill_process" in hint
+    # ⚠ 2026-09-27 第 41 轮起：排的是构建，出路不是停服务器，是 project_verify——它在服务器
+    #   旁边对当前版本跑 npm run build，回执里有 buildExitCode。语义：不会开始 + 该走哪条路。
+    assert "不会开始" in hint and "project_verify" in hint and "buildExitCode" in hint
+    assert f"停掉 {holder}" not in hint  # 别再劝停开发服务器
+
+
+def test_a_non_build_command_behind_the_dev_server_is_told_to_stop_it(setup):
+    """反向：不是构建（验收替不了它），出路仍是停掉挡路的服务器。"""
+    project = create(setup)
+    holder = _hold_runtime(setup, project)
+    result = _dispatch(setup, "shell_exec", {"command": "python3 scripts/seed_demo_data.py"})
+    hint = result["queueHint"]
+    assert "不会自己结束" in hint and f"停掉 {holder}" in hint
+    assert "project_verify" not in hint
 
 
 def test_a_foreground_shell_behind_the_dev_server_does_not_wait_it_out(setup, monkeypatch):

@@ -282,7 +282,18 @@ def queue_blocker(adapter, operation_id) -> dict | None:
     return {"operationId": holder.operationId, "kind": holder.kind, "status": holder.status,
         # 开发服务器 running 就是常驻：等它结束等于等到租约过期。
         "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL,
-        "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start"}
+        "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start",
+        "buildCheck": operation.kind == "runtime.exec" and _is_build_check(operation.input)}
+
+
+def _is_build_check(data) -> bool:
+    """排队的这条是不是「看看能不能构建」：受管 build/check，或 shell 里跑 npm run build / tsc。"""
+    if not isinstance(data, dict):
+        return False
+    if data.get("command") in {"build", "check"}:
+        return True
+    script = str(data.get("script") or "")
+    return bool(re.search(r"\bnpm run (?:build|check)\b|\btsc\b|\bvite build\b", script))
 
 
 def explain_queue(adapter, body):
@@ -298,6 +309,16 @@ def explain_queue(adapter, body):
         #   停掉在跑的那台，排队的旧启动顶上来，它再发一个——6 起 4 停。
         hint = (f"已经有开发服务器 {hid} 在跑，这条启动是多余的。预览、浏览器、验收都直接用 {hid}，"
                 f"不要停它；这条排队的用 shell_kill_process 带 {body['operationId']} 取消掉。")
+    elif blocker["neverYields"] and blocker["buildCheck"]:
+        # ⚠ 2026-09-27 隔离真机第 33/36/37/38/41 轮：网页追问改完代码发 build，排在开发
+        #   服务器后面；照上面那句去停服务器 → 构建 → 再起服务器，每轮多三四步，第 33 轮
+        #   没停还干等了 4 分多钟。而 project_verify 本来就在服务器旁边对当前版本跑
+        #   `npm run build`（含 tsc），回执里有 buildExitCode——第 41 轮模型取消了排队的
+        #   build 改走验收，拿到的就是这个。确认能不能构建，指它去那条路。
+        hint = (f"这条排在 {hid}（runtime.start，开发服务器，正在运行）后面，服务器不停它不会开始。"
+                "只是想确认能构建的话，不用停服务器：用 project_verify，它在服务器旁边对当前版本跑 "
+                "npm run build（含类型检查），回执 verification.build 里有 buildExitCode。"
+                f"这条排队的用 shell_kill_process 带 {body['operationId']} 取消掉。")
     elif blocker["neverYields"]:
         hint = (f"这条排在 {hid}（runtime.start，开发服务器，正在运行）后面。开发服务器不会自己结束，"
                 f"它不停，这条就不会开始，再查状态也还是 queued。要跑这条，先用 shell_kill_process 停掉 {hid}；"
