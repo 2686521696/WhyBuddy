@@ -829,7 +829,10 @@ function ImAssistantMessage() {
           ) : (
             <ModelSpeechBlocks turn={turn} />
           )}
-          <div className="flex items-center gap-2 text-[13px] text-stone-500">
+          <div
+            className="flex items-center gap-2 text-[13px] text-stone-500"
+            data-testid="sliderule-live-status"
+          >
             <ThinkingOrbMark label={thinkingText} size={20} />
             {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
             <RollingText text={thinkingText} className="min-w-0 flex-1" />
@@ -1089,6 +1092,7 @@ export function ClaudeChatSurface({
   // 没有工具在跑时不许回落到一枚已完成的动作名（见 live-status.ts 头注）。
   const thinkingText = liveStatusText({
     liveActionLabel: liveAction?.label,
+    liveActionSettled: liveAction?.settled,
     latestStep: latestTurn?.steps.at(-1),
     latestStepText,
     runtimeKind,

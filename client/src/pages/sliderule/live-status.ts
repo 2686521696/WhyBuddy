@@ -25,6 +25,12 @@
  *   · 其余（开口、叙述、HTML 推演的阶段）照旧用最后一步的文字。
  *
  * ⚠ 不猜模型在写哪个文件：那一发没流式，猜出来就是编的。
+ *
+ * ⚠ 2026-09-26 第二版。第一版只在 `liveAction` 为空时才走「在想下一步」，
+ *   判据也喂的是 liveAction={null}。真机 sr-20260926103934-KXTT09V6JE 里它从来
+ *   不为空：工具一结束，liveAction 被改写成过去式「已执行工程命令」，第一个分支
+ *   就把它当「正在」返回了——修复在真机上一次都没走到（本仓 §一之二）。
+ *   现在认 liveAction.settled；判据改成用那一轮的原样事件驱动真 hook。
  */
 import type { TurnStep } from "./types";
 
@@ -43,6 +49,7 @@ export function isSettledAction(step: TurnStep | null | undefined): boolean {
 
 export function liveStatusText({
   liveActionLabel,
+  liveActionSettled,
   latestStep,
   latestStepText,
   runtimeKind,
@@ -50,13 +57,15 @@ export function liveStatusText({
   fallback,
 }: {
   liveActionLabel?: string | null;
+  /** liveAction 是一个已经结束的动作（过去式标签），不算「正在」。 */
+  liveActionSettled?: boolean;
   latestStep?: TurnStep | null;
   latestStepText: string;
   runtimeKind?: "html-prototype" | "project";
   todo?: LiveTodo[] | null;
   fallback: string;
 }): string {
-  if (liveActionLabel) return liveActionLabel;
+  if (liveActionLabel && !liveActionSettled) return liveActionLabel;
   if (runtimeKind === "project" && isSettledAction(latestStep)) {
     const doing = (todo || [])
       .find(t => t.status === "in_progress")

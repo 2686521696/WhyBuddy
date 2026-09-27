@@ -115,7 +115,19 @@ export const CAPABILITY_PROCESS_LABELS: Record<V5CapabilityId, CapabilityProcess
   "handoff.package": { kind: "deliver", liveLabel: "正在打包交接材料" },
 };
 
-export type LiveAction = { label: string; external: boolean };
+export type LiveAction = {
+  label: string;
+  external: boolean;
+  /**
+   * 这个动作已经结束（成功或失败），标签是过去式（「已执行工程命令」）。
+   *
+   * ⚠ 2026-09-26 隔离真机 sr-20260926103934-KXTT09V6JE：工具一结束，前端把
+   *   liveAction 改写成过去式而不是清空——别处（右栏状态、路线时间线）还在读它。
+   *   状态行只看「有没有 liveAction」，于是模型写脚本的 3 分钟里一直是
+   *   「◌ 已执行工程命令」。标记在这里，读的人自己决定过去式算不算「正在」。
+   */
+  settled?: boolean;
+};
 export type ActionTrace = { label: string; ok: boolean; target?: string; turnId?: string };
 
 function resolveLabel(

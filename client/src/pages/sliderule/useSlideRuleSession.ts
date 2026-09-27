@@ -1835,7 +1835,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : stillOpen
                     ? tool
                     : `${tool.replace(/^正在/, "已")}`;
-                setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
+                setLiveAction({
+                  label: detail ? `${label}（${detail}）` : label,
+                  external: true,
+                  // 结束了就标出来（LiveAction.settled 头注）；还开着的照旧是「正在」。
+                  ...(!ok || !stillOpen ? { settled: true } : {}),
+                });
                 // 后端把整个工具返回体摊进了事件（`**body`）：command / exitCode /
                 // revision / parentRevision / errorCode 都在。原来只读 ok/error，
                 // 其余全扔，于是工程动作流只剩「已运行命令」这种没有信息量的行。

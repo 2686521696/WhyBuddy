@@ -53,6 +53,16 @@ describe("liveStatusText", () => {
       .toBe("正在运行命令");
   });
 
+  it("真机的形状：liveAction 是一个已结束的过去式标签，同样算没有工具在跑", () => {
+    // 2026-09-26 sr-20260926103934-KXTT09V6JE：第一版只认 liveAction 为空，真机从不为空。
+    expect(liveStatusText({ ...base, liveActionLabel: "已执行工程命令", liveActionSettled: true,
+      latestStep: chip("已执行工程命令", "completed"), todo: TODO }))
+      .toBe(`${THINKING_NEXT}：搭建 10 页 PPT 内容与统一视觉样式`);
+    // 反向：没标 settled 的就是还在跑
+    expect(liveStatusText({ ...base, liveActionLabel: "正在执行工程命令", latestStep: chip("正在执行工程命令", "acting") }))
+      .toBe("正在执行工程命令");
+  });
+
   it("最后一步已做完、没有工具在跑：模型在想下一步，带上它自己标的进行中待办", () => {
     expect(liveStatusText({ ...base, latestStep: chip("已创建工程", "completed"), todo: TODO }))
       .toBe(`${THINKING_NEXT}：搭建 10 页 PPT 内容与统一视觉样式`);
