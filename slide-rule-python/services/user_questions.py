@@ -138,6 +138,11 @@ _SELF_FILL_LABEL = re.compile(
 )
 #: 选项说明让用户去「其他」里写——那这个选项只是指向 Other 的路标。
 _POINTS_AT_OTHER = re.compile(r"[「“\"'（(]?其他[」”\"'）)]?\s*(?:（自己写）)?\s*(?:中|里|栏|一栏)")
+#: 选项说明让用户在卡上粘贴 / 上传——卡上既没有粘贴框也没有上传口。
+#: ⚠ 2026-09-27 第 40 轮（Q3 销售汇报 PPT）：「我提供数据（推荐）」，说明「可粘贴表格或
+#:   上传已有 Excel」。选了它就没下文：模型拿「示例/待替换」数据做完整份 PPT，用户一个
+#:   数都没给上。跟「请在其他中写」是同一堵墙；真有数据的人在「其他」里贴。
+_ASKS_TO_PASTE = re.compile(r"(?:粘贴|贴上|贴进|上传)")
 
 
 def _is_other_in_disguise(option: Dict[str, str]) -> bool:
@@ -157,7 +162,8 @@ def _is_other_in_disguise(option: Dict[str, str]) -> bool:
     label = re.sub(r"[\s，。,.!！]", "", label)
     if _SELF_FILL_LABEL.match(label):
         return True
-    return bool(_POINTS_AT_OTHER.search(str(option.get("description") or "")))
+    description = str(option.get("description") or "")
+    return bool(_POINTS_AT_OTHER.search(description) or _ASKS_TO_PASTE.search(description))
 
 
 def coerce_questions(raw: Any) -> List[Dict[str, Any]]:

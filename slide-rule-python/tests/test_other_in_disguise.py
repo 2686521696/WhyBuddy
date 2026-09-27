@@ -62,3 +62,21 @@ def test_on_the_live_path_the_card_gets_input_boxes_not_dead_options(monkeypatch
     _, events = harness.post(six_fields(sid, "帮我做发布会 PPT"))
     ask = [e for e in events if e.get("type") == "control_ask_user"][-1]
     assert _labels(ask["questions"]) == [[], [], ["使用演示占位信息"]]
+
+
+# ── 第 40 轮：说明让用户「粘贴 / 上传」的选项（2026-09-27）──────────────────────
+# sr-20260927122747-B68058484H（Q3 销售汇报 PPT）原样：「我提供数据（推荐）」说明
+# 「可粘贴表格或上传已有 Excel」。卡上没有粘贴框也没有上传口，选了就没下文，模型
+# 用「示例/待替换」数据做完整份 PPT。真有数据的人在「其他」里贴。
+ROUND40 = [{"id": "q1", "options": [{"description": "可粘贴表格或上传已有 Excel，至少包含区域、2026 年第三季度销售额、2025 年同期销售额。", "label": "我提供数据（推荐）"}, {"description": "我先用一组合理的模拟数据制作完整演示稿，并在页脚明确标注“示例数据”。", "label": "使用示例数据"}, {"description": "如果工作区已有相关数据，我按现有文件读取。", "label": "从现有工程或文件读取"}], "question": "区域销售数据从哪里来？"}, {"id": "q2", "options": [{"description": "适合全国区域销售汇报的常用划分。", "label": "华东、华南、华北、西部（推荐）"}, {"description": "更细分的六大区域视图。", "label": "华东、华南、华北、西南、东北、西北"}], "question": "你希望覆盖哪些区域？"}, {"id": "q3", "options": [{"description": "强调结论、关键指标和行动建议，适合经营汇报。", "label": "管理层简洁商务风（推荐）"}, {"description": "图表和指标更密集，突出区域对比与趋势。", "label": "数据分析风"}, {"description": "视觉表现更强，适合对外或大型会议展示。", "label": "品牌展示风"}], "question": "汇报风格偏好是什么？"}, {"id": "q4", "options": [{"description": "包含总销售额、同比、区域排名、问题洞察和 Q4 行动建议。", "label": "需要，完整经营复盘（推荐）"}, {"description": "聚焦销售额柱状图和同比增长折线图，不延伸分析。", "label": "只做数据展示"}, {"description": "保留分析页结构，具体建议后续补充。", "label": "需要，但行动建议先留占位"}], "question": "是否需要加入整体 KPI、问题分析和下一季度行动建议？"}]
+
+
+def test_an_option_that_asks_to_paste_or_upload_is_dropped():
+    rows = coerce_questions(ROUND40)
+    assert _labels(rows)[0] == ["使用示例数据", "从现有工程或文件读取"]
+
+
+def test_questions_without_paste_or_upload_keep_every_option():
+    """反向：其余三题原样——别把真选择一并摘掉。"""
+    rows = coerce_questions(ROUND40)
+    assert _labels(rows)[1:] == [[o["label"] for o in q["options"]] for q in ROUND40[1:]]
