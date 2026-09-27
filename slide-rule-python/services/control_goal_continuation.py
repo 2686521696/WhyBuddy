@@ -197,7 +197,19 @@ def undelivered_notice(blocked_reasons: Any) -> str:
     reasons = plain_blockers(blocked_reasons)
     head = "这一轮还没有达到可交付："
     body = "；".join(reasons) if reasons else "服务端没有拿到交付证据"
+    if environment_only(blocked_reasons):
+        # ⚠ 2026-09-27 隔离真机第 65、67 轮（Markdown 笔记、喝水打卡）：只剩验收环境挡着，
+        #   通知照样写「说『继续』我接着做」。下面 should_continue 早就认定这种情况续跑
+        #   没用（YNZ07ARRGR：模型只能把同一句话再说一遍）——宿主自己不续，却叫用户替它续。
+        #   同一条判断（environment_only），两处说同一件事（§四）。
+        return head + body + "。再说「继续」也跑不起来，要等运行环境修好；还有别的要改的，直接告诉我。"
     return head + body + "。说「继续」我接着做，或者告诉我先停在这里。"
+
+
+def environment_only(blocked_reasons: Any) -> bool:
+    """缺的只有模型改不动的环境项（ENVIRONMENT_ONLY_BLOCKERS）。"""
+    return (isinstance(blocked_reasons, list) and bool(blocked_reasons)
+            and all(str(item) in ENVIRONMENT_ONLY_BLOCKERS for item in blocked_reasons))
 
 
 def continuation_budget_left(goal: Any) -> int:
@@ -235,8 +247,7 @@ def should_continue(
         return False, "not_a_project_goal"
     if goal_done:
         return False, "goal_done"
-    if (isinstance(blocked_reasons, list) and blocked_reasons
-            and all(str(item) in ENVIRONMENT_ONLY_BLOCKERS for item in blocked_reasons)):
+    if environment_only(blocked_reasons):
         # ⚠ 2026-09-25 YNZ07ARRGR：只剩环境挡着时续跑，模型那一轮只能把同一句话
         #   再说一遍。缺的东西不在它手里，交回用户。
         return False, "environment_blocked"
