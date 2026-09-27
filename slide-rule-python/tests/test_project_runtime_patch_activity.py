@@ -106,7 +106,9 @@ def test_new_live_edits_cannot_extend_the_persisted_total_lifetime(live):
         没有哪次同步够得着，这是参数离得太近，不是产品问题。idle 放到 2s。
       · 离总寿命 0.35s 前提交的补丁，负载下还在途时寿命就到了——它失败是**对的**
         （寿命不许被续），判据却要它 completed。实测失败时已过期 0.06～0.08s。
-        现在只许「到期之后才看得见的那一发」失败，且没发布出去。
+        现在只许「到期之后才看得见的那一发」失败，且寿命没被它续上（它的源码可能
+        已经落库——sourcePublished=True 是对的，保存了，只是过期的运行进不去；
+        第一版在这里断言「没发布」，负载下又红了一次）。
 
       判据的本意——寿命一点不许被续、按原定时刻以 budget 收尾——没放松。
     """
@@ -119,8 +121,10 @@ def test_new_live_edits_cannot_extend_the_persisted_total_lifetime(live):
             "changes": [{"path": "src/App.tsx", "content": source + "// active edit\n", "expectedSha256": content_hash(source)}]})
         child = eventually(lambda: child_done(live, submitted))
         if child.status != "completed":
+            # 只许是跑过了总寿命的那一发：到期之后才看得见它失败，寿命也没被它续上。
+            # 源码可能已经落库（sourcePublished=True）——保存了，只是过期的运行进不去。
             assert time.time() >= original_end, (child.status, time.time() - original_end)
-            assert child.result.get("sourcePublished") is not True
+            assert live.parent().runtime.expiresAt == original_end
             break
         completed += 1
         assert live.parent().runtime.expiresAt == original_end
