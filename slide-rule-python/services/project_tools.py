@@ -511,6 +511,71 @@ def _only_installs(command) -> bool:
     return bool(segments) and all(_INSTALL_SEGMENT.match(seg) for seg in segments)
 
 
+#: 只看不写的程序。sed（-i）、cp、mv、tee 这类会写的不在里面。
+_INSPECT_PROGRAMS = frozenset({
+    "ls", "cat", "head", "tail", "wc", "file", "stat", "du", "df", "tree",
+    "grep", "egrep", "rg", "find", "zipinfo", "md5sum", "sha1sum", "sha256sum",
+    "echo", "printf", "pwd", "which", "test", "true", "[",
+})
+_SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&", "\n"})
+_PY_WRITES = re.compile(r"\.save\(|write|unlink|remove|rename|shutil|makedirs|mkdir|to_excel|savefig")
+
+
+def _inspect_segment(tokens: list[str]) -> bool:
+    if not tokens:
+        return True
+    program = tokens[0].rsplit("/", 1)[-1]
+    if program in {"python", "python3"}:
+        # python3 -c "from pptx import Presentation; print(len(...))"：读页数的那种。
+        return (len(tokens) >= 3 and tokens[1] == "-c"
+                and not _PY_WRITES.search(" ".join(tokens[2:])))
+    if program == "unzip":
+        return any(re.fullmatch(r"-[A-Za-z]*[tlvZ][A-Za-z]*", t) for t in tokens[1:])
+    if program == "find":
+        return not {"-delete", "-exec", "-execdir", "-ok"} & set(tokens)
+    return program in _INSPECT_PROGRAMS
+
+
+def _only_inspects(command) -> bool:
+    """这条命令是不是只在看、不会产出或改动文件。
+
+    ⚠ 2026-09-27 隔离真机 sr-20260927013213-9JXJJJ3RKY：生成那条已经收回 pptx，
+      模型再跑 `unzip -t 复盘.pptx >/tmp/pptx_check.txt && tail -n 2 /tmp/pptx_check.txt`
+      核对包结构。回执挂着「如果这条命令本该重新生成它，那次生成没有写出文件，
+      库里仍是旧版。不要往源码树写占位……」——一条检查命令，本来就没打算生成。
+    ⚠ 那一段是 2026-09-24 review 为「重新生成静默失败」加的，不能丢：
+      跑脚本（python3 x.py）、认不出的程序、解析不了的命令（截断、引号不配对）
+      一律**不算**只在看，照旧说全。宁可多说一句，不许把失败的重生成放过去。
+    重定向写进办公文件（> deck.pptx）也不算只在看。
+    """
+    text = str(command or "").strip()
+    if not text:
+        return False
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    segment: list[str] = []
+    segments = [segment]
+    pending = ""  # 上一个 token 是重定向符时，下一个 token 是它的目标 / 来源，不是参数
+    for token in tokens:
+        if pending:
+            writes, pending = pending.startswith(">"), ""
+            if writes and token.lower().endswith((".pptx", ".docx", ".xlsx")):
+                return False
+            continue
+        if token in _SHELL_OPERATORS:
+            segment = []
+            segments.append(segment)
+        elif set(token) <= {">", "<"}:
+            pending = token
+        elif segment or not re.fullmatch(r"\d+", token):  # 2>/dev/null 里的 2
+            segment.append(token)
+    return all(_inspect_segment(seg) for seg in segments)
+
+
 def _office_facts_sentence(result) -> str:
     """宿主从收回的文件字节里量出来的结构（deliverable_kind.office_facts 头注）。
 
@@ -551,6 +616,13 @@ def _command_pointer(result, excerpt=""):
             + _download_sentence(result)
             + hint
         )
+    elif (isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]
+          and _only_inspects(result.get("command"))):
+        # 只是在看（unzip -t / ls / python3 -c 读页数）：本来就不产出文件，
+        # 「本该重新生成」「不要写占位」那一段对它是噪声（_only_inspects 头注）。
+        # 库里有什么、链接在哪，照样说——sr-20260924190011 缺的就是这个。
+        named = ", ".join(str(item) for item in result["officeFilesHeld"][:8])
+        hint = f"库里的办公文件没有变：{named}。" + _download_sentence(result) + hint
     elif isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]:
         # 库里的旧文件不是这条命令的产出。说成「已收回」会把一次静默失败的
         # 重新生成报成交付（2026-09-24 review）；说成「没有」又会让模型往树里

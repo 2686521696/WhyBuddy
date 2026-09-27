@@ -836,7 +836,10 @@ def test_unchanged_office_file_is_not_collected_again_and_links_are_real(command
     assert second.result.get("officeFiles") is None
     assert second.result.get("officeFilesHeld") == ["deck.pptx"]
     assert "已收回" not in receipt2["hint"] and "这就是交付" not in receipt2["hint"]
-    assert "没有产出新的办公文件" in receipt2["hint"]
+    # ⚠ 2026-09-27 sr-20260927013213-9JXJJJ3RKY：只在看的命令不挂「本该重新生成……
+    #   不要写占位」那一段（test_inspect_only_receipt_is_short），库里有什么照样说。
+    assert "库里的办公文件没有变：deck.pptx" in receipt2["hint"]
+    assert "本该重新生成" not in receipt2["hint"]
     assert f"({url})" in receipt2["hint"]  # 旧文件的链接照样给
 
     # 第三条真的改了字节：又是这次的产出。
