@@ -3916,7 +3916,10 @@ def _system_prompt(state: V5SessionState) -> str:
             "还不是应用目标就再问一句，问句按这一轮说，不要开范围卡，"
             "不要每句都用同一句开场。"
         )
-    elif not _has_product_topic(state):
+    elif _ask_is_cheap_intake(state):
+        # ⚠ 2026-09-27 第 49 轮：原来只看 _has_product_topic，首轮 goal 没 stamp 时，
+        #   「做一个员工信息登记 Excel……」也收到「还没有应用目标」这句——跟上面分发处
+        #   同一个病，同一条判据。
         facts.append(
             "还没有应用目标。用户问你是谁、能做什么就先用文本回答，不要调工具；"
             "需要应用目标时再提问，问句按这一轮说，不要每句都用同一句开场。"
@@ -5167,9 +5170,15 @@ async def _control_llm_loop(
             content = (result.content or "").strip()
             if not calls:
                 await checkpoint("settling", _round + 1)
+                # ⚠ 2026-09-27 隔离真机第 49 轮（员工信息登记 Excel）：首轮 goal 还没 stamp，
+                #   模型这回没调 ask_user_question，而是用一段话列出要确认的两项。原来这里
+                #   只看 _has_product_topic，于是把它那段话后面接上一张「想做什么应用，说一句
+                #   就行。」——用户刚说完要做什么，卡片反问做什么，模型列的两问也没了着落。
+                #   同一件事上面已有 _ask_is_cheap_intake（没 stamp 的产品句也算有话题），
+                #   两处用同一条判据（§四）。
                 if (
                     tools != []
-                    and not _has_product_topic(state)
+                    and _ask_is_cheap_intake(state)
                     and not str(original_goal or "").strip()
                     and not _has_ask_answer_candidate(state)
                 ):

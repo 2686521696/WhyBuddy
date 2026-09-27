@@ -66,3 +66,14 @@ def test_a_long_build_log_is_marked_cut_but_not_told_to_use_file_read():
     receipt = _receipt("python3 generate_ppt.py", "progress line\n" * 200)
     assert receipt["excerptTruncated"] is True
     assert "file_read" not in receipt["hint"]
+
+
+# 第 49 轮（员工信息登记 Excel）原样：openpyxl 核对命令，输出 1215 字——不是在翻文件。
+ROUND49_CHECK = ("python3 -c \"from openpyxl import load_workbook; p='员工信息登记.xlsx'; w=load_workbook(p); "
+                 "s=w['员工登记']; b=w['基础数据']; print('sheets=',w.sheetnames)\"")
+
+
+def test_a_long_inspection_output_is_cut_but_not_told_to_use_file_read():
+    receipt = _receipt(ROUND49_CHECK, "row value\n" * 150)
+    assert receipt["excerptTruncated"] is True
+    assert "file_read" not in receipt["hint"]
