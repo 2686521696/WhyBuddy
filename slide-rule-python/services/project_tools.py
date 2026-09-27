@@ -475,8 +475,17 @@ def _command_log_excerpt(store, operation_id, owner_id, last_seq=None) -> str:
             parts.append(str(payload.get("data") or payload.get("text") or ""))
     text = _terminal_text("".join(parts)).strip("\n")
     if len(text) > FILE_READ_EXCERPT_CHARS:
-        return text[-FILE_READ_EXCERPT_CHARS:]
-    return text
+        return _Tail(text[-FILE_READ_EXCERPT_CHARS:], len(text))
+    return _Tail(text, len(text))
+
+
+class _Tail(str):
+    """日志尾：它本身就是那段字（调用方照旧当 str 用），另外记着全长。"""
+
+    def __new__(cls, text, total):
+        obj = super().__new__(cls, text)
+        obj.total = total
+        return obj
 
 
 _ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -778,11 +787,25 @@ def _command_pointer(result, excerpt="", full_command=None):
     missing = _missing_program(excerpt, result.get("exitCode"))
     if missing:
         hint = missing + hint
+    total = getattr(excerpt, "total", None)
+    cut = isinstance(total, int) and total > len(str(excerpt or ""))
+    if cut:
+        # ⚠ 2026-09-27 隔离真机第 48 轮（关西旅行 PPT + 追问配图）：模型用
+        #   `sed -n '1,260p' generate_ppt.py`、`'241,520p'`、`'1,180p'`、`'180,380p'`……
+        #   把同一个脚本翻了近十遍。回执只留屏幕最后 800 字、不说被截了，它以为
+        #   窗口开大了没打出来，就一遍遍缩小重来。截了就说截了、全长多少、该用什么。
+        note = f"输出共 {total} 字，excerpt 只有最后 {len(str(excerpt))} 字。"
+        if inspects:
+            note += "要看源码文件用 file_read 带 start_line/end_line（一次最多 8000 字），别用 sed/cat 分段打印。"
+        hint = note + hint
     out = {
         **result,
         "excerpt": str(excerpt or "")[:FILE_READ_EXCERPT_CHARS],
         "hint": hint,
     }
+    if cut:
+        out["excerptTruncated"] = True
+        out["outputChars"] = total
     if hidden:
         out["commandOk"] = False
     if result.get("officeScan") == "empty" and not empty_scan_is_news:

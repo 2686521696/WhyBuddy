@@ -1,0 +1,148 @@
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.dml.color import RGBColor
+from pptx.enum.dml import MSO_THEME_COLOR
+from pptx.enum.text import MSO_AUTO_SIZE
+
+OUT = '关西5天旅行攻略_大阪往返.pptx'
+prs = Presentation()
+prs.slide_width = Inches(13.333)
+prs.slide_height = Inches(7.5)
+
+BG = RGBColor(248, 245, 238)
+INK = RGBColor(42, 42, 42)
+MUTED = RGBColor(108, 105, 98)
+RED = RGBColor(190, 55, 45)
+RED_DARK = RGBColor(132, 38, 31)
+GOLD = RGBColor(201, 155, 76)
+LINE = RGBColor(222, 215, 204)
+WHITE = RGBColor(255, 255, 255)
+GREEN = RGBColor(53, 104, 77)
+NAVY = RGBColor(43, 72, 93)
+FONT = 'Microsoft YaHei'
+
+
+def rect(slide, x, y, w, h, fill, line=None, radius=False):
+    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+    shape.fill.solid(); shape.fill.fore_color.rgb = fill
+    shape.line.color.rgb = line if line else fill
+    if radius:
+        shape.adjustments[0] = 0.08
+    return shape
+
+
+def add_text(slide, text, x, y, w, h, size=14, color=INK, bold=False, align=PP_ALIGN.LEFT, font=FONT, valign=MSO_ANCHOR.TOP):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = box.text_frame; tf.clear(); tf.word_wrap = True; tf.margin_left = 0; tf.margin_right = 0; tf.margin_top = 0; tf.margin_bottom = 0
+    tf.vertical_anchor = valign
+    p = tf.paragraphs[0]; p.alignment = align
+    r = p.add_run(); r.text = text; r.font.name = font; r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
+    return box
+
+
+def add_rich(slide, runs, x, y, w, h, size=12, color=INK, align=PP_ALIGN.LEFT):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = box.text_frame; tf.clear(); tf.word_wrap = True; tf.margin_left = 0; tf.margin_right = 0; tf.margin_top = 0; tf.margin_bottom = 0
+    p = tf.paragraphs[0]; p.alignment = align
+    for txt, col, bold in runs:
+        r = p.add_run(); r.text = txt; r.font.name = FONT; r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = col
+    return box
+
+
+def base(slide, section, page):
+    slide.background.fill.solid(); slide.background.fill.fore_color.rgb = BG
+    rect(slide, 0, 0, 13.333, 0.11, RED)
+    add_text(slide, 'KANSAI / 5 DAYS', 0.55, 0.28, 2.2, 0.22, 8, RED, True)
+    add_text(slide, section, 10.0, 0.28, 2.75, 0.22, 8, MUTED, True, PP_ALIGN.RIGHT)
+    add_text(slide, f'{page:02d}', 12.32, 7.12, 0.45, 0.2, 8, MUTED, True, PP_ALIGN.RIGHT)
+
+
+def title(slide, kicker, heading, sub=''):
+    add_text(slide, kicker.upper(), 0.58, 0.72, 3.0, 0.28, 10, RED, True)
+    add_text(slide, heading, 0.58, 1.03, 8.8, 0.55, 26, INK, True)
+    if sub: add_text(slide, sub, 0.6, 1.62, 8.9, 0.32, 10.5, MUTED)
+
+
+def pill(slide, text, x, y, w, fill=RED, color=WHITE):
+    rect(slide, x, y, w, 0.32, fill, fill, True)
+    add_text(slide, text, x, y+0.065, w, 0.17, 9, color, True, PP_ALIGN.CENTER)
+
+
+def timeline(slide, items, x=0.62, y=2.25, w=8.05):
+    step = w/(len(items)-1)
+    rect(slide, x, y+0.17, w, 0.025, LINE)
+    for i, (time, label, detail) in enumerate(items):
+        cx = x + step*i
+        rect(slide, cx-0.08, y+0.09, 0.16, 0.16, RED if i in (0, len(items)-1) else GOLD, None, True)
+        add_text(slide, time, cx-0.42, y-0.2, 0.84, 0.22, 10, RED_DARK, True, PP_ALIGN.CENTER)
+        add_text(slide, label, cx-0.65, y+0.45, 1.3, 0.25, 10, INK, True, PP_ALIGN.CENTER)
+        add_text(slide, detail, cx-0.78, y+0.77, 1.56, 0.5, 8.5, MUTED, False, PP_ALIGN.CENTER)
+
+
+def info_panel(slide, heading, body, x, y, w, h, accent=RED):
+    rect(slide, x, y, w, h, WHITE, LINE, True)
+    rect(slide, x, y, 0.08, h, accent)
+    add_text(slide, heading, x+0.22, y+0.18, w-0.4, 0.25, 10, accent, True)
+    add_text(slide, body, x+0.22, y+0.52, w-0.4, h-0.68, 10.5, INK)
+
+
+def daily_slide(day, theme, route, budget, tip, items, side_label, side_color=RED):
+    slide = prs.slides.add_slide(prs.slide_layouts[6]); base(slide, f'DAY {day} / {theme}', day+1)
+    title(slide, f'DAY {day}', theme, '大阪往返 · 经济型 · 人均估算，门票与交通以当天官方信息为准')
+    pill(slide, budget, 10.02, 1.03, 2.55, side_color)
+    timeline(slide, items)
+    info_panel(slide, '交通建议 / TRANSIT', route, 0.62, 4.24, 4.0, 1.45, NAVY)
+    info_panel(slide, '今日节奏 / PACE', '上午集中走访，午后留出机动时间。景点之间优先步行，减少换乘与排队。', 4.82, 4.24, 3.86, 1.45, GREEN)
+    rect(slide, 9.04, 2.25, 3.55, 3.44, side_color, side_color, True)
+    add_text(slide, side_label, 9.35, 2.66, 2.9, 0.48, 22, WHITE, True)
+    add_text(slide, 'ROUTE NOTE', 9.35, 3.25, 2.2, 0.2, 8, RGBColor(255,225,217), True)
+    add_text(slide, tip, 9.35, 3.62, 2.82, 1.25, 11, WHITE)
+    add_text(slide, '↗ 记得给返程留 30–45 分钟缓冲', 9.35, 5.22, 2.8, 0.28, 8.5, RGBColor(255,225,217), True)
+    add_text(slide, 'Tips: IC 卡可覆盖大部分市内交通；现金准备少量零钱。', 0.62, 6.48, 8.4, 0.22, 8.5, MUTED)
+
+# Cover
+slide = prs.slides.add_slide(prs.slide_layouts[6]); slide.background.fill.solid(); slide.background.fill.fore_color.rgb = BG
+rect(slide, 0, 0, 13.333, 0.16, RED)
+rect(slide, 8.9, 0.16, 4.43, 7.34, RED_DARK)
+# map-like route motif
+for x,y,w,h,c in [(9.55,1.1,2.65,0.035,GOLD),(9.55,2.05,2.05,0.035,WHITE),(9.55,3.0,2.7,0.035,GOLD),(9.55,3.95,1.8,0.035,WHITE),(9.55,4.9,2.4,0.035,GOLD)]: rect(slide,x,y,w,h,c)
+for x,y in [(9.8,1.1),(11.55,2.05),(10.5,3.0),(12.0,3.95),(10.1,4.9)]: rect(slide,x-0.09,y-0.09,0.18,0.18,WHITE,None,True)
+add_text(slide, 'KANSAI / TRAVEL GUIDE', 0.72, 0.8, 3.5, 0.25, 10, RED, True)
+add_text(slide, '5 天日本关西\n旅行攻略', 0.72, 1.6, 7.7, 1.55, 31, INK, True)
+add_text(slide, '大阪往返｜大阪・京都・奈良｜经济型', 0.76, 3.45, 6.8, 0.38, 15, RED_DARK, True)
+add_text(slide, '一份按时间顺序、交通路线与预算整理的实用行程。\n适合第一次规划关西城市漫游。', 0.76, 4.18, 6.55, 0.72, 12, MUTED)
+rect(slide, 0.76, 5.55, 5.8, 0.02, LINE)
+add_text(slide, '05 DAYS  /  03 CITIES  /  01 BASE', 0.76, 5.82, 5.8, 0.25, 10, INK, True)
+add_text(slide, '大阪作为住宿与交通枢纽，京都、奈良做日归。', 0.76, 6.18, 6.8, 0.25, 9.5, MUTED)
+add_text(slide, '01', 12.0, 6.82, 0.5, 0.25, 9, WHITE, True, PP_ALIGN.RIGHT)
+
+# Daily slides
+daily_slide(1, '大阪城市经典线', '大阪站/难波 ⇄ Osaka Metro。大阪城公园至心斋桥建议地铁 + 步行，晚间集中在道顿堀。', '¥2,000–3,000 / 人', 'OSAKA\n城市入门\n\n早起去大阪城，傍晚让道顿堀的霓虹收尾。', [('09:00','大阪城','天守阁外观 / 公园'),('12:00','历史街区','谷町四丁目散步'),('15:00','心斋桥','商店街 / 休息'),('18:30','道顿堀','晚餐 / 夜景')], 'DAY 01\nOSAKA', RED)
+daily_slide(2, '京都东山与祇园', '大阪 → 京都：JR 新快速约 30 分钟，或阪急至京都河原町。东山段以步行串联，回程避开晚高峰。', '¥3,000–4,500 / 人', 'KYOTO\n东山线\n\n清水寺先到，沿二年坂三年坂一路下行至祇园。', [('08:00','大阪出发','JR / 阪急'),('09:00','清水寺','寺院与山景'),('11:30','二年坂','古街小店'),('15:00','祇园','八坂神社 / 花见小路')], 'DAY 02\nKYOTO', RED_DARK)
+daily_slide(3, '京都岚山与市区补充', '大阪 → 京都 → 岚山：JR 至京都后转嵯峨野线，或阪急直达。岚山景点集中步行，下午回市区。', '¥3,000–4,500 / 人', 'ARASHIYAMA\n慢一点\n\n竹林尽量早到；下午把体力留给锦市场与京都站。', [('07:30','大阪出发','JR 至京都'),('09:00','岚山','竹林 / 天龙寺'),('12:30','渡月桥','河畔午餐'),('15:30','锦市场','小吃 / 采购')], 'DAY 03\nARASHIYAMA', NAVY)
+daily_slide(4, '奈良公园与东大寺', '大阪难波 → 近铁奈良约 40 分钟，步行至奈良公园；若从大阪站出发可选 JR。奈良站回程更灵活。', '¥2,500–4,000 / 人', 'NARA\n鹿与古寺\n\n先东大寺再逛公园，春日大社与奈良町按体力二选一。', [('08:30','大阪出发','近铁 / JR'),('09:30','奈良公园','鹿群 / 步行'),('10:30','东大寺','大佛殿'),('14:00','春日大社','或奈良町')], 'DAY 04\nNARA', GREEN)
+daily_slide(5, '大阪轻松收尾与返程', '上午按返程时间二选一：难波线适合黑门市场 + 新世界；梅田线适合梅田购物。行李可寄存在住宿或车站。', '¥2,000–4,000 / 人', 'LAST DAY\n不赶路\n\n返程日只安排一个片区，预留机场或车站衔接时间。', [('09:00','黑门市场','早餐 / 采购'),('11:00','新世界','通天阁外观'),('或','梅田','购物 / 午餐'),('返程前','取行李','预留缓冲')], 'DAY 05\nOSAKA', GOLD)
+
+# Budget slide
+slide = prs.slides.add_slide(prs.slide_layouts[6]); base(slide, 'BUDGET / 预算汇总', 7); title(slide, 'SUMMARY', '经济型预算怎么估？', '以 1 人、5 天 4 夜、大阪住宿为基准；不含国际机票与购物')
+# large numbers
+for x, num, label, color in [(0.68,'¥12,500–20,000','5 天交通 + 门票',RED),(4.52,'¥4,000–7,500','住宿 / 晚 × 4',NAVY),(8.36,'¥2,500–4,000','餐饮 / 天',GREEN)]:
+    rect(slide,x,2.25,3.35,1.38,WHITE,LINE,True); add_text(slide,num,x+0.24,2.55,2.9,0.38,21,color,True); add_text(slide,label,x+0.24,3.1,2.85,0.23,10,MUTED)
+info_panel(slide,'每日游玩预算参考','D1 大阪  ¥2,000–3,000\nD2 京都东山  ¥3,000–4,500\nD3 京都岚山  ¥3,000–4,500\nD4 奈良  ¥2,500–4,000\nD5 大阪  ¥2,000–4,000',0.68,4.05,5.75,1.82,RED)
+info_panel(slide,'合计口径','推荐预留：¥35,000–50,000 / 人\n住宿按经济型青旅或商务酒店估算。餐饮以便利店早餐、平价定食、街头小吃为主。\n价格会随日期、汇率与预约情况变化。',6.7,4.05,5.9,1.82,NAVY)
+add_text(slide,'预算原则：先锁住宿与跨城交通，再根据返程时间调整第 5 天。',0.68,6.42,10.5,0.25,9.5,MUTED,True)
+
+# Tips slide
+slide = prs.slides.add_slide(prs.slide_layouts[6]); base(slide, 'PRACTICAL / 实用提示', 8); title(slide, 'CHECKLIST', '出发前，把这 6 件事确认好', '交通、预约与体力安排会直接决定每天的节奏')
+tips=[('01','IC 卡','ICOCA / Suica 可覆盖大部分地铁、JR 与便利店小额支付。'),('02','预约','清水寺、天龙寺、热门展馆的开放时间与预约规则提前确认。'),('03','换乘','Google Maps 看路线，站内跟随线路颜色与出口编号。'),('04','雨天','把商店街、京都站、梅田地下街作为室内备选。'),('05','行李','跨城日尽量轻装；返程日可寄存于酒店或主要车站。'),('06','现金','交通以 IC 为主，但寺社、街边小店备少量现金更稳妥。')]
+for i,(n,h,b) in enumerate(tips):
+    col=i%3; row=i//3; x=0.68+col*4.15; y=2.25+row*1.62
+    rect(slide,x,y,3.75,1.28,WHITE,LINE,True); add_text(slide,n,x+0.22,y+0.2,0.4,0.22,10,RED,True); add_text(slide,h,x+0.75,y+0.17,2.7,0.25,12,INK,True); add_text(slide,b,x+0.75,y+0.52,2.72,0.55,9.5,MUTED)
+rect(slide,0.68,5.7,11.9,0.7,RED_DARK,RED_DARK,True); add_text(slide,'最终确认：以当天 JR / 私铁 / 寺社官网公布的班次、票价与开放时间为准。',0.98,5.94,11.3,0.22,10,WHITE,True,PP_ALIGN.CENTER)
+add_text(slide,'出发地与住宿设定：大阪往返｜住宿以大阪为主要交通枢纽｜预算为每人经济型估算',0.68,6.72,11.5,0.2,8.5,MUTED)
+
+prs.save(OUT)
+print(OUT)
+print('slides=', len(prs.slides))
