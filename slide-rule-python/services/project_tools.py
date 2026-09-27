@@ -28,7 +28,7 @@ from services.project_manifest import (
     file_tree_matches, kernel_str_replace_changes, kernel_write_changes,
     prepare_source_patch, source_path, workspace_file_path,
 )
-from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
+from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_source_operations import ProjectSourceOperations
 from services.project_browser_interact import local_playwright_available, run_browser_action
 from services.project_tool_contracts import (
@@ -493,6 +493,38 @@ def _build_log_tail(store, runtime_operation_id, owner_id, *, since=None, until=
         if _NPM_BUILD_HEADER.search(text):
             return text[-BUILD_LOG_TAIL_CHARS:]
     return ""
+
+
+REVISION_TURNS_HINT = (
+    "turns 按用户的话分组：每一轮开始时是哪一版（startedFrom）、这一轮改出了几版。"
+    "一轮里每处编辑都会存一版；要撤销某一轮的全部改动，恢复到那一轮的 startedFrom——"
+    "只退到上一版（parentRevision）通常只撤掉那一轮最后一处小改动。"
+)
+
+
+def revisions_by_turn(chain, turns, *, keep=6):
+    """把源码版本按「哪一句用户的话之后改出来的」分组。
+
+    ⚠ 2026-09-27 隔离真机第 57 轮（待读书单 + 追问「主色换紫色、按钮改胶囊形」+
+      「刚才这次改动不要了，恢复到改之前的版本」）：紫色那一轮是 11 次 file_str_replace，
+      每次都存一版。project_revisions 一页只给 5 版、只有 revision / parentRevision /
+      createdAt，看不出哪几版是哪一轮改的。模型恢复到「直接上一版」——只撤掉最后一处
+      小改动，紫色还在，回话却说「已恢复到刚才改动之前的版本」。
+    chain：从最早到最新的 (revision, createdAt)；turns：(timestamp, 用户原话)。
+    时间戳同为 ISO 串，直接比较。返回最新在前、只含改出了版本的那几轮。
+    """
+    ordered = sorted((t for t in turns if t[0]), key=lambda t: t[0])
+    out = []
+    for index, (started, text) in enumerate(ordered):
+        ended = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        before = [rev for rev, created in chain if created and created < started]
+        made = [rev for rev, created in chain
+                if created and created >= started and (ended is None or created < ended)]
+        if not made:
+            continue
+        out.append({"turn": text[:60], "at": started, "startedFrom": before[-1] if before else None,
+                    "revisionsMade": len(made), "endedAt": made[-1]})
+    return list(reversed(out))[:keep]
 
 
 def _command_log_excerpt(store, operation_id, owner_id, last_seq=None) -> str:
@@ -1045,8 +1077,13 @@ class ProjectTools:
             if name in PROJECT_KERNEL_WRITE_TOOLS:
                 return {"ok": True, **self._kernel_edit(project, name, parsed, authority)}
             if name == "project_revisions":
-                return {"ok": True, **ProjectSourceOperations(self.store, self.supervisor, self.owner_id).revisions(
-                    project.projectId, parsed.cursor, parsed.limit)}
+                listed = ProjectSourceOperations(self.store, self.supervisor, self.owner_id).revisions(
+                    project.projectId, parsed.cursor, parsed.limit)
+                turns = self._revisions_by_turn(project, state)
+                if turns:
+                    listed["turns"] = turns
+                    listed["hint"] = REVISION_TURNS_HINT
+                return {"ok": True, **listed}
             if name == "project_restore":
                 return {"ok": True, **ProjectSourceOperations(self.store, self.supervisor, self.owner_id).restore(
                     project.projectId, expected_revision=parsed.expectedRevision,
@@ -1225,6 +1262,24 @@ class ProjectTools:
             expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
             idempotency_key="verify-" + uuid.uuid4().hex,
             acceptance_requirements=requirements)
+
+    def _revisions_by_turn(self, project, state):
+        """每一轮用户的话各自改出了哪些版本、开始时是哪一版（撤销「那一轮」就回到它）。"""
+        chain = []
+        current = project.currentRevision
+        try:
+            for _ in range(MAX_REVISIONS):
+                if current is None:
+                    break
+                saved = self.store.get_revision(project.projectId, current, owner_id=self.owner_id)
+                chain.append((saved.revision, str(saved.createdAt or "")))
+                current = saved.parentRevision
+        except Exception:
+            return []
+        turns = [(str(row.get("timestamp") or ""), str(row.get("text") or ""))
+                 for row in (getattr(state, "controlTranscript", None) or [])
+                 if isinstance(row, dict) and row.get("role") == "user" and row.get("kind") == "turn"]
+        return revisions_by_turn(list(reversed(chain)), turns)
 
     def _settled_receipt(self, operation):
         """等完 / 查状态时，跑完的命令交回**带输出的**回执，不是裸快照。
