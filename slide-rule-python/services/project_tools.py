@@ -530,7 +530,9 @@ def _inspect_segment(tokens: list[str]) -> bool:
         return (len(tokens) >= 3 and tokens[1] == "-c"
                 and not _PY_WRITES.search(" ".join(tokens[2:])))
     if program == "unzip":
-        return any(re.fullmatch(r"-[A-Za-z]*[tlvZ][A-Za-z]*", t) for t in tokens[1:])
+        # -t/-l/-v/-Z 只看；-p/-c 解到标准输出（第 24 轮 `unzip -p x.docx word/document.xml | python3 -c …`）。
+        # 解到标准输出再重定向进办公文件的，重定向那条规则会拦下。
+        return any(re.fullmatch(r"-[A-Za-z]*[tlvZpc][A-Za-z]*", t) for t in tokens[1:])
     if program == "find":
         return not {"-delete", "-exec", "-execdir", "-ok"} & set(tokens)
     return program in _INSPECT_PROGRAMS
@@ -605,6 +607,8 @@ def _command_pointer(result, excerpt="", full_command=None):
     hint = "完整输出在操作日志，用 project_logs 或 shell_view 带 operationId 再取。"
     # ⚠ 2026-09-22 BABCJGGB44：回执没有文件路径，模型把 pptx base64 进日志。
     #   收回的路径必须写在模型看得见的这句话里，不能只藏在字段名里。
+    command_text = full_command if isinstance(full_command, str) else result.get("command")
+    inspects = _only_inspects(command_text)
     files = result.get("officeFiles")
     if isinstance(files, list) and files:
         named = ", ".join(str(item) for item in files[:8])
@@ -617,7 +621,7 @@ def _command_pointer(result, excerpt="", full_command=None):
             + hint
         )
     elif (isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]
-          and _only_inspects(full_command if isinstance(full_command, str) else result.get("command"))):
+          and inspects):
         # 只是在看（unzip -t / ls / python3 -c 读页数）：本来就不产出文件，
         # 「本该重新生成」「不要写占位」那一段对它是噪声（_only_inspects 头注）。
         # 库里有什么、链接在哪，照样说——sr-20260924190011 缺的就是这个。
@@ -637,11 +641,14 @@ def _command_pointer(result, excerpt="", full_command=None):
             + hint
         )
     hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
+    # 只在看的命令本来就不产出文件：第 24 轮 `python3 -c "import docx; print('python-docx ok')"`
+    # 退出码 0，回执照样挂「没有合格的办公文件」。
     empty_scan_is_news = (
         result.get("officeScan") == "empty"
         and result.get("exitCode") in (0, "0")
         and not hidden
-        and not _only_installs(result.get("command"))
+        and not _only_installs(command_text)
+        and not inspects
     )
     if empty_scan_is_news:
         hint = "这次扫描没有合格的办公文件。" + hint

@@ -86,12 +86,13 @@ ROUND21_VERIFY = 'python3 -c "from pptx import Presentation; p=Presentation(\'20
 class _Store:
     """假 store 只替换存储；_snapshot 照 ProjectTools._snapshot 的原样拼法走 operation_snapshot。"""
 
-    def __init__(self, command):
+    def __init__(self, command, **result):
         self.operation = SimpleNamespace(
             operationId="pop-1", kind="runtime.exec", status="completed", expectedRevision="prv-1",
             cancelRequested=False,
-            result={"command": command, "exitCode": 0,
-                    "officeFilesHeld": [DECK], "officeDownloads": {DECK: URL}})
+            result=result or {"command": command, "exitCode": 0,
+                              "officeFilesHeld": [DECK], "officeDownloads": {DECK: URL}})
+        self.operation.result.setdefault("command", command)
 
     def snapshot_operation(self, operation_id, *, owner_id):
         return {"operation": self.operation, "lastSeq": 3}
@@ -100,8 +101,8 @@ class _Store:
         return []
 
 
-def _receipt_on_the_live_path(command):
-    store = _Store(command)
+def _receipt_on_the_live_path(command, **result):
+    store = _Store(command, **result)
     adapter = SimpleNamespace(store=store, owner_id="alice",
                               _snapshot=lambda op: operation_snapshot(store.snapshot_operation(op, owner_id="alice")))
     return command_receipt_from(adapter, "pop-1")
@@ -122,3 +123,32 @@ def test_a_long_generating_command_still_gets_the_full_warning():
     command = "python3 build_deck.py && " + ROUND21_VERIFY
     receipt = _receipt_on_the_live_path(command)
     assert LONG in receipt["hint"]
+
+
+
+# ── 第 24 轮（Word，sr-20260927064314-HY5X2ATFRD）的原样命令 ─────────────────
+ROUND24_PROBE = 'python3 -c "import docx; print(\'python-docx ok\')"'
+ROUND24_UNZIP_P = 'unzip -p \'新员工入职指南.docx\' word/document.xml | python3 -c "import sys; x=sys.stdin.read(); print(\'TOC=\'+str(\'TOC \\\\o\' in x)); print(\'heading_styles=\'+str(x.count(\'w:pStyle w:val=\\"Heading\'))); print(\'core_sections=\'+str(sum(s in x for s in [\'公司简介\',\'第一周安排\',\'常用系统与账号\',\'报销与请假流程\',\'常见问题\'])))"'
+ROUND24_LIBREOFFICE = "libreoffice --headless --convert-to pdf --outdir /tmp '新员工入职指南.docx' >/tmp/lo.txt 2>&1; cat /tmp/lo.txt; pdfinfo '/tmp/新员工入职指南.pdf' | grep Pages"
+
+
+def test_unzip_to_stdout_piped_into_a_reader_is_an_inspection():
+    """`unzip -p x.docx word/document.xml | python3 -c "…读 stdin…"`：拿到的是长句。"""
+    assert _only_inspects(ROUND24_UNZIP_P)
+    hint = _receipt_on_the_live_path(ROUND24_UNZIP_P)["hint"]
+    assert LONG not in hint and "库里的办公文件没有变" in hint
+
+
+def test_a_passing_import_probe_is_not_told_the_scan_came_up_empty():
+    """`python3 -c "import docx; …"` 退出码 0，库里还没有文件：回执挂过「没有合格的办公文件」。"""
+    receipt = _receipt_on_the_live_path(ROUND24_PROBE, exitCode=0, officeScan="empty")
+    assert "没有合格的办公文件" not in receipt["hint"] and "officeScan" not in receipt
+
+
+def test_a_conversion_that_writes_elsewhere_keeps_the_full_warning():
+    """反向：libreoffice 转 PDF 会写文件，不算只在看。"""
+    assert not _only_inspects(ROUND24_LIBREOFFICE)
+
+
+def test_unzip_to_stdout_redirected_into_an_office_file_is_a_write():
+    assert not _only_inspects(f"unzip -p src.zip deck.pptx > {DECK}")
