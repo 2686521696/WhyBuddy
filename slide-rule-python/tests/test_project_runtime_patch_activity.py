@@ -96,8 +96,20 @@ def test_completed_live_edit_extends_idle_once_and_repeat_requests_do_not_keep_i
     assert not live.provider.handles and len(live.provider.syncs) == 1
 
 
-@pytest.mark.parametrize("live", [{"idle_seconds": 1, "lifetime_seconds": 3}], indirect=True)
+@pytest.mark.parametrize("live", [{"idle_seconds": 2, "lifetime_seconds": 4}], indirect=True)
 def test_new_live_edits_cannot_extend_the_persisted_total_lifetime(live):
+    """⚠ 2026-09-27：原参数 idle=1s / lifetime=3s 在基线上就 2/8 失败，两种形态：
+
+      · worker 的 idle 从补丁**受理**时刻算（runtime_patch_activity_at 头注），而它
+        同步完那个补丁才回头查 idle。负载下一次同步超过 1s，刚做完的编辑后面
+        紧跟一次 runtime_idle_expired——判据要的是 budget 收尾。产线 idle 是 300s，
+        没有哪次同步够得着，这是参数离得太近，不是产品问题。idle 放到 2s。
+      · 离总寿命 0.35s 前提交的补丁，负载下还在途时寿命就到了——它失败是**对的**
+        （寿命不许被续），判据却要它 completed。实测失败时已过期 0.06～0.08s。
+        现在只许「到期之后才看得见的那一发」失败，且没发布出去。
+
+      判据的本意——寿命一点不许被续、按原定时刻以 budget 收尾——没放松。
+    """
     original_end = live.parent().runtime.expiresAt
     completed = 0
     while time.time() < original_end - 0.35:
@@ -105,7 +117,11 @@ def test_new_live_edits_cannot_extend_the_persisted_total_lifetime(live):
         source = live.store.read_files(current.projectId, owner_id="alice")["src/App.tsx"]
         submitted = patch(live, {"approvalRef": live.approval, "expectedRevision": current.currentRevision,
             "changes": [{"path": "src/App.tsx", "content": source + "// active edit\n", "expectedSha256": content_hash(source)}]})
-        assert eventually(lambda: child_done(live, submitted)).status == "completed"
+        child = eventually(lambda: child_done(live, submitted))
+        if child.status != "completed":
+            assert time.time() >= original_end, (child.status, time.time() - original_end)
+            assert child.result.get("sourcePublished") is not True
+            break
         completed += 1
         assert live.parent().runtime.expiresAt == original_end
         time.sleep(0.3)
