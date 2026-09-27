@@ -962,7 +962,8 @@ class ProjectTools:
                         self.store.request_operation_cancel(operation.operationId, owner_id=self.owner_id)
                     else:
                         self.supervisor.cancel(operation.operationId, owner_id=self.owner_id)
-                return {"ok": True, **self._snapshot(operation.operationId)}
+                    return {"ok": True, **self._snapshot(operation.operationId)}
+                return {"ok": True, **self._settled_receipt(operation)}
             if name in {"file_read", "read_file", "file_find_in_content", "file_find_by_name",
                         "grep", "glob", "list_dir"}:
                 revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
@@ -1045,6 +1046,21 @@ class ProjectTools:
             expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
             idempotency_key="verify-" + uuid.uuid4().hex,
             acceptance_requirements=requirements)
+
+    def _settled_receipt(self, operation):
+        """等完 / 查状态时，跑完的命令交回**带输出的**回执，不是裸快照。
+
+        ⚠ 2026-09-27 隔离真机第 34 轮（信息安全培训 PPT，追问「检查每页有没有文字
+          超出页面」）：shell_exec 前台等满返回 running，模型改用 shell_wait 等——
+          回执只有 exitCode / lastSeq，一行输出都没有。模型判断「受管日志把逐字符
+          回显截断了」，接着 shell_wait ×4、project_logs ×4、shell_view ×2、再改写
+          成一行输出重跑，3 分半钟都在找自己那条命令的输出。
+          shell_exec 自己等完走的是 command_receipt_from（日志尾 + 提示）；
+          shell_wait / project_status 是同一件事的另外两个入口（§四），同一份回执。
+        """
+        if operation.kind == "runtime.exec" and operation.status in _TERMINAL:
+            return command_receipt_from(self, operation.operationId)
+        return self._snapshot(operation.operationId)
 
     def _snapshot(self, operation_id):
         source = self.store.snapshot_operation(operation_id, owner_id=self.owner_id)
@@ -1283,7 +1299,7 @@ class ProjectTools:
         if name == "shell_wait":
             wait = parsed.seconds if parsed.seconds is not None else 2
             operation = self._poll_operation(operation, wait)
-            return self._snapshot(operation.operationId)
+            return self._settled_receipt(operation)
         logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))
         if name == "browser_console_view":
             logs["console"] = "runtime"

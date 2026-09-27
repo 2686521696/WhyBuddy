@@ -240,7 +240,14 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
 
 
 def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
-    """回执里那一句。只写量出来的数，不评价。"""
+    """回执里那一句。只写量出来的数，不评价。
+
+    ⚠ 2026-09-27 隔离真机第 34 轮（信息安全培训 PPT，追问加「弱密码 vs 强密码」
+      对比表格）：模型用矩形 + 文本框拼了一行「表格」，回执写着「表格 0 个」，
+      收尾照样说「加入对比表格」。图表那一项早就写成「原生图表」（第 18 轮用形状
+      画柱状图也是这个病），表格没写——「表格 0 个」读起来像「我拼的那个没被数到」。
+      现在两项都说「原生」，数到 0 时补一句形状拼的不算、为什么不算。
+    """
     parts: list[str] = []
     if "slides" in facts:
         parts.append(f"{facts['slides']} 页")
@@ -249,8 +256,12 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
     parts.append(f"原生图表 {facts.get('charts', 0)} 个")
     parts.append(f"图片 {facts.get('pictures', 0)} 张")
     if "tables" in facts:
-        parts.append(f"表格 {facts['tables']} 个")
-    return f"{path}：" + "，".join(parts)
+        parts.append(f"原生表格 {facts['tables']} 个")
+    missing = "/".join(name for name, key in (("图表", "charts"), ("表格", "tables"))
+                       if (key in facts or key == "charts") and not facts.get(key))
+    # 用户在 Office 里点开拼出来的东西，改不了数据和行列——它就不是图表/表格。
+    note = f"（形状、文本框拼的不算，别对用户叫它{missing}）" if missing else ""
+    return f"{path}：" + "，".join(parts) + note
 
 
 def is_office_zip_bytes(data: Any) -> bool:

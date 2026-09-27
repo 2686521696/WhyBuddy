@@ -130,3 +130,27 @@ def test_no_facts_no_sentence():
     """反向：没量（旧文件、量失败）就不出这句，不拿空数凑。"""
     hint = _command_pointer(_snapshot({"exitCode": 0, "officeFiles": ["复盘.pptx"]}), "")["hint"]
     assert "文件实况" not in hint
+
+
+# ── 四、拼出来的表格不是表格（第 34 轮）──────────────────────────────────────
+# ⚠ 2026-09-27 隔离真机 sr-20260927104309-NGWZ3Z4HWC：追问「第 3 页加一张弱密码
+#   vs 强密码的对比表格」。模型用矩形 + 文本框拼了一行，回执写「表格 0 个」，收尾
+#   照样说「加入对比表格」。夹具是那一轮收回的 pptx 原样（第 5 页有「弱密码」，
+#   没有 <a:tbl>）。
+
+ROUND34 = (Path(__file__).parent / "fixtures" / "round34_infosec_shape_table.pptx").read_bytes()
+
+
+def test_a_shape_built_table_is_reported_as_no_native_table():
+    facts = office_facts(ROUND34, "新员工信息安全培训.pptx")
+    assert facts["tables"] == 0  # 真机那份确实没有原生表格
+    sentence = office_facts_sentence("新员工信息安全培训.pptx", facts)
+    assert "原生表格 0 个" in sentence
+    # 语义：拼的不算，而且别对用户那么叫
+    assert "拼的不算" in sentence and "表格" in sentence.split("拼的不算")[1]
+
+
+def test_real_tables_and_charts_carry_no_warning():
+    """反向：真有原生的，不挂那句（否则它就是每条回执都有的噪声）。"""
+    sentence = office_facts_sentence("x.pptx", {"slides": 3, "charts": 1, "pictures": 0, "tables": 2})
+    assert "原生表格 2 个" in sentence and "拼的不算" not in sentence
