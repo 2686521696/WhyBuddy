@@ -227,6 +227,37 @@ def _gate_health_goes_to_tmp(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_spec_first_request_scope():
+    """每条测试从一个干净的 spec-first 请求域开始。
+
+    ⚠ 2026-09-27：`test_开关关着时一个页面事件都没有` 在全量 -n 4 下偶尔红，单跑、
+      并发单跑都绿。真因：`run_spec_first` 是同步函数，成功时把页面暂存进
+      `_last_pages_var`（ContextVar）。同一个 xdist 工人里前面的测试在主线程直接
+      调它，暂存就留在主线程的 context 里；后面那条的 `asyncio.run` 把这份 context
+      抄进流里，驱动器的补发兜底（落库 N 页 / 已发 0 个 → 补发）把**上一条测试的页**
+      发了出来。确定性复现：先跑 test_page_edit_blocks.py 再跑它，必红。
+      产线每个请求一个 task context，不会串；这是判据之间的隔离问题——但读这份暂存
+      的不止那一条（model_versions.record_model_snapshot 也 peek 它），所以装在这里。
+    """
+    try:
+        from services import spec_first_pipeline as sfp
+    except Exception:  # noqa: BLE001 — 缺依赖时跳过
+        yield
+        return
+    names = ("_last_pages_var", "_quality_notices_var", "_page_sink_var",
+             "_quality_sink_var", "_rename_sink_var", "_page_events_var")
+    tokens = [(var, var.set(None)) for var in (getattr(sfp, name, None) for name in names) if var is not None]
+    try:
+        yield
+    finally:
+        for var, token in reversed(tokens):
+            try:
+                var.reset(token)
+            except ValueError:
+                var.set(None)
+
+
+@pytest.fixture(autouse=True)
 def _default_logged_in_user():
     """全套件默认已登录。用 real_auth fixture 可摘掉。"""
     try:
