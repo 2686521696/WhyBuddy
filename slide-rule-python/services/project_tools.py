@@ -774,6 +774,9 @@ def _office_facts_sentence(result) -> str:
 #: 把一个文件打到屏幕上的命令：sed -n / cat / head / tail / nl / awk 带一个像文件名的参数。
 _PRINTS_A_FILE = re.compile(
     r"(?:^|[;&|]\s*)(?:sed|cat|head|tail|nl|awk|less|more)\b[^;&|]*\s[\w./-]+\.[A-Za-z0-9]{1,8}(?:\s|$|[;&|])")
+#: 在一个像文件名的参数上跑 grep / egrep / rg。
+_GREPS_A_FILE = re.compile(
+    r"(?:^|[;&|]\s*)(?:grep|egrep|rg)\b[^;&|]*\s[\w./-]+\.[A-Za-z0-9]{1,8}(?:\s|$|[;&|])")
 _NOT_FOUND = re.compile(r"(?:^|\n)(?:[\w/.-]+: )?(?:line \d+: )?([\w.+-]{1,40}): command not found")
 
 
@@ -880,8 +883,14 @@ def _command_pointer(result, excerpt="", full_command=None):
         note = f"输出共 {total} 字，excerpt 只有最后 {len(str(excerpt))} 字。"
         # ⚠ 第 49 轮：`python3 -c "…核对…"` 输出 1215 字也挂了这句——那不是在翻文件，
         #   劝它 file_read 是噪声。只对「打印一个文件」的命令说。
-        if _PRINTS_A_FILE.search(str(command_text or "")):
+        # 引号里的正则（'押金|签字'）不是管道：先把引号内容抹掉再认命令形状。
+        bare = re.sub(r"'[^']*'|\"[^\"]*\"", "''", str(command_text or ""))
+        if _PRINTS_A_FILE.search(bare):
             note += "要看源码文件用 file_read 带 start_line/end_line（一次最多 8000 字），别用 sed/cat 分段打印。"
+        elif _GREPS_A_FILE.search(bare):
+            # ⚠ 2026-09-27 第 63 轮（租赁合同 Word）：`grep -n -C 5 -E '押金|签字|…' generate_contract.py`
+            #   超了 800 字，模型接着 project_logs、sed、再 grep、最后 file_read，绕了四步。
+            note += "在源码里搜用 file_find_in_content（按文件、正则，返回行号和原文），别用 grep 翻屏。"
         hint = note + hint
     out = {
         **result,

@@ -77,3 +77,14 @@ def test_a_long_inspection_output_is_cut_but_not_told_to_use_file_read():
     receipt = _receipt(ROUND49_CHECK, "row value\n" * 150)
     assert receipt["excerptTruncated"] is True
     assert "file_read" not in receipt["hint"]
+
+
+# 第 63 轮（租赁合同 Word）原样：grep 带上下文翻生成脚本，超了 800 字。
+ROUND63_GREP = "grep -n -C 5 -E '押金|签字|盖章|第九条|第十条' generate_contract.py"
+
+
+def test_a_long_grep_over_a_source_file_is_pointed_at_file_find_in_content():
+    receipt = _receipt(ROUND63_GREP, "12-    doc.add_paragraph('押金')\n" * 60)
+    assert receipt["excerptTruncated"] is True
+    assert "file_find_in_content" in receipt["hint"]
+    assert "file_read 带 start_line" not in receipt["hint"]  # 不是在打印整个文件
