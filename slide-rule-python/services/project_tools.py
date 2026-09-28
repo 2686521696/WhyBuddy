@@ -265,6 +265,15 @@ def missing_file(files, path) -> ProjectNotFound:
                        for name in names if name.startswith(prefix)})
     if siblings:
         exc.hint = f"{target} 不存在。{parent or '工程根目录'} 下现有：{', '.join(siblings[:12])}。"
+    elif parent:
+        # ⚠ 2026-09-28 隔离真机第 103 轮 sr-20260928122121-2XPBK8TS8R（家长会 PPT）：生成脚本在沙盒里顺手写了
+        #   output/…_qa.json、…_sources.json，模型再 file_read 它们——两发 project_file_not_found，
+        #   一句提示都没有（源码里连 output/ 都没有，列不出同目录）。全库同形的还有 build_record.json、
+        #   deck_spec.json、source_manifest.json、layout_check.txt。file_read 读的是工程源码，
+        #   命令写在沙盒里的东西不在这儿。
+        exc.hint = (f"{target} 不存在，工程源码里也没有 {parent}/ 这个目录。命令在沙盒里写出的文件"
+                    "（收回的 .pptx/.docx/.xlsx 除外）不进工程源码，file_read 读不到；"
+                    f"要看就在沙盒里用 shell_exec 打出来（cat {target}）。")
     return exc
 
 
