@@ -73,6 +73,36 @@ def _skill_body_for_catalog_path(path: str, owner_id: str | None) -> str | None:
     return None
 
 
+def _indentation_error_note(changes) -> dict | None:
+    """改完的 .py 缩进坏了：当场说，不用跑一趟沙盒才知道。
+
+    ⚠ 2026-09-28 隔离真机第 86 轮 sr-20260928043335-9AKXXGY0WB（电商月度经营 Excel，追问「加一个 KPI 仪表盘工作表」）：
+      模型用 file_str_replace 往生成脚本里插一段，接着跑 → IndentationError（第 260 行），再改、
+      再跑……9 次失败里 8 次是 IndentationError，同一行报了两三遍，8 分钟。每一发都要走一趟
+      沙盒控制台；而改完的全文宿主手里就有。
+    只报 IndentationError / TabError：宿主是 3.11、沙盒是 3.13，其它 SyntaxError 可能是新语法
+    （3.12 起 f-string 放宽），宿主判错就是假警报。缩进规则各版本一致。只 compile 不执行。
+    增强类：判不了就不说（§七）。
+    """
+    for change in changes or []:
+        path = str((change or {}).get("path") or "")
+        text = (change or {}).get("content")
+        if not path.endswith(".py") or not isinstance(text, str):
+            continue
+        try:
+            compile(text, path, "exec", dont_inherit=True)
+        except IndentationError as exc:
+            kind = type(exc).__name__
+            return {
+                "syntaxError": {"path": path, "line": exc.lineno, "message": f"{kind}: {exc.msg}"},
+                "hint": (f"改完之后 {path} 第 {exc.lineno} 行缩进不对（{kind}: {exc.msg}），"
+                         "这个文件现在跑不起来。先修这一处再运行。"),
+            }
+        except Exception:
+            continue
+    return None
+
+
 def _skill_package_files(slug: str, owner_id: str | None) -> dict[str, str] | None:
     """这个账号装了的那份技能包开箱后的文本文件（相对技能根）。没装 / 取不到 → None。
 
@@ -1775,11 +1805,16 @@ class ProjectTools:
             else:
                 new = parsed.newStr
             changes = kernel_str_replace_changes(files, path, old, new)
-        return self._patch(project, PatchArguments.model_validate({
+        result = self._patch(project, PatchArguments.model_validate({
             "approvalRef": approved_reference(authority),
             "expectedRevision": current.revision,
             "changes": changes,
         }))
+        note = _indentation_error_note(changes)
+        if note:
+            result = {**result, "syntaxError": note["syntaxError"],
+                      "hint": note["hint"] + str(result.get("hint") or "")}
+        return result
 
     def _patch(self, project, args):
         active = self.store.get_lease(project.projectId, owner_id=self.owner_id)
