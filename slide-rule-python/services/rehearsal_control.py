@@ -645,7 +645,10 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
             ControlStopReason.TOKEN_BUDGET: "本轮工程任务的模型调用额度已用完。",
             ControlStopReason.TOOL_ROUNDS: "本轮工程任务达到工具轮次上限。",
             ControlStopReason.STATIONARITY: "模型重复执行同一步，本轮工程任务已暂停。",
-            ControlStopReason.NO_WRITES: "模型连着多轮只读源码、一次都没写，本轮工程任务已暂停。",
+            # ⚠ 2026-09-28 第 83 轮：那 12 轮是在等一条（被孤儿进程卡住的）命令——shell_wait /
+            #   shell_view / project_status，一行源码没读，却端出「只读源码」。只读闸数的是「这一轮
+            #   没有写」，不只是读文件；话要照实说。
+            ControlStopReason.NO_WRITES: "模型连着多轮只在看（读文件、查状态、等命令），一次都没写，本轮工程任务已暂停。",
         }.get(reason, "本轮工程任务未完成。")
         return (
             detail
