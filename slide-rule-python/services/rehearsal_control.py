@@ -4010,6 +4010,12 @@ def _system_prompt(state: V5SessionState) -> str:
             "operation_idempotency_conflict 不是验收结论，也不是登录失败。"
             "构建通过和服务就绪都不是业务验收。"
         )
+        listing = (readiness_tool.source_file_listing(getattr(state, "projectId", None))
+                   if readiness_tool is not None and hasattr(readiness_tool, "source_file_listing")
+                   else None)
+        if isinstance(listing, dict) and listing.get("paths"):
+            more = f"……共 {listing['total']} 个" if listing["total"] > len(listing["paths"]) else ""
+            facts.append(f"当前源码文件（只有这些，别按别的模板猜文件名）：{', '.join(listing['paths'])}{more}。")
         if isinstance(readiness, dict):
             blockers = readiness.get("blockers") or []
             facts.append(
