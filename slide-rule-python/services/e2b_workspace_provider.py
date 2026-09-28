@@ -49,6 +49,9 @@ CONSOLE_TYPE_INTERVAL = 0.02
 #   等待被打字吃光，只好 shell_wait 再等。办公话题的核对命令动辄四五百字，一轮光
 #   打字就是几分钟。打字效果留着，写入次数封顶：短命令照旧一字一敲，长命令成段地敲。
 CONSOLE_TYPE_MAX_WRITES = 32
+#: 退出标记到了、PTY 也杀了之后，最多再等读循环几秒。后台孙进程握着 PTY 时读循环不会自己停
+#: （_console_finish_after 头注）。
+CONSOLE_ORPHAN_GRACE = 3.0
 # OSC 777 is ours: first hit = bash ready, second = command exit. Never forward
 # it to the client — it is protocol, not something the user typed.
 _CONSOLE_OSC = re.compile(rb"\x1b\]777;wb;(\d+)\x07")
@@ -958,19 +961,36 @@ class E2BWorkspaceProvider:
         except Exception:
             pass
         finally:
-            with console.lock:
-                if console.ready.is_set() and console.pending:
-                    console.buffer.extend(console.pending)
-                    console.pending.clear()
-                self._absorb_sdk_output(console)
+            self._console_settle(console)
+
+    def _console_settle(self, console: _ConsoleSession) -> None:
+        """收尾：把缓冲吃干净、标记结束。读循环与下面的兜底谁先到谁做，只做一次。"""
+        with console.lock:
+            if console.finished.is_set():
+                return
+            if console.ready.is_set() and console.pending:
+                console.buffer.extend(console.pending)
+                console.pending.clear()
+            self._absorb_sdk_output(console)
             console.running = False
-            self._kill_console(console)
-            console.finished.set()
+        self._kill_console(console)
+        console.finished.set()
 
     def _console_finish_after(self, console: _ConsoleSession, delay: float) -> None:
         if console.finished.wait(delay):
             return
         self._kill_console(console)
+        # ⚠ 2026-09-28 隔离真机第 83 轮 sr-20260928031857-QGV5XCJ4GS（稍后阅读网页，追问「用 webapp-testing 点一遍」）：
+        #   `python3 .sliderule/skills/webapp-testing/scripts/with_server.py --server "npm run dev" …`
+        #   03:41:20 打完 Traceback、「All servers stopped」、回到提示符（退出标记已到），操作却一直
+        #   running，到 03:45:27 模型自己取消；前一条同样的命令也挂了 9 分钟，下一条因此排队 6 分钟。
+        #   with_server 用 shell=True 起服务、terminate 只杀到 sh，vite 孙进程活着还握着 PTY——
+        #   上面的读循环等 PTY 流结束，永远等不到。E2B 探针复现：留一个后台子进程的命令，
+        #   bash 退出 40 秒后仍 running；不留的 2.6 秒结束。
+        #   bash 已经报了退出码、PTY 也杀了：再给读循环一小会儿，还不停就自己收尾。
+        if console.finished.wait(CONSOLE_ORPHAN_GRACE):
+            return
+        self._console_settle(console)
 
     def _absorb_sdk_output(self, console: _ConsoleSession) -> None:
         """SDK 在 yield 之前就把 stdout/stderr 放进句柄。读循环漏了也要留下。"""
