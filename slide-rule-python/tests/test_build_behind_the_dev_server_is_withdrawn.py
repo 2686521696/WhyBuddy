@@ -56,3 +56,38 @@ def test_a_build_behind_a_finishing_command_is_left_to_run(setup, monkeypatch):
     result = _dispatch(setup, "project_status", {"operationId": queued})
     assert result["status"] == "queued" and "withdrawn" not in result
     assert setup.store.get_operation(queued, owner_id="alice").status == "queued"
+
+
+# ⚠ 2026-09-28 隔离真机第 102 轮 sr-20260928114738-JX5ZDCBK5Z（团队任务看板网页，追问「图表下面加一个导出 CSV 的按钮」）：
+#   `python3 .sliderule/skills/webapp-testing/scripts/with_server.py --help` 排在开发服务器后面，
+#   被丢在队里。只是看文件的命令同样当场撤回，出路是 file_read / file_find_in_content。
+ROUND102_HELP = "python3 .sliderule/skills/webapp-testing/scripts/with_server.py --help"
+
+
+def test_the_round102_look_only_command_is_withdrawn_towards_file_read(setup):
+    project = create(setup)
+    _hold_runtime(setup, project)
+    result = _dispatch(setup, "shell_exec", {"command": ROUND102_HELP})
+    assert result.get("withdrawn") is True and result["status"] == "cancelled", result
+    assert setup.store.get_operation(result["operationId"], owner_id="alice").status == "cancelled"
+    assert "file_read" in result["hint"] and "project_verify" not in result["hint"]
+
+
+def test_other_look_only_shapes_are_withdrawn_too(setup):
+    project = create(setup)
+    _hold_runtime(setup, project)
+    for command in ("sed -n '1,260p' src/main.tsx", "grep -n rating src/main.tsx | head -20",
+                    "ls -la src && cat package.json"):
+        result = _dispatch(setup, "shell_exec", {"command": command})
+        assert result.get("withdrawn") is True, (command, result)
+
+
+def test_a_command_that_writes_is_never_taken_for_looking(setup):
+    """反向：看起来像查看、实际会写的（重定向、sed -i、装包、heredoc 脚本）照旧只解释。"""
+    project = create(setup)
+    _hold_runtime(setup, project)
+    for command in ("cat src/main.tsx > backup.tsx", "sed -i 's/a/b/' src/main.tsx",
+                    "pip install openpyxl && python3 build.py --help",
+                    "python3 - <<'PY'\nprint(1)\nPY"):
+        result = _dispatch(setup, "shell_exec", {"command": command})
+        assert result["status"] == "queued" and "withdrawn" not in result, (command, result)

@@ -353,7 +353,34 @@ def queue_blocker(adapter, operation_id) -> dict | None:
         # 开发服务器 running 就是常驻：等它结束等于等到租约过期。
         "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL and not stopping,
         "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start" and not stopping,
-        "buildCheck": operation.kind == "runtime.exec" and _is_build_check(operation.input)}
+        "buildCheck": operation.kind == "runtime.exec" and _is_build_check(operation.input),
+        "inspection": operation.kind == "runtime.exec" and _is_inspection(operation.input)}
+
+
+#: 纯查看的一段命令：打印 / 搜索文件、列目录、看脚本用法。
+_INSPECT_SEGMENT = re.compile(
+    r"^\s*(?:(?:sed|cat|head|tail|nl|less|more|grep|egrep|rg|ls|find|tree|wc|file|stat)\b"
+    r"|[\w./-]+\s.*--help\b|(?:python3?|node|bash|sh)\s+[\w./-]+\s+(?:--help|-h)\s*$)")
+#: 任何一处像是会写东西的，就不算纯查看。
+_WRITES_SOMETHING = re.compile(r">|\btee\b|\bsed\s+-i\b|\b(?:rm|mv|cp|mkdir|touch|chmod|pip3?|npm|npx|pnpm|yarn)\b|<<")
+
+
+def _is_inspection(data) -> bool:
+    """排队的这条是不是只在「看」：每一段都是查看命令，且没有一处会写。
+
+    ⚠ 2026-09-28 隔离真机第 102 轮 sr-20260928114738-JX5ZDCBK5Z（团队任务看板网页，追问「图表下面加一个导出 CSV 的按钮」）：
+      `python3 .sliderule/skills/webapp-testing/scripts/with_server.py --help` 排在开发服务器后面——
+      网页工程的命令都要拿租约，服务器在就永远轮不到。回执只会说「先停掉服务器」，为看一眼用法去停
+      服务器不值，模型就把它丢在队里。全库那 37 次排队里另有五六次是这类（技能脚本 --help、
+      sed -n 翻源码）。看文件本来就有不排队的路：file_read / file_find_in_content（技能文件也能读）。
+    """
+    if not isinstance(data, dict):
+        return False
+    script = str(data.get("script") or "").strip()
+    if not script or _WRITES_SOMETHING.search(script):
+        return False
+    segments = [part for part in re.split(r"&&|\|\||;|\|", script) if part.strip()]
+    return bool(segments) and all(_INSPECT_SEGMENT.search(part) for part in segments)
 
 
 def _is_build_check(data) -> bool:
@@ -381,7 +408,7 @@ def withdraw_unrunnable_build(adapter, body):
     if not isinstance(body, dict) or body.get("status") != "queued" or not body.get("operationId"):
         return body
     blocker = queue_blocker(adapter, body["operationId"])
-    if blocker is None or not (blocker["neverYields"] and blocker["buildCheck"]):
+    if blocker is None or not (blocker["neverYields"] and (blocker["buildCheck"] or blocker["inspection"])):
         return body
     try:
         if adapter.supervisor is None:
@@ -392,11 +419,18 @@ def withdraw_unrunnable_build(adapter, body):
     except Exception:
         return body  # 撤不掉就照旧排队 + 解释（增强类，fail-open）
     hid = blocker["operationId"]
+    if blocker["buildCheck"]:
+        hint = (f"这条构建没有跑，宿主已经把它撤回：开发服务器 {hid} 在跑，占着工程，服务器不停它永远不会开始。"
+                "确认能不能构建不用停服务器：用 project_verify，它在服务器旁边对当前版本跑 npm run build"
+                "（含类型检查），回执 verification.build 里有 buildExitCode。不用再 shell_kill_process 这一条。")
+    else:
+        hint = (f"这条只是看文件的命令，没有跑，宿主已经把它撤回：开发服务器 {hid} 在跑，占着工程，"
+                "服务器不停，任何命令都排在它后面、永远轮不到。看文件不用排队：file_read 带 start_line/end_line，"
+                "搜内容用 file_find_in_content；.sliderule/skills/ 下的技能文件也能这样读，"
+                "脚本怎么用看它的源码（参数解析那段）。不用再 shell_kill_process 这一条。")
     return {**body, "status": status, "withdrawn": True, "commandFinished": False,
         "blockedBy": {k: blocker[k] for k in ("operationId", "kind", "status")},
-        "hint": (f"这条构建没有跑，宿主已经把它撤回：开发服务器 {hid} 在跑，占着工程，服务器不停它永远不会开始。"
-                 "确认能不能构建不用停服务器：用 project_verify，它在服务器旁边对当前版本跑 npm run build"
-                 "（含类型检查），回执 verification.build 里有 buildExitCode。不用再 shell_kill_process 这一条。")}
+        "hint": hint}
 
 
 def explain_queue(adapter, body):
