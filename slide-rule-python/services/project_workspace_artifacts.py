@@ -146,7 +146,9 @@ elif action in ("read-data", "write-data"):
         if data is not None and not data.startswith(b"SQLite format 3\x00"): raise ValueError("application_data_invalid")
         print(json.dumps({"data": base64.b64encode(data).decode() if data is not None else None}))
 elif action == "collect-office":
-    skip = {"node_modules", ".venv", "__pycache__", ".git", "dist"}
+    # .sliderule: installed skills written at sandbox creation (skill_hydrate). A skill may ship
+    # template .pptx/.docx files; collecting them would present them as this turn's deliverable.
+    skip = {"node_modules", ".venv", "__pycache__", ".git", "dist", ".sliderule"}
     suffix = (".pptx", ".docx", ".xlsx")
     cap = 8388608
     files, total = [], 0

@@ -52,6 +52,7 @@ from services.project_verification_store import ProjectVerificationStore
 from services.project_acceptance import normalize_acceptance_requirements, suite_for_template
 from services.project_tool_contracts import sandbox_shell_script
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
+from services.skill_hydrate import hydrate_owner_into
 
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "cancelled", "failed"}
@@ -703,6 +704,21 @@ class _RuntimeTask:
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
             self._mount_session_uploads()
+            if not reused:
+                # ⚠ 2026-09-28 隔离真机第 78 轮 sr-20260928004742-PZZS967DE4（@office-skills 做新品发布会 PPT，追问
+                #   「用 office-skills 自带的校验脚本再检查一遍」）：技能工具描述写着「技能目录在
+                #   工程沙盒 .sliderule/skills/<name>/，脚本用 shell_exec 跑」，模型照着
+                #   `find .sliderule/skills/office-skills …` → 五个技能全是 No such file or
+                #   directory；接着 `find / -path '*/office-skills/*'`、`find /home/user …`，
+                #   最后说「环境中没有单独安装名为 validate.py 的脚本」，自己另写一个。追问 10 分
+                #   39 秒，一半在找技能文件。
+                #   开箱注水（hydrate_owner_into）只接在 ProjectRuntimeService.start 上——
+                #   模块头自己写着「retained for the explicit primitive smoke command」，产线
+                #   一个调用者都没有（本仓 §一：装在不通电的插座上）。沙盒真正在这里建。
+                #   只在新建的沙盒写：复用的那台开箱时已经写过；之后才装的技能由安装接口
+                #   try_hydrate_running_project 直接写进在跑的沙盒。增强类，fail-open（§七）。
+                self.result["skillFiles"] = hydrate_owner_into(
+                    self.provider.write_files, self.handle, self.owner_id)
             self.heartbeat.renew(mounted_revision=self.runtime.revision)
             self.check()
             if skip_install:
