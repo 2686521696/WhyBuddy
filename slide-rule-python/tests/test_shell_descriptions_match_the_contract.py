@@ -87,3 +87,9 @@ def test_the_font_note_gives_a_line_that_can_be_copied():
     assert SANDBOX_CJK_FONT.endswith(".ttc") and SANDBOX_CJK_FONT.startswith("/usr/share/fonts/")
     assert f"ImageFont.truetype('{SANDBOX_CJK_FONT}'" in SANDBOX_FONTS_NOTE
     assert "boxes" in SANDBOX_FONTS_NOTE
+
+
+def test_both_descriptions_say_rg_is_missing():
+    """⚠ 第 32、36、39、72、80 轮都先敲 rg，command not found 再换。两处描述事先说。"""
+    for name, text in _descriptions().items():
+        assert "rg" in text and "not installed" in text and "grep -rn" in text, name

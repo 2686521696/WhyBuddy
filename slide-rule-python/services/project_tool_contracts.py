@@ -272,7 +272,10 @@ SANDBOX_CJK_FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 SANDBOX_FONTS_NOTE = (
     "Chinese text drawn into an image (PIL etc.) needs a Chinese font: use "
     f"ImageFont.truetype('{SANDBOX_CJK_FONT}', size) (Noto Sans CJK; fc-list :lang=zh lists the others). "
-    "DejaVu has no Chinese glyphs — Chinese drawn with it comes out as empty boxes."
+    "DejaVu has no Chinese glyphs — Chinese drawn with it comes out as empty boxes. "
+    # ⚠ 2026-09-28：第 32、36、39、72、80 轮都先敲了 rg，每次 command not found 再换 grep——
+    #   回执事后会点名（_missing_program），可每回都白花一发。事先说清。
+    "ripgrep (rg) is not installed; search with grep -rn."
 )
 
 
