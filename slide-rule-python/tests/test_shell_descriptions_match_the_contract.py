@@ -93,3 +93,10 @@ def test_both_descriptions_say_rg_is_missing():
     """⚠ 第 32、36、39、72、80 轮都先敲 rg，command not found 再换。两处描述事先说。"""
     for name, text in _descriptions().items():
         assert "rg" in text and "not installed" in text and "grep -rn" in text, name
+
+
+def test_both_descriptions_say_a_browser_cannot_run_in_the_sandbox():
+    """⚠ 第 81～83 轮各烧 15 分钟装 Playwright，Chromium 缺 libnspr4 起不来（E2B 探针确认，装库要 root，
+    平台拒 sudo）。两处描述事先说，并给出路：project_verify。"""
+    for name, text in _descriptions().items():
+        assert "libnspr4" in text and "project_verify" in text, name

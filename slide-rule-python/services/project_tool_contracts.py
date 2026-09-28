@@ -279,7 +279,13 @@ SANDBOX_FONTS_NOTE = (
     # ⚠ 2026-09-28 第 81 轮：网页工程里 pip install playwright + 下载 Chromium 成功，下一条命令全没了。
     "In a web (Vite) project every command gets a fresh sandbox (source tree + npm ci) that is reclaimed "
     "when it ends — packages, browsers or files you install outside the source tree are gone for the next "
-    "command, so install and use them in the same command. An office workspace keeps its sandbox."
+    "command, so install and use them in the same command. An office workspace keeps its sandbox. "
+    # ⚠ 2026-09-28 第 81～83 轮（webapp-testing 点击测试）：pip install playwright + 下载 Chromium 都成功，
+    #   Chromium 起不来——libnspr4.so 缺失。E2B 探针：uid 1000，libnspr4 / libnss3 都不在，apt-get 要 root，
+    #   而平台拒 sudo（project_sudo_forbidden）。三轮各烧 15 分钟重新发现这件事。
+    "A browser cannot run inside the sandbox: Playwright's Chromium needs system libraries (libnspr4, "
+    "libnss3) that are not installed, and installing them needs root, which is refused. To check pages "
+    "in a real browser, use project_verify (the managed independent browser) instead."
 )
 
 
