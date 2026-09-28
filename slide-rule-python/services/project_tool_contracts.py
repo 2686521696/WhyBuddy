@@ -451,7 +451,11 @@ def sandbox_shell_script(command: str) -> str:
     if not isinstance(command, str):
         raise ValueError("project_shell_command_not_allowed")
     text = command.strip()
-    if not text or len(text) > 2000:
+    # ⚠ 2026-09-28 隔离真机第 78、82 轮：上限从 2000 提到 SHELL_COMMAND_MAX_CHARS 时只改了参数
+    #   Field，这里还写死 2000——2000～8000 字的命令过了校验、在这里被 not_allowed 打回，回执
+    #   没有一个字说是太长（第 82 轮：装 Playwright && 起服务 && 跑点击脚本，被拒后放弃）。
+    #   当时的两条判据一条只校验 Field、一条直接往 PTY 里敲，都没走这个函数（本仓 §一之二）。
+    if not text or len(text) > SHELL_COMMAND_MAX_CHARS:
         raise ValueError("project_shell_command_not_allowed")
     if "\x00" in text:
         raise ValueError("project_shell_command_not_allowed")

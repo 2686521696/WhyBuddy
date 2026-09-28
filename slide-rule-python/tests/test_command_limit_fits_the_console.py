@@ -20,6 +20,8 @@ import pytest
 
 from services.e2b_workspace_provider import _CONSOLE_SETUP, pty_line, typing_chunks
 from services.project_tool_contracts import SHELL_COMMAND_MAX_CHARS, ShellExecArguments
+from project_actor_support import project_actor  # noqa: F401  （夹具）
+from test_project_tools import setup  # noqa: F401  （夹具）
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "linux" or shutil.which("bash") is None or shutil.which("python3") is None,
@@ -80,3 +82,41 @@ def test_a_command_at_the_limit_runs_when_typed_like_the_console():
     finally:
         os.kill(pid, 9)
         os.waitpid(pid, 0)
+
+
+# ⚠ 2026-09-28 隔离真机第 78、82 轮：上面那条判据只证明「敲得进 PTY」，没走分发——
+#   sandbox_shell_script 里还写死着 2000，2000～8000 字的命令在那儿被 not_allowed 打回。
+#   下面走真的 _dispatch_tool（test_queued_command_names_its_blocker 的夹具）。
+#   命令开头是第 78 轮被拒那一发的原样（全文没落库，回执摘要只留了开头），按同样形状长到两千字以上。
+ROUND78_HEAD = ("python3 - <<'PY'\nfrom pptx import Presentation\nfrom pptx.enum.shapes import MSO_SHAPE_TYPE\n"
+                "from pptx.util import Inches\nfrom lxml import etree\nimport json, zipfile\n")
+
+
+def _long_check_script(chars):
+    body, n = [], 0
+    while len(ROUND78_HEAD) + len("".join(body)) < chars:
+        body.append(f"assert prs.slides[{n % 5}].shapes is not None  # 第{n}项几何检查\n")
+        n += 1
+    return ROUND78_HEAD + "prs = Presentation('新品发布会.pptx')\n" + "".join(body) + "print('ok')\nPY"
+
+
+def test_a_long_command_passes_the_live_dispatch(setup):  # noqa: F811
+    from test_project_tools import create
+    from test_queued_command_names_its_blocker import _dispatch
+
+    create(setup)
+    command = _long_check_script(3500)
+    assert 2000 < len(command) < SHELL_COMMAND_MAX_CHARS
+    result = _dispatch(setup, "shell_exec", {"command": command, "is_background": True})
+    assert result.get("error") != "project_shell_command_not_allowed", result
+    assert result["ok"] is True, result
+
+
+def test_over_the_limit_is_still_refused_at_dispatch(setup):  # noqa: F811
+    """反向：上限还在，只是两处用同一个数。"""
+    from test_project_tools import create
+    from test_queued_command_names_its_blocker import _dispatch
+
+    create(setup)
+    result = _dispatch(setup, "shell_exec", {"command": _long_check_script(SHELL_COMMAND_MAX_CHARS + 200)})
+    assert result["ok"] is False
