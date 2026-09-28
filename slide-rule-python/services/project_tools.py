@@ -1111,7 +1111,7 @@ class ProjectTools:
     def source_file_listing(self, project_id: str | None, limit: int = 40) -> dict | None:
         """当前版本有哪些源码文件，给系统提示用。增强类：读不到就 None（fail-open）。
 
-        ⚠ 2026-09-28 隔离真机第 94 轮 sr-…（单词卡片网页，追问「加暗色模式」）：追问一开口
+        ⚠ 2026-09-28 隔离真机第 94 轮 sr-20260928081512-PXESY6QGRA（单词卡片网页，追问「加暗色模式」）：追问一开口
           同一批并行去读 `src/App.tsx`、`src/App.css`、`src/index.css`——Vite 默认名，这个模板
           是 `src/main.tsx` + `src/style.css`。三发全是 project_file_not_found。回执里那句
           「src 下现有：…」救不了同一批里的另外两发。全库 48 次 file_not_found，36 次是这三个名字。

@@ -6,7 +6,7 @@ import posixpath
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolArguments(BaseModel):
@@ -403,6 +403,32 @@ class GithubReadArguments(ToolArguments):
     offset: int | None = Field(default=None, ge=0)
     limit: int | None = Field(default=None, ge=1)
     sudo: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _twin_spelling(cls, data):
+        """read_file 也收孪生工具 file_read 的写法（file / start_line / end_line）。
+
+        ⚠ 2026-09-28 隔离真机第 94 轮 sr-20260928081512-PXESY6QGRA（单词卡片网页，追问「配色换蓝、圆角 12px」）：
+          `read_file {"file": "src/style.css", "start_line": 0, "end_line": 40}` →
+          project_tool_arguments_invalid。两件读工具同一个存储、描述里写着「Same store as file_read」，
+          参数名却一套 path/offset/limit、一套 file/start_line/end_line；全库这是最常见的参数错（5 次）。
+          意思没有歧义（start_line 就是 offset，end_line 是不含的终点），不值一个来回。
+          两套名字同时出现照旧拒——那是真矛盾，不猜。
+        """
+        if not isinstance(data, dict) or not ({"file", "start_line", "end_line"} & data.keys()):
+            return data
+        if ("file" in data and "path" in data) or ({"start_line", "end_line"} & data.keys() and {"offset", "limit"} & data.keys()):
+            return data
+        out = dict(data)
+        if "file" in out:
+            out["path"] = out.pop("file")
+        start, end = out.pop("start_line", None), out.pop("end_line", None)
+        if start is not None:
+            out["offset"] = start
+        if end is not None:
+            out["limit"] = end - (start or 0) if isinstance(end, int) and isinstance(start or 0, int) else end
+        return out
 
 
 class GithubWriteArguments(ToolArguments):
