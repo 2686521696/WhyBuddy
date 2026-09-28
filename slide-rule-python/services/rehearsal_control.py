@@ -777,6 +777,66 @@ def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
     return loaded
 
 
+def _skills_opened_since_user_turn(state: V5SessionState) -> set[str]:
+    """这一段规划（从用户上一句话起，访谈问答不算断开）里成功打开过的技能。"""
+    opened: set[str] = set()
+    pending = ""
+    for row in getattr(state, "controlTranscript", None) or []:
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("kind") or "")
+        if kind == "turn":
+            opened, pending = set(), ""
+        elif kind == "tool_start" and row.get("tool") == "skill":
+            pending = normalize_skill_name(str(row.get("summary") or ""))
+        elif kind == "tool_result" and row.get("tool") == "skill":
+            if pending and row.get("ok") is not False:
+                opened.add(pending)
+            pending = ""
+    return opened
+
+
+def _plan_written_since_user_turn(state: V5SessionState) -> bool:
+    """这段规划里是不是已经写过一版计划（改计划时不再重复摆技能清单）。"""
+    written = False
+    for row in getattr(state, "controlTranscript", None) or []:
+        if isinstance(row, dict):
+            if row.get("kind") == "turn":
+                written = False
+            elif row.get("kind") == "plan_written":
+                written = True
+    return written
+
+
+def _unopened_installed_skills(state: V5SessionState) -> list:
+    """已装、这段规划里还没打开的技能。目录拿不到就当没有（增强类，fail-open）。
+
+    ⚠ 2026-09-28 用户定的：装了没点名也要推，时机和取舍交给 Agent。定方案（write_plan）
+      就是那个时机——之后是批准和执行，再想起来就晚了。只在这一刻摆一次。
+    """
+    try:
+        catalog, _error = _skill_turn_catalog(state)
+    except Exception:
+        return []
+    opened = _skills_opened_since_user_turn(state)
+    return [info for info in catalog
+            if getattr(info, "enabled", True) and info.name not in opened][:12]
+
+
+def _planning_skills_note(state: V5SessionState) -> str:
+    """批准后执行是一段新上下文：规划时打开过的技能正文不在里面，说清是哪几份。
+
+    ⚠ 2026-09-28 隔离真机第 97 轮 sr-20260928095713-H6MF2TWY5J（健身房会员 Excel，@ 点名两份技能）：执行轮能重新加载，是因为 @ 写在
+      用户原话里（_task_text_for_recall 读的是目标原文）。规划时 Agent 自己挑的技能不在原话里，
+      执行轮这条消息只有一句「请按该版本执行」，挑过什么就丢了。
+    """
+    opened = [str(name) for name in (latest_control_plan(state).get("openedSkills") or []) if str(name).strip()]
+    if not opened:
+        return ""
+    return ("规划时打开过这些技能：" + "、".join(opened)
+            + "。这一轮是新的上下文，它们的正文不在这里；执行中要用就先 skill 加载。")
+
+
 def _memory_scope_id(state: V5SessionState) -> str:
     """记忆挂在**账号**上，不是会话上——跨会话活着才是它的意义。
 
@@ -5546,7 +5606,7 @@ async def _run_control_turn_body(
             yield _complete(state)
             return
         user_text = (
-            "用户已批准已保存的计划，请按该版本执行。"
+            "用户已批准已保存的计划，请按该版本执行。" + _planning_skills_note(state)
             if outcome == "approved"
             else "用户取消了计划审批，请继续访谈并修改计划。反馈：" + str(raw_answer.get("feedback") or "")
         )
@@ -6070,12 +6130,14 @@ async def _dispatch_tool(
             yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "invalid_plan_content"}
             return
         previous = latest_control_plan(state)
+        revising = _plan_written_since_user_turn(state)
         kind = _deliverable_kind_for_write_plan(state, args.get("deliverableKind"))
         candidate = state.model_copy(deep=True)
         _append_transcript(candidate, {
             "role": "assistant", "kind": "plan_written", "planContent": content,
             "deliverableKind": kind,
             "mentionedSkills": [info.name for info in _mentioned_skill_infos(state)],
+            "openedSkills": sorted(_skills_opened_since_user_turn(state)),
             "planId": previous.get("planId") or f"plan-{uuid.uuid4().hex}",
             "revision": int(previous.get("revision") or 0) + 1,
         })
@@ -6083,7 +6145,16 @@ async def _dispatch_tool(
         candidate.awaitDetail = None
         candidate.runtimePhase = "idle"
         await _commit_plan_state(state, candidate)
-        yield {"type": "control_tool_result", "tool": name, "ok": True, "revision": latest_control_plan(state)["revision"]}
+        receipt = {"type": "control_tool_result", "tool": name, "ok": True,
+                   "revision": latest_control_plan(state)["revision"]}
+        unopened = [] if revising else _unopened_installed_skills(state)
+        if unopened:
+            receipt["unopenedSkills"] = [info.name for info in unopened]
+            receipt["hint"] = (
+                "计划定下之前过一遍这些已装、这次还没打开的技能："
+                + "；".join(f"{info.name}（{info.description[:70]}）" for info in unopened)
+                + "。能让这次结果更好的现在就 skill 加载、把要点写进计划；不对口的不用管。")
+        yield receipt
         return
     if name == "exit_plan_mode":
         if args:
