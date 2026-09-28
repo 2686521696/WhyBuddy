@@ -408,7 +408,9 @@ describe("网页工程：任务已完成只认宿主交付判定", () => {
     expect(m?.status).toBe("done");
   });
 
-  it("通电：SlideRule 给最新一轮喂的是 /delivery 的判定，不是写死的值", async () => {
+  // ⚠ 2026-09-28 第 80 轮起判定挂「工程此刻出自的那一轮」（verdictTurnId），不是最新一轮：
+  //   没改代码的追问不出卡，按最新一轮挂，前一张卡就拿不到判定、翻成「任务已完成」。
+  it("通电：SlideRule 给工程此刻那一轮喂的是 /delivery 的判定，不是写死的值", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const src = fs
@@ -417,10 +419,10 @@ describe("网页工程：任务已完成只认宿主交付判定", () => {
       .replace(/\/\/.*$/gm, "");
     expect(src).toMatch(/useProjectDeliveryVerdict\(/);
     expect(src).toMatch(
-      /delivered=\{\s*turn\.id === ctx\.latestTurnId \? \(deliveryVerdict\?\.eligible \?\? null\) : undefined\s*\}/
+      /delivered=\{\s*turn\.id === ctx\.verdictTurnId \? \(deliveryVerdict\?\.eligible \?\? null\) : undefined\s*\}/
     );
     expect(src).toMatch(
-      /deliveryBlockedReasons=\{\s*turn\.id === ctx\.latestTurnId \? deliveryVerdict\?\.blockedReasons : undefined\s*\}/
+      /deliveryBlockedReasons=\{\s*turn\.id === ctx\.verdictTurnId \? deliveryVerdict\?\.blockedReasons : undefined\s*\}/
     );
     expect(src).not.toMatch(/delivered=\{true\}/);
   });

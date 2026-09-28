@@ -25,6 +25,7 @@ import {
   visibleUserMessage,
 } from "./sliderule/user-message-display";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
+import { latestDeliveringTurnId } from "./sliderule/turn-result-card";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
@@ -614,6 +615,8 @@ const ImSurfaceContext = React.createContext<{
   hasOfficeArtifact?: boolean;
   /** 网页工程的宿主交付判定；null = 还没拿到证据。 */
   deliveryVerdict?: DeliveryVerdict | null;
+  /** 工程此刻是哪一轮做出来的（latestDeliveringTurnId）。判定和验收截图挂这一轮的卡。 */
+  verdictTurnId?: string | null;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -631,6 +634,7 @@ const ImSurfaceContext = React.createContext<{
   deliverableKind: "web-app",
   hasOfficeArtifact: false,
   deliveryVerdict: null,
+  verdictTurnId: null,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -786,17 +790,18 @@ function ImAssistantMessage() {
       /* ⚠ 只挂在**最新那一轮**上：验收截图拍的是工程此刻的样子，
            贴到三轮之前那张卡上就是张张牛头不对马嘴的图。 */
       thumbnailUrl={
-        turn.id === ctx.latestTurnId ? ctx.thumbnailUrl : null
+        turn.id === ctx.verdictTurnId ? ctx.thumbnailUrl : null
       }
       hasPages={Boolean(turn.main)}
       deliverableKind={deliverableKind}
       hasOfficeArtifact={hasOfficeArtifact}
-      /* 宿主交付判定只挂最新一轮：它说的是工程此刻，贴到旧轮上就是张冠李戴。 */
+      /* 宿主交付判定只挂「工程此刻」出自的那一轮（latestDeliveringTurnId 头注）：
+         挂最新一轮的话，没改代码的追问不出卡，判定就落空，前一张卡翻成「任务已完成」。 */
       delivered={
-        turn.id === ctx.latestTurnId ? (deliveryVerdict?.eligible ?? null) : undefined
+        turn.id === ctx.verdictTurnId ? (deliveryVerdict?.eligible ?? null) : undefined
       }
       deliveryBlockedReasons={
-        turn.id === ctx.latestTurnId ? deliveryVerdict?.blockedReasons : undefined
+        turn.id === ctx.verdictTurnId ? deliveryVerdict?.blockedReasons : undefined
       }
       onOpen={() => {
         window.dispatchEvent(
@@ -1160,6 +1165,7 @@ export function ClaudeChatSurface({
       deliverableKind,
       hasOfficeArtifact,
       deliveryVerdict,
+      verdictTurnId: latestDeliveringTurnId(uiTurns, deliverableKind),
     }),
     [
       publishClosure,

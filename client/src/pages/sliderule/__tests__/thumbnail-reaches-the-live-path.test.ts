@@ -64,9 +64,11 @@ describe("验收截图一路传到结果卡", () => {
     expect(openingTag(PAGE, "TurnResultCard")).toMatch(/thumbnailUrl=\{/);
   });
 
-  it("只挂在最新那一轮：老卡片配一张今天的截图是错的", () => {
+  it("只挂在工程此刻出自的那一轮：老卡片配一张今天的截图是错的", () => {
+    // ⚠ 2026-09-28 第 80 轮起不是「最新一轮」：没改代码的追问不出卡，截图说的是工程此刻，
+    //   属于做出它的那一轮（latestDeliveringTurnId，见 verdict-follows-the-delivering-turn）。
     const call = openingTag(PAGE, "TurnResultCard");
-    expect(call).toMatch(/turn\.id\s*===\s*ctx\.latestTurnId/);
+    expect(call).toMatch(/thumbnailUrl=\{\s*turn\.id\s*===\s*ctx\.verdictTurnId/);
   });
 
   it("结果卡把 thumbnailUrl 喂进了 resultCardModel（收了不用等于没收）", () => {

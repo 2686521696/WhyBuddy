@@ -114,6 +114,31 @@ export function turnDeliveredOfficeFile(turn: UiTurn | null | undefined): boolea
 }
 
 /**
+ * 工程此刻的样子是哪一轮做出来的：最后一个真的动手产出的轮次。宿主交付判定、
+ * 验收截图说的都是「工程此刻」，只能挂在这一轮的卡上。
+ *
+ * ⚠ 2026-09-28 隔离真机第 80 轮 sr-20260928014044-76AFAFC2M1（读书打卡网页 + 追问「用 webapp-testing 把新增、
+ *   勾选完成、删除点一遍」）：追问一行代码没改，不出卡；判定原来按「最新一轮」挂，于是
+ *   落在没有卡的追问上，首轮那张卡拿到 delivered=undefined——不受判定约束，从
+ *   「验收没能在这个环境里跑起来」翻成了绿勾「任务已完成」。服务端同一时刻给的是
+ *   goal_not_delivered。屏幕上唯一那张卡在说假话。
+ */
+export function latestDeliveringTurnId(
+  turns: readonly UiTurn[] | null | undefined,
+  deliverableKind?: string | null
+): string | null {
+  const office = isOfficeFileDeliverable(deliverableKind);
+  const list = Array.isArray(turns) ? turns : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const turn = list[i];
+    if (office ? turnDeliveredOfficeFile(turn) : turnDeliveredProject(turn)) {
+      return turn.id;
+    }
+  }
+  return null;
+}
+
+/**
  * 人话用时。Manus 写的是 `2m 45s`，不是 `165s`——超过一分钟还读秒，
  * 得让人自己心算。
  *
