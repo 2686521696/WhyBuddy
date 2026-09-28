@@ -53,7 +53,9 @@ def test_str_replace_is_fail_closed_when_the_needle_is_missing_or_ambiguous(setu
     missing = execute(setup, "project_str_replace", {
         "path": "src/App.tsx", "oldStr": "no-such-line", "newStr": "x",
     })
-    assert missing == {"ok": False, "error": "project_str_replace_not_found"}
+    # 2026-09-28 第 95 轮起对不上时附上为什么（test_replace_not_found_says_why）。
+    assert {k: v for k, v in missing.items() if k != "hint"} == {"ok": False, "error": "project_str_replace_not_found"}
+    assert "找不到" in missing["hint"]
     execute(setup, "project_write", {"path": "src/App.tsx", "content": "task\ntask\n"})
     ambiguous = execute(setup, "project_str_replace", {
         "path": "src/App.tsx", "oldStr": "task", "newStr": "item",

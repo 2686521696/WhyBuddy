@@ -1,0 +1,256 @@
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
+from pptx.dml.color import RGBColor
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
+from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.shapes import MSO_CONNECTOR
+from pathlib import Path
+
+OUT = Path('output')
+OUT.mkdir(exist_ok=True)
+FILE = OUT / '新员工信息安全入职培训.pptx'
+
+prs = Presentation()
+prs.slide_width = Inches(13.333)
+prs.slide_height = Inches(7.5)
+blank = prs.slide_layouts[6]
+
+NAVY = RGBColor(20, 42, 74)
+BLUE = RGBColor(38, 104, 171)
+PALE_BLUE = RGBColor(232, 242, 251)
+INK = RGBColor(35, 48, 62)
+MUTED = RGBColor(93, 108, 123)
+BG = RGBColor(248, 250, 252)
+WHITE = RGBColor(255, 255, 255)
+LINE = RGBColor(210, 220, 230)
+ORANGE = RGBColor(218, 126, 45)
+RED = RGBColor(190, 64, 61)
+PALE_ORANGE = RGBColor(253, 243, 232)
+PALE_RED = RGBColor(252, 236, 235)
+GREEN = RGBColor(56, 125, 90)
+PALE_GREEN = RGBColor(234, 246, 238)
+FONT = 'Aptos'
+FONT_CN = 'Microsoft YaHei'
+
+
+def rect(slide, x, y, w, h, fill=WHITE, line=LINE, radius=False):
+    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+    shape.fill.solid(); shape.fill.fore_color.rgb = fill
+    shape.line.color.rgb = line
+    shape.line.width = Pt(0.8)
+    if radius:
+        shape.adjustments[0] = 0.08
+    return shape
+
+
+def line(slide, x1, y1, x2, y2, color=LINE, width=1.2, dash=None):
+    l = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
+    l.line.color.rgb = color; l.line.width = Pt(width)
+    if dash: l.line.dash_style = dash
+    return l
+
+
+def text(slide, x, y, w, h, value, size=16, color=INK, bold=False, align=PP_ALIGN.LEFT, font=FONT_CN, valign=MSO_ANCHOR.TOP, margin=0.04):
+    tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = tb.text_frame; tf.clear(); tf.word_wrap = True; tf.margin_left = Inches(margin); tf.margin_right = Inches(margin); tf.margin_top = Inches(margin); tf.margin_bottom = Inches(margin); tf.vertical_anchor = valign
+    p = tf.paragraphs[0]; p.alignment = align
+    r = p.add_run(); r.text = value; r.font.name = font; r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
+    return tb
+
+
+def rich_text(slide, x, y, w, h, runs, size=16, color=INK, align=PP_ALIGN.LEFT, valign=MSO_ANCHOR.TOP, margin=0.04):
+    tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = tb.text_frame; tf.clear(); tf.word_wrap = True; tf.margin_left = Inches(margin); tf.margin_right = Inches(margin); tf.margin_top = Inches(margin); tf.margin_bottom = Inches(margin); tf.vertical_anchor = valign
+    p = tf.paragraphs[0]; p.alignment = align
+    for value, col, bold in runs:
+        r = p.add_run(); r.text = value; r.font.name = FONT_CN; r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = col
+    return tb
+
+
+def add_bullet(slide, x, y, w, label, body, color=BLUE, size=15, gap=0.33):
+    rect(slide, x, y+0.07, 0.16, 0.16, fill=color, line=color, radius=True)
+    rich_text(slide, x+0.28, y, w-0.28, gap, [(label, NAVY, True), (body, INK, False)], size=size)
+
+
+def header(slide, title, kicker=None):
+    rect(slide, 0, 0, 13.333, 7.5, fill=BG, line=BG)
+    if kicker:
+        text(slide, 0.72, 0.38, 3.8, 0.28, kicker.upper(), size=9, color=BLUE, bold=True)
+    text(slide, 0.72, 0.72, 11.8, 0.62, title, size=27, color=NAVY, bold=True)
+    line(slide, 0.72, 1.52, 12.6, 1.52, color=LINE, width=1)
+
+
+def footer(slide, n):
+    line(slide, 0.72, 7.08, 12.6, 7.08, color=LINE, width=0.8)
+    text(slide, 0.72, 7.15, 4.5, 0.18, '信息安全入职培训', size=8.5, color=MUTED)
+    text(slide, 11.8, 7.15, 0.8, 0.18, f'{n:02d} / 08', size=8.5, color=MUTED, align=PP_ALIGN.RIGHT)
+
+
+def shield(slide, x, y, s=1.0, fill=PALE_BLUE, linec=BLUE):
+    sh = slide.shapes.add_shape(MSO_SHAPE.PENTAGON, Inches(x), Inches(y), Inches(s), Inches(s*1.12))
+    sh.fill.solid(); sh.fill.fore_color.rgb = fill; sh.line.color.rgb = linec; sh.line.width = Pt(2)
+    # simple lock mark
+    rect(slide, x+s*0.29, y+s*0.52, s*0.42, s*0.30, fill=WHITE, line=linec, radius=True)
+    arc = slide.shapes.add_shape(MSO_SHAPE.ARC, Inches(x+s*0.36), Inches(y+s*0.33), Inches(s*0.28), Inches(s*0.32))
+    arc.fill.background(); arc.line.color.rgb = linec; arc.line.width = Pt(2)
+
+
+def add_title_slide():
+    slide = prs.slides.add_slide(blank)
+    rect(slide, 0, 0, 13.333, 7.5, fill=BG, line=BG)
+    rect(slide, 0, 0, 0.18, 7.5, fill=BLUE, line=BLUE)
+    text(slide, 0.9, 1.22, 7.9, 0.35, '新员工信息安全入职培训', size=14, color=BLUE, bold=True)
+    text(slide, 0.9, 1.85, 8.1, 1.22, '从第一天开始，保护公司信息', size=34, color=NAVY, bold=True)
+    text(slide, 0.94, 3.25, 6.6, 0.55, '把安全变成每天都能做到的动作。', size=18, color=MUTED)
+    line(slide, 0.94, 4.18, 6.7, 4.18, color=BLUE, width=2.4)
+    text(slide, 0.94, 4.48, 5.9, 0.32, '密码 · 钓鱼邮件 · 数据分级 · 设备丢失', size=13, color=INK)
+    shield(slide, 9.45, 1.52, 2.35, fill=PALE_BLUE, linec=BLUE)
+    line(slide, 10.62, 4.1, 10.62, 5.38, color=ORANGE, width=2.2)
+    line(slide, 10.0, 4.74, 11.24, 4.74, color=ORANGE, width=2.2)
+    text(slide, 8.82, 5.75, 3.7, 0.45, '安全，从一次正确判断开始', size=14, color=BLUE, bold=True, align=PP_ALIGN.CENTER)
+    footer(slide, 1)
+
+
+def add_overview():
+    slide = prs.slides.add_slide(blank); header(slide, '记住四个动作，降低大多数日常风险', '总览')
+    text(slide, 0.75, 1.82, 11.8, 0.35, '每个主题都对应一个可以立刻执行的动作。', size=15, color=MUTED)
+    items = [('01','密码','独立、难猜、开启 MFA',BLUE),('02','钓鱼邮件','先停下来，再验证',ORANGE),('03','数据分级','先判断，再处理',GREEN),('04','设备丢失','立即上报并阻断风险',RED)]
+    xs = [0.75, 3.85, 6.95, 10.05]
+    for i,(num,title,body,col) in enumerate(items):
+        rect(slide, xs[i], 2.65, 2.55, 2.42, fill=WHITE, line=LINE, radius=True)
+        text(slide, xs[i]+0.22, 2.88, 0.6, 0.25, num, size=11, color=col, bold=True)
+        line(slide, xs[i]+0.22, 3.28, xs[i]+2.25, 3.28, color=LINE, width=0.8)
+        text(slide, xs[i]+0.22, 3.58, 2.08, 0.42, title, size=19, color=NAVY, bold=True)
+        text(slide, xs[i]+0.22, 4.22, 2.05, 0.52, body, size=13, color=MUTED)
+        if i<3: line(slide, xs[i]+2.58, 3.86, xs[i]+3.0, 3.86, color=BLUE, width=1.4)
+    text(slide, 0.75, 5.72, 11.8, 0.55, '遇到不确定的情况，停止当前操作，向正规渠道求证。', size=20, color=NAVY, bold=True, align=PP_ALIGN.CENTER)
+    footer(slide, 2)
+
+
+def add_password():
+    slide = prs.slides.add_slide(blank); header(slide, '让每个账号拥有独立、难猜的密码', '01 / 密码')
+    text(slide, 0.75, 1.82, 5.55, 0.55, '目标：即使一个账号泄露，也不要让风险扩散到其他系统。', size=15, color=MUTED)
+    rect(slide, 0.75, 2.62, 5.55, 3.63, fill=PALE_GREEN, line=PALE_GREEN, radius=True)
+    text(slide, 1.05, 2.92, 2.0, 0.35, '推荐做法', size=18, color=GREEN, bold=True)
+    add_bullet(slide, 1.05, 3.48, 4.85, '使用密码管理器。', '让工具生成并保存复杂密码。', GREEN)
+    add_bullet(slide, 1.05, 4.18, 4.85, '每个重要账号唯一。', '不要重复使用密码。', GREEN)
+    add_bullet(slide, 1.05, 4.88, 4.85, '开启多因素认证。', '为账号增加第二道验证。', GREEN)
+    rect(slide, 6.72, 2.62, 5.87, 3.63, fill=PALE_RED, line=PALE_RED, radius=True)
+    text(slide, 7.02, 2.92, 2.0, 0.35, '避免做法', size=18, color=RED, bold=True)
+    add_bullet(slide, 7.02, 3.48, 5.0, '不要通过聊天或邮件分享密码。', '', RED)
+    add_bullet(slide, 7.02, 4.18, 5.0, '不要用姓名、生日等易猜信息。', '', RED)
+    add_bullet(slide, 7.02, 4.88, 5.0, '不要把密码写在设备旁。', '', RED)
+    footer(slide, 3)
+
+
+def add_phishing_flow():
+    slide = prs.slides.add_slide(blank); header(slide, '遇到可疑邮件，先停下来再验证', '02 / 钓鱼邮件')
+    text(slide, 0.75, 1.82, 11.5, 0.42, '不要让“马上处理”的压力替你做决定。', size=15, color=MUTED)
+    steps = [('1','暂停点击','不打开附件，不回复敏感信息',ORANGE),('2','核对发件人和域名','看清拼写、域名和上下文',BLUE),('3','从官方入口独立登录','不要通过邮件链接进入',GREEN),('4','通过正规渠道报告','保留原邮件，交给 IT/安全团队',RED)]
+    x=0.75
+    for i,(num,title,body,col) in enumerate(steps):
+        rect(slide, x, 2.72, 2.72, 2.45, fill=WHITE, line=LINE, radius=True)
+        rect(slide, x+0.22, 2.98, 0.45, 0.45, fill=col, line=col, radius=True)
+        text(slide, x+0.22, 3.03, 0.45, 0.22, num, size=12, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+        text(slide, x+0.82, 2.98, 1.62, 0.52, title, size=16, color=NAVY, bold=True)
+        text(slide, x+0.22, 3.78, 2.2, 0.65, body, size=13, color=MUTED)
+        if i<3: line(slide, x+2.76, 3.95, x+3.08, 3.95, color=LINE, width=1.5)
+        x += 3.12
+    rect(slide, 1.35, 5.75, 10.65, 0.55, fill=PALE_ORANGE, line=PALE_ORANGE, radius=True)
+    text(slide, 1.55, 5.89, 10.2, 0.25, '记住：链接可以伪装，正规入口和独立验证更可靠。', size=15, color=ORANGE, bold=True, align=PP_ALIGN.CENTER)
+    footer(slide, 4)
+
+
+def add_phishing_signals():
+    slide = prs.slides.add_slide(blank); header(slide, '看清三个信号，再决定是否操作', '03 / 钓鱼识别')
+    signals = [('01','制造紧迫感','“立即处理，否则账号将被停用”',ORANGE),('02','链接 / 域名异常','拼写相近、层级奇怪、与业务不符',RED),('03','索要敏感信息','密码、验证码、付款或个人信息',BLUE)]
+    for i,(num,title,body,col) in enumerate(signals):
+        y=1.98+i*0.95
+        rect(slide, 0.82, y, 5.25, 0.72, fill=WHITE, line=LINE, radius=True)
+        text(slide, 1.05, y+0.18, 0.45, 0.25, num, size=11, color=col, bold=True)
+        rich_text(slide, 1.62, y+0.14, 4.15, 0.38, [(title, NAVY, True), ('  '+body, MUTED, False)], size=13)
+    # email mockup
+    rect(slide, 6.55, 1.92, 5.98, 4.55, fill=WHITE, line=LINE, radius=True)
+    text(slide, 6.88, 2.18, 2.8, 0.26, '示例：一封需要验证的邮件', size=13, color=NAVY, bold=True)
+    line(slide, 6.88, 2.62, 12.18, 2.62, color=LINE, width=0.8)
+    text(slide, 6.88, 2.82, 0.7, 0.2, '发件人', size=10, color=MUTED)
+    text(slide, 7.72, 2.80, 4.3, 0.25, 'support@micros0ft-secure.example', size=11, color=RED, bold=True)
+    text(slide, 6.88, 3.22, 0.7, 0.2, '主题', size=10, color=MUTED)
+    text(slide, 7.72, 3.20, 4.3, 0.25, '【紧急】请在 10 分钟内验证账号', size=11, color=ORANGE, bold=True)
+    line(slide, 6.88, 3.62, 12.18, 3.62, color=LINE, width=0.8)
+    text(slide, 6.88, 3.88, 5.0, 0.58, '检测到异常登录。请点击下方链接验证密码，否则账号将被锁定。', size=13, color=INK)
+    rect(slide, 6.88, 4.72, 2.02, 0.5, fill=PALE_RED, line=PALE_RED, radius=True)
+    text(slide, 7.02, 4.86, 1.74, 0.2, '验证我的账号', size=12, color=RED, bold=True, align=PP_ALIGN.CENTER)
+    text(slide, 6.88, 5.62, 5.0, 0.4, '标注：紧迫感 + 异常域名 + 索要密码', size=12, color=RED, bold=True)
+    footer(slide, 5)
+
+
+def add_data_classification():
+    slide = prs.slides.add_slide(blank); header(slide, '先判断敏感程度，再决定如何处理', '04 / 数据分级')
+    text(slide, 0.75, 1.82, 11.7, 0.42, '分级不是给文件贴标签，而是帮助你选择合适的分享、存储和传输方式。', size=15, color=MUTED)
+    rows = [('公开','可对外分享的内容','公开渠道或已批准平台','按公司制度执行',BLUE,PALE_BLUE),('内部','仅供组织内部使用','公司批准的内部位置','不要公开转发',GREEN,PALE_GREEN),('机密','泄露会造成业务或声誉影响','受控存储与受限访问','最小范围分享',ORANGE,PALE_ORANGE),('严格机密 / 个人敏感信息','泄露会造成重大影响或侵犯隐私','加密、严格权限、受控传输','按公司制度执行',RED,PALE_RED)]
+    headers=['级别','典型判断','存储 / 传输原则','分享提醒']
+    widths=[2.15,3.15,3.55,3.35]; xs=[0.75]
+    for w in widths[:-1]: xs.append(xs[-1]+w)
+    for x,w,h in zip(xs,widths,headers): text(slide, x, 2.52, w-0.15, 0.25, h, size=11, color=MUTED, bold=True)
+    y=2.9
+    for name,judge,store,share,col,fill in rows:
+        rect(slide, 0.75, y, 11.85, 0.74, fill=fill, line=BG, radius=True)
+        text(slide, 0.98, y+0.19, 1.85, 0.32, name, size=13, color=col, bold=True)
+        text(slide, 2.9, y+0.16, 2.85, 0.4, judge, size=12, color=INK)
+        text(slide, 6.08, y+0.16, 3.2, 0.4, store, size=12, color=INK)
+        text(slide, 9.72, y+0.16, 2.55, 0.4, share, size=12, color=INK)
+        y += 0.83
+    text(slide, 0.8, 6.45, 11.7, 0.35, '拿不准时：先按更高敏感级别处理，再向数据负责人或安全团队求证。', size=14, color=NAVY, bold=True, align=PP_ALIGN.CENTER)
+    footer(slide, 6)
+
+
+def add_lost_device():
+    slide = prs.slides.add_slide(blank); header(slide, '设备丢失时，立即上报并阻断风险', '05 / 设备丢失')
+    text(slide, 0.75, 1.82, 11.6, 0.42, '越早上报，越有机会远程锁定、退出会话并减少信息暴露。', size=15, color=MUTED)
+    steps=[('立即','联系 IT / 安全团队','不要等待“再找找”',BLUE),('说明','设备、时间、地点和已知情况','信息越完整，处置越快',ORANGE),('阻断','修改相关密码并退出会话','优先处理高风险账号',RED),('配合','远程锁定 / 擦除和后续调查','按团队指引完成',GREEN)]
+    x=0.75
+    for i,(a,b,c,col) in enumerate(steps):
+        rect(slide, x, 2.7, 2.72, 2.25, fill=WHITE, line=LINE, radius=True)
+        text(slide, x+0.22, 2.95, 0.8, 0.25, a, size=13, color=col, bold=True)
+        text(slide, x+0.22, 3.42, 2.2, 0.56, b, size=16, color=NAVY, bold=True)
+        text(slide, x+0.22, 4.24, 2.18, 0.42, c, size=12, color=MUTED)
+        if i<3: line(slide, x+2.76, 3.8, x+3.08, 3.8, color=LINE, width=1.5)
+        x += 3.12
+    rect(slide, 1.08, 5.45, 11.1, 0.95, fill=PALE_ORANGE, line=PALE_ORANGE, radius=True)
+    text(slide, 1.35, 5.63, 4.1, 0.23, '上报渠道', size=12, color=ORANGE, bold=True)
+    text(slide, 3.0, 5.61, 4.55, 0.25, 'IT / 安全团队：[填写内部渠道]', size=13, color=INK, bold=True)
+    text(slide, 8.05, 5.61, 3.65, 0.25, '紧急电话：[填写号码]', size=13, color=INK, bold=True)
+    footer(slide, 7)
+
+
+def add_close():
+    slide = prs.slides.add_slide(blank); header(slide, '拿不准时，先停下并求证', '收束')
+    text(slide, 0.75, 1.82, 11.4, 0.42, '把三条口诀带回第一周的工作节奏。', size=15, color=MUTED)
+    rules=[('不确定就不点','先暂停，再从官方入口验证',ORANGE),('敏感信息先分级','先判断，再选择分享和存储方式',BLUE),('设备异常立即上报','越早行动，越容易控制影响',RED)]
+    x=0.75
+    for title,body,col in rules:
+        rect(slide, x, 2.5, 3.78, 1.42, fill=WHITE, line=LINE, radius=True)
+        rect(slide, x+0.22, 2.76, 0.14, 0.9, fill=col, line=col)
+        text(slide, x+0.55, 2.74, 2.85, 0.32, title, size=17, color=NAVY, bold=True)
+        text(slide, x+0.55, 3.2, 2.9, 0.42, body, size=12.5, color=MUTED)
+        x += 4.0
+    rect(slide, 0.75, 4.42, 11.85, 1.56, fill=PALE_BLUE, line=PALE_BLUE, radius=True)
+    text(slide, 1.05, 4.68, 3.6, 0.3, '入职后第一周检查清单', size=16, color=BLUE, bold=True)
+    checks=['启用 MFA','配置密码管理器','确认报告渠道','完成安全培训']
+    for i,c in enumerate(checks):
+        xx=1.05+(i%2)*3.7; yy=5.15+(i//2)*0.42
+        rect(slide, xx, yy, 0.2, 0.2, fill=WHITE, line=BLUE, radius=True)
+        text(slide, xx+0.33, yy-0.02, 2.8, 0.24, c, size=13, color=INK)
+    text(slide, 8.45, 4.75, 3.65, 0.65, '安全是每个人的日常动作。', size=21, color=NAVY, bold=True, align=PP_ALIGN.CENTER, valign=MSO_ANCHOR.MIDDLE)
+    footer(slide, 8)
+
+add_title_slide(); add_overview(); add_password(); add_phishing_flow(); add_phishing_signals(); add_data_classification(); add_lost_device(); add_close()
+prs.core_properties.title = '从第一天开始，保护公司信息'
+prs.core_properties.subject = '新员工信息安全入职培训'
+prs.core_properties.author = 'OpenAI'
+prs.core_properties.keywords = '密码, 钓鱼邮件, 数据分级, 设备丢失, 信息安全'
+prs.save(FILE)
+print(FILE)

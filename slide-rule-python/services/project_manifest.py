@@ -152,7 +152,9 @@ def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, ne
     body = files[path]
     found = body.count(old)
     if found == 0:
-        raise ValueError("project_str_replace_not_found")
+        exc = ValueError("project_str_replace_not_found")
+        exc.hint = _not_found_hint(body, old)
+        raise exc
     if found > 1 and not replace_all:
         exc = ValueError("project_str_replace_ambiguous")
         exc.hint = _ambiguous_hint(body, old, found)
@@ -162,6 +164,36 @@ def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, ne
         "content": body.replace(old, new) if replace_all else body.replace(old, new, 1),
         "expectedSha256": content_hash(body),
     }]
+
+
+def _not_found_hint(body: str, old: str) -> str:
+    """一处都对不上时，说对不上在哪——只报文件里的事实，不替模型改。
+
+    ⚠ 2026-09-28 隔离真机第 95 轮 sr-20260928090643-EN9AKT1A92（信息安全培训 PPT，追问「每页右下角加页码」）：
+      一轮 12 次 project_str_replace_not_found，回执里一个字的提示都没有。翻出来的旧串两种：
+      一半把换行写成了字面的反斜杠 n（`footer(slide, 1)\\\\n\\\\ndef add_overview():`）；
+      另一半凭印象猜空行数、猜 `footer(slide, 4)` 其实是 5。
+      前一种：换成真换行就对上，照实说（不替它改——new_str 里的 \\\\n 可能正是 Python 字符串里要的）。
+      后一种：第一行在文件里找得到，就给出那一行起文件里真正的样子。
+    """
+    unescaped = old.replace("\\n", "\n").replace("\\t", "\t")
+    if unescaped != old and unescaped in body:
+        return ("要换的那段里的换行写成了字面的反斜杠加 n（两个字符），文件里这里是真换行。"
+                f"按真换行写就能对上（{body.count(unescaped)} 处）；new_str 里的换行也同样检查一遍。")
+    lines = body.split("\n")
+    wanted = [line for line in old.split("\n") if line.strip()]
+    if not wanted:
+        return "要换的那段只有空白，文件里对不上。"
+    first = wanted[0].strip()
+    at = [i for i, line in enumerate(lines) if line.strip() == first]
+    if not at:
+        return (f"要换的那段在文件里一处都没有，第一行「{first[:80]}」也找不到。"
+                "先用 file_find_in_content 找到它、或按行号 file_read 看原文，照原文抄（空格、空行一个都不能差）。")
+    span = max(old.count("\n") + 1, 2)
+    actual = "\n".join(lines[at[0]:at[0] + span])[:500]
+    where = "、".join(str(i + 1) for i in at[:5])
+    return (f"第一行在第 {where} 行找得到，往下就对不上了。文件里从第 {at[0] + 1} 行起实际是：\n{actual}\n"
+            "照这个原文抄（空格、空行、数字一个都不能差）。")
 
 
 def _ambiguous_hint(body: str, old: str, found: int) -> str:

@@ -150,6 +150,11 @@ def _bounded_text(value, key, text, cap=None):
     return text[:low]
 
 
+def _window_cut_hint(stopped: int, wanted: int, prefix: str = "") -> str:
+    return (prefix + f"这个窗口超过一次能回的字数，只回到第 {stopped} 行（不含），不是你要的第 {wanted} 行。"
+            f"接着读带 start_line={stopped}；想一次少读点就把窗口开小。")
+
+
 def _bounded_log_text(result, item, text):
     low, high = 0, min(len(text), 2000)
     while low < high:
@@ -2031,7 +2036,22 @@ class ProjectTools:
         result["content"] = _bounded_text({"ok": True, **result}, "content", text,
             cap=PROJECT_READ_MAX_RESULT_CHARS)
         result["truncated"] = result["content"] != text
-        if skill_file_note:
+        if result["truncated"]:
+            # ⚠ 2026-09-28 隔离真机第 95 轮 sr-20260928090643-EN9AKT1A92（信息安全培训 PPT，追问「第 3 页拆成两页」）：
+            #   file_read build_deck.py 0..256 被字数上限截在 ~170 行，回执却写 end_line=256、
+            #   只多一个 truncated=true——没说停在哪。模型接着要 0..180、180..256（中间静静漏掉
+            #   一截），又换 project_read 把整份读了三遍：改一处之前 11 次读同一个文件。
+            #   截断时退回到整行，end_line 报真的，给出 nextStartLine 和一句接着读的话。
+            #   先按带着提示的体积重新量一次，别让提示把结果顶过上限。
+            sample = {"ok": True, **result, "nextStartLine": 10 ** 7,
+                      "hint": _window_cut_hint(10 ** 7, 10 ** 7, skill_file_note)}
+            cut = _bounded_text(sample, "content", text, cap=PROJECT_READ_MAX_RESULT_CHARS)
+            whole = cut[:cut.rfind("\n") + 1] if "\n" in cut else cut
+            result["content"] = whole
+            result["end_line"] = start + whole.count("\n") + (0 if whole.endswith("\n") or not whole else 1)
+            result["nextStartLine"] = result["end_line"]
+            result["hint"] = _window_cut_hint(result["end_line"], min(end, len(lines)), skill_file_note)
+        elif skill_file_note:
             result["hint"] = skill_file_note
         return result
 

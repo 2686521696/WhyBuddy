@@ -71,7 +71,9 @@ def test_file_str_replace_uses_old_str_and_is_fail_closed(setup):
     missing = execute(setup, "file_str_replace", {
         "file": "src/App.tsx", "old_str": "no-such-line", "new_str": "x",
     })
-    assert missing == {"ok": False, "error": "project_str_replace_not_found"}
+    # 2026-09-28 第 95 轮起对不上时附上为什么（test_replace_not_found_says_why）。
+    assert {k: v for k, v in missing.items() if k != "hint"} == {"ok": False, "error": "project_str_replace_not_found"}
+    assert "找不到" in missing["hint"]
     execute(setup, "file_write", {"file": "src/App.tsx", "content": "task\ntask\n"})
     ambiguous = execute(setup, "file_str_replace", {
         "file": "src/App.tsx", "old_str": "task", "new_str": "item",
