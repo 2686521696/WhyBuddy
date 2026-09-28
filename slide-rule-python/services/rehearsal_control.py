@@ -2636,6 +2636,35 @@ async def _park_ask(
     yield _complete(state)
 
 
+#: 写了计划、没提交批准就要收尾时的提醒。只陈述现场和两条出路，不替它决定。
+PLAN_NOT_SUBMITTED_REMINDER = (
+    "你写了计划（write_plan），但还没提交批准：用户那边没有批准卡片，点不了任何东西，"
+    "这一轮收尾之后没人能让它往下走。要用户批准就调 exit_plan_mode；还有要问的就用 ask_user_question。"
+)
+
+
+def _plan_written_unsubmitted(state: V5SessionState) -> bool:
+    """最近一次计划动作是 write_plan，之后没有提交（plan_approval）、批准或退出。
+
+    ⚠ 2026-09-28 隔离真机第 88 轮 sr-20260928051506-DCA1VEMN9M（每日习惯打卡网页，装了 systematic-debugging）：
+      模型 write_plan 之后说「计划已保存，等待批准后开始创建网页」就收尾——没调 exit_plan_mode。
+      界面上既没有批准卡片，也看不到计划，只有那句话；驱动等了 45 分钟没有东西可点。其它轮次
+      都是 plan_written → plan_approval。write_plan 只是落稿，exit_plan_mode 才出卡片
+      （_park_plan_approval）；收尾那里没人检查「落了稿却没出卡」。
+    """
+    if plan_execution_authorized(state):
+        return False
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if not isinstance(row, dict):
+            continue
+        kind = row.get("kind")
+        if kind == "plan_written":
+            return True
+        if kind in ("plan_approval", "plan_approved", "plan_exited"):
+            return False
+    return False
+
+
 async def _park_plan_approval(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]:
     plan = latest_control_plan(state)
     if not str(plan.get("planContent") or "").strip():
@@ -4894,6 +4923,8 @@ async def _control_llm_loop(
     readonly_streak = ReadOnlyStreak.from_state(
         getattr(state, "controlReadOnly", None)
     )
+    # 写了计划没提交就收尾：一回合只提醒一次（见 _plan_written_unsubmitted 头注）。
+    unsubmitted_plan_nudged = False
 
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
@@ -5202,6 +5233,29 @@ async def _control_llm_loop(
                     ):
                         yield event
                     return
+                offered_names = {
+                    ((item.get("function") or {}).get("name"))
+                    for item in (list_control_tools(state) if tools is None else list(tools or []))
+                    if isinstance(item, dict)
+                }
+                if (
+                    tools != []
+                    and not unsubmitted_plan_nudged
+                    and "exit_plan_mode" in offered_names
+                    and _plan_written_unsubmitted(state)
+                ):
+                    unsubmitted_plan_nudged = True
+                    if content:
+                        spoken = _with_deliverable_links(state, content)
+                        _append_transcript(
+                            state, {"role": "assistant", "kind": "control_text", "text": spoken}
+                        )
+                        await _apersist(state)
+                        yield {"type": "control_text", "text": spoken}
+                    messages.append({"role": "assistant", "content": content})
+                    _push_system_reminder(messages, PLAN_NOT_SUBMITTED_REMINDER)
+                    print("[control] plan_written_unsubmitted nudge", flush=True)
+                    continue
                 text = _with_deliverable_links(state, content or empty_text or CANNED_FAILURE)
                 _append_transcript(
                     state, {"role": "assistant", "kind": "control_text", "text": text}
