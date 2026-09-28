@@ -617,6 +617,8 @@ const ImSurfaceContext = React.createContext<{
   deliveryVerdict?: DeliveryVerdict | null;
   /** 工程此刻是哪一轮做出来的（latestDeliveringTurnId）。判定和验收截图挂这一轮的卡。 */
   verdictTurnId?: string | null;
+  /** 被错误打断的那一轮（会话停在 awaitReason=error 时的最新一轮）。 */
+  stoppedTurnId?: string | null;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -635,6 +637,7 @@ const ImSurfaceContext = React.createContext<{
   hasOfficeArtifact: false,
   deliveryVerdict: null,
   verdictTurnId: null,
+  stoppedTurnId: null,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -803,6 +806,7 @@ function ImAssistantMessage() {
       deliveryBlockedReasons={
         turn.id === ctx.verdictTurnId ? deliveryVerdict?.blockedReasons : undefined
       }
+      interrupted={Boolean(ctx.stoppedTurnId) && turn.id === ctx.stoppedTurnId}
       onOpen={() => {
         window.dispatchEvent(
           new CustomEvent("sliderule:open-deliverable")
@@ -1041,6 +1045,7 @@ export function ClaudeChatSurface({
   controlTodo = null,
   projectId = null,
   deliverableKind = "web-app",
+  stoppedByError = false,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -1066,6 +1071,8 @@ export function ClaudeChatSurface({
   runtimeKind?: "html-prototype" | "project";
   /** 工程档已落库的源码版本；结果卡靠它判断有没有真的产出。 */
   projectRevision?: string | null;
+  /** 会话停在 awaitReason=error（这一轮被错误打断）。结果卡不许画成「任务已完成」。 */
+  stoppedByError?: boolean;
   /** 模型自己的待办；浮层和后续建议行读它，不进聊天正文。 */
   controlTodo?: Array<{
     id?: string;
@@ -1166,6 +1173,7 @@ export function ClaudeChatSurface({
       hasOfficeArtifact,
       deliveryVerdict,
       verdictTurnId: latestDeliveringTurnId(uiTurns, deliverableKind),
+      stoppedTurnId: stoppedByError && !isRunning ? latestTurn?.id ?? null : null,
     }),
     [
       publishClosure,
@@ -1186,6 +1194,7 @@ export function ClaudeChatSurface({
       deliverableKind,
       hasOfficeArtifact,
       deliveryVerdict,
+      stoppedByError,
     ]
   );
 
@@ -1726,6 +1735,7 @@ function SlideRuleUnified({
                   }
                   projectRevision={sessionState.projectRevision}
                   controlTodo={sessionState.controlTodo}
+                  stoppedByError={sessionState.awaitReason === "error"}
                   projectId={sessionState.projectId}
                   deliverableKind={deliverableKind}
                   onChallenge={id =>

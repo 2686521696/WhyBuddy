@@ -172,7 +172,7 @@ export type ResultCardModel = {
    * 卡外那行：`done` 画「✓ 任务已完成」；`undelivered` 画「还没通过交付验收」。
    * 网页工程只认宿主判定（opts.delivered），见 resultCardModel。
    */
-  status: "done" | "undelivered";
+  status: "done" | "undelivered" | "interrupted";
   /**
    * 没交付的是哪一种：`environment` = 验收在这个环境里没能跑起来（不是应用的问题），
    * 其余一律 `not_passed`。只在 status 为 undelivered 时有意义。
@@ -234,6 +234,15 @@ export function resultCardModel(
     delivered?: boolean | null;
     /** 宿主给的缺项码（/delivery 的 blockedReasons），只给最新一轮。 */
     deliveryBlockedReasons?: readonly string[] | null;
+    /**
+     * 这一轮是被错误打断的（会话 awaitReason=error，例如 LLM 网关 502），只给最新一轮。
+     *
+     * ⚠ 2026-09-28 隔离真机第 98 轮 sr-20260928102234-1H36JF36XP（社区超市经营分析 Excel）：
+     *   模型改完脚本、重新生成了一版、正在核验（待办 3/4）时服务商网关 502，run 记为 failed。
+     *   卡片却画「✓ 任务已完成」，下面紧挨着「推演中断：LLM 服务商网关 502……本轮工程任务已停止」。
+     *   办公文件只看「产物库里有没有」——停之前写出过一版就算完成。有文件不等于这轮做完了。
+     */
+    interrupted?: boolean;
   } = {}
 ): ResultCardModel | null {
   if (!turn || turn.status === "streaming") return null;
@@ -255,7 +264,11 @@ export function resultCardModel(
   // 网页工程「任务已完成」只认宿主判定；办公文件上面已经按产物库证据卡过。
   const verdictGated = isProject && !office && opts.delivered !== undefined;
   return {
-    status: verdictGated && opts.delivered !== true ? "undelivered" : "done",
+    status: opts.interrupted
+      ? "interrupted"
+      : verdictGated && opts.delivered !== true
+        ? "undelivered"
+        : "done",
     undeliveredWhy: onlyEnvironmentBlocked(opts.deliveryBlockedReasons)
       ? "environment"
       : "not_passed",

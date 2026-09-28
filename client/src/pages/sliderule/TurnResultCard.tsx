@@ -76,6 +76,7 @@ export function TurnResultCard({
   hasOfficeArtifact,
   delivered,
   deliveryBlockedReasons,
+  interrupted = false,
   onOpen,
   onRetry,
 }: {
@@ -92,6 +93,8 @@ export function TurnResultCard({
   delivered?: boolean | null;
   /** 宿主缺项码，只给最新一轮。用来分辨「没通过」和「没能跑起来」。 */
   deliveryBlockedReasons?: readonly string[] | null;
+  /** 这一轮被错误打断（会话停在 error），只给最新一轮。 */
+  interrupted?: boolean;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
@@ -107,6 +110,7 @@ export function TurnResultCard({
     hasOfficeArtifact,
     delivered,
     deliveryBlockedReasons,
+    interrupted,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
@@ -182,6 +186,13 @@ export function TurnResultCard({
         {model.status === "done" ? (
           <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600">
             <Check className="h-3.5 w-3.5" /> 任务已完成
+          </span>
+        ) : model.status === "interrupted" ? (
+          <span
+            className="inline-flex items-center gap-1 text-[12px] text-amber-600"
+            data-testid="turn-result-interrupted"
+          >
+            中途停了：文件是停下前那一版
           </span>
         ) : (
           <span
