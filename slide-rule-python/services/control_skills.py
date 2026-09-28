@@ -100,13 +100,31 @@ def skill_tool_description(skills: Sequence[SkillInfo]) -> str:
     return f"{_SKILL_TOOL_LEAD}\n\n{catalog_xml(skills)}"
 
 
+def skill_base_dir(skill: SkillInfo) -> str:
+    """这份技能在沙盒里的目录（工作区根下）。path 是 `.sliderule/skills/<name>/SKILL.md`。"""
+    path = str(skill.path or "").replace("\\", "/")
+    return path.rsplit("/", 1)[0] + "/" if path.lower().endswith("/skill.md") else ""
+
+
 def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
     extra = f' args="{_xml_escape(args)}"' if args else ""
+    base = skill_base_dir(skill)
+    # ⚠ 2026-09-28 隔离真机第 80 轮 sr-20260928014044-76AFAFC2M1（装了 webapp-testing，追问
+    #   「用 webapp-testing 技能把新增、勾选完成、删除点一遍」）：正文写 `python scripts/with_server.py
+    #   --help`，模型在工作区根原样照跑——脚本在 .sliderule/skills/webapp-testing/scripts/ 下。
+    #   正文里的相对路径是相对技能目录的；只给一个 path 属性，模型没把它当成根。
+    #   抄 Claude Code 的 skill 回执：正文前先说「Base directory for this skill」。
+    lead = (
+        f"Base directory for this skill: {base}（工作区根下）。"
+        f"正文里的相对路径（scripts/…、resources/…、references/…）都相对这个目录；"
+        f"在工作区里跑要写全：python3 {base}scripts/…\n\n"
+        if base else ""
+    )
     return (
         f'<skill name="{_xml_escape(skill.name)}" '
         f'description="{_xml_escape(skill.description)}" '
         f'path="{_xml_escape(skill.path)}"{extra}>\n'
-        f"{skill.body}\n"
+        f"{lead}{skill.body}\n"
         f"</skill>"
     )
 
