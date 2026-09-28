@@ -203,6 +203,20 @@ def catalog_skill_slug(path: str) -> str | None:
     return normalize_skill_name(match.group(1))
 
 
+def catalog_skill_file(path: str) -> tuple[str, str] | None:
+    """`.sliderule/skills/<slug>/<rel>`（任意文件）→ (slug, rel)。前缀写法同 catalog_skill_slug。"""
+    raw = str(path or "").strip().replace("\\", "/").lstrip("/")
+    lowered = raw.lower()
+    for prefix in ("home/ubuntu/", "home/user/workspace/", "workspace/", "app/"):
+        if lowered.startswith(prefix):
+            raw = raw[len(prefix):]
+            lowered = raw.lower()
+    match = re.fullmatch(r"(?:\.sliderule/)?skills/([A-Za-z0-9][\w.-]{0,63})/(.+)", raw)
+    if match is None or ".." in match.group(2).split("/"):
+        return None
+    return normalize_skill_name(match.group(1)), match.group(2)
+
+
 def mentioned_skill_playbooks(skills: Sequence[SkillInfo]) -> str:
     """点名技能的名字和一句话。正文不进 system，也不在工程树里。"""
     live = [skill for skill in skills if skill.enabled]

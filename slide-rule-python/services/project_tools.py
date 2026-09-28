@@ -50,7 +50,8 @@ from services.deliverable_kind import (
     office_facts_sentence,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
-from services.control_skills import catalog_skill_slug
+from services.control_skills import catalog_skill_file, catalog_skill_slug, normalize_skill_name
+from services import skill_catalog_store as _skill_catalog
 from services.skill_catalog_store import installed_skill_infos, local_seed_skill_info
 
 
@@ -70,6 +71,29 @@ def _skill_body_for_catalog_path(path: str, owner_id: str | None) -> str | None:
     if seeded is not None and getattr(seeded, "body", None):
         return seeded.body
     return None
+
+
+def _skill_package_files(slug: str, owner_id: str | None) -> dict[str, str] | None:
+    """这个账号装了的那份技能包开箱后的文本文件（相对技能根）。没装 / 取不到 → None。
+
+    ⚠ 2026-09-28 隔离真机第 82 轮 sr-20260928024607-KCH4NABCBH（记账网页装了 webapp-testing，追问「把添加、修改、删除
+      点一遍」）：模型 file_read `.sliderule/skills/webapp-testing/examples/element_discovery.py`、
+      `console_logging.py` → project_file_not_found，没有提示。上面只给 SKILL.md 开了口子；其余
+      文件在沙盒里（开箱写进去的），不在源码树。跟开箱走同一个展开（catalog.unpack_package——
+      skill_hydrate.files_for_package 就是它加路径前缀），两边不会说两套。增强类，取不到就按没有处理（§七）。
+    """
+    if not slug or not owner_id:
+        return None
+    try:
+        catalog = _skill_catalog.get_skill_catalog_store()
+        for pkg in catalog.list_installed(owner_id):
+            if normalize_skill_name(str(pkg.get("slug") or "")) == slug:
+                return dict(catalog.unpack_package(pkg))
+    except Exception:
+        return None
+    return None
+
+
 from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
@@ -1830,14 +1854,28 @@ class ProjectTools:
                 "content": "", "truncated": False,
             }
         skill_read = False
+        skill_file_note = ""
         if path not in files:
             # ⚠ 2026-09-22 BABCJGGB44：file_read .sliderule/skills/.../SKILL.md
             #   得到 project_file_not_found，模型接着 bash `find /`。
             skill_body = _skill_body_for_catalog_path(path, self.owner_id)
-            if skill_body is None:
-                raise missing_file(files, path)
-            files = {**files, path: skill_body}
-            skill_read = True
+            if skill_body is not None:
+                files = {**files, path: skill_body}
+                skill_read = True
+            else:
+                located = catalog_skill_file(path)
+                package = _skill_package_files(located[0], self.owner_id) if located else None
+                if package is None:
+                    raise missing_file(files, path)
+                if located[1] not in package:
+                    listed = ", ".join(sorted(package)[:30])
+                    missing = ProjectNotFound("project_file_not_found")
+                    missing.hint = f"技能 {located[0]} 里没有 {located[1]}。它的文件（相对技能目录）：{listed}"
+                    raise missing
+                files = {**files, path: package[located[1]]}
+                skill_file_note = (
+                    f"这是已装技能 {located[0]} 的文件，不在工程源码里；沙盒里在 "
+                    f".sliderule/skills/{located[0]}/{located[1]}，脚本用 shell_exec 跑那个路径。")
         if not explicit_read_window(args):
             pointer = _pointer_file(path, files[path], revision)
             if skill_read:
@@ -1845,6 +1883,8 @@ class ProjectTools:
                     "这是技能正文的摘要，不是工程文件。"
                     "全文已经在 skill 回执里。不要在沙盒里 find .sliderule/skills。"
                 )
+            elif skill_file_note:
+                pointer["hint"] = skill_file_note + str(pointer.get("hint") or "")
             return pointer
         lines = files[path].splitlines(keepends=True)
         if getattr(args, "start_line", None) is not None:
@@ -1866,6 +1906,8 @@ class ProjectTools:
         result["content"] = _bounded_text({"ok": True, **result}, "content", text,
             cap=PROJECT_READ_MAX_RESULT_CHARS)
         result["truncated"] = result["content"] != text
+        if skill_file_note:
+            result["hint"] = skill_file_note
         return result
 
     def _file_find_in_content(self, files, revision, args):
