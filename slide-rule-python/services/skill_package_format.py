@@ -16,23 +16,6 @@ MAX_PACKAGE_FILES = 200
 MAX_FILE_BYTES = 512 * 1024
 SKILL_MD = "skill.md"
 
-_TEXT_SUFFIXES = (
-    ".md",
-    ".py",
-    ".sh",
-    ".json",
-    ".txt",
-    ".yml",
-    ".yaml",
-    ".toml",
-    ".css",
-    ".js",
-    ".ts",
-    ".tsx",
-    ".html",
-    ".csv",
-    ".gitignore",
-)
 
 
 def unpack_skill_zip(blob: bytes) -> dict[str, str]:
@@ -116,13 +99,20 @@ def _skill_root_prefix(names: Iterable[str]) -> str:
 
 
 def _looks_text(path: str, data: bytes) -> bool:
+    """没有 NUL、能按 UTF-8 解开，就是文本——不看后缀。
+
+    ⚠ 2026-09-28 隔离真机第 79 轮 sr-20260928012108-PZDWPXT0K9（office-skills，追问「用 office-skills 自带的校验
+      脚本再检查一遍」）：技能文件终于进了沙盒，模型找到 scripts/office/validate.py 去跑，
+      失败在「缺 schemas/ecma/fouth-edition/opc-relationships.xsd」。office-skills.zip
+      100 个文件只解出 60 个——39 个 .xsd 全被这里丢了：它们是 UTF-8 的 XML，可后缀不在
+      白名单、也不在末尾那几个里。上一版还有反面的坑：后缀在白名单就不验 UTF-8，一份
+      latin-1 的 .txt 会让下面 decode 抛错、整包开不出来。
+    二进制（字体、图片）仍然跳过：沙盒写入走文本。
+    """
     if b"\x00" in data:
         return False
-    lower = path.lower()
-    if lower.endswith(_TEXT_SUFFIXES) or lower.split("/")[-1] in {"skill.md", "readme", "license", "makefile"}:
-        return True
     try:
         data.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    return lower.endswith((".xml", ".svg", ".mmd", ".jinja", ".j2"))
+    return True
