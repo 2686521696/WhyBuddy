@@ -76,7 +76,9 @@ def test_file_str_replace_uses_old_str_and_is_fail_closed(setup):
     ambiguous = execute(setup, "file_str_replace", {
         "file": "src/App.tsx", "old_str": "task", "new_str": "item",
     })
-    assert ambiguous == {"ok": False, "error": "project_str_replace_ambiguous"}
+    # 2026-09-28 第 92 轮起多处时附上几处、哪几行（test_ambiguous_replace_says_where）。
+    assert {k: v for k, v in ambiguous.items() if k != "hint"} == {"ok": False, "error": "project_str_replace_ambiguous"}
+    assert "出现了 2 处" in ambiguous["hint"]
 
 
 def test_sudo_true_is_rejected_after_the_schema_accepts_it(setup):

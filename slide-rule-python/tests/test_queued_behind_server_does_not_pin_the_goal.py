@@ -28,7 +28,10 @@ from services.control_run_service import ControlRunService, goal_released_by
 from test_project_tools import create, setup  # noqa: F401  （夹具）
 from test_queued_command_names_its_blocker import _dispatch, _hold_runtime
 
-ROUND33_BUILD = {"command": "npm run build"}
+# ⚠ 2026-09-28 第 92 轮起，排在服务器后面的构建检查（第 33 轮这条 npm run build）会被宿主当场
+#   撤回（test_build_behind_the_dev_server_is_withdrawn），挂不到目标上了。仍会排队、仍会钉住目标的
+#   是验收替不了的命令——用真机排过队的 npm test。
+ROUND33_BUILD = {"command": "npm test -- --run"}
 
 
 def _queued_build(setup):
@@ -108,7 +111,6 @@ def test_the_wake_prompt_says_the_queued_build_never_ran(setup):
 
     build = _queued_build(setup)
     text = operation_settled_notice([build])
-    # 真机那条的 input 就是受管的 {"command": "build"}（npm run build 被归成 build）
-    assert build.operationId in text and "runtime.exec build" in text
+    assert build.operationId in text and "runtime.exec npm test -- --run" in text
     assert "还没开始" in text and "不能当成已通过" in text
     assert "已结束" not in text

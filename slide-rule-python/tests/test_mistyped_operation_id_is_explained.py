@@ -24,7 +24,10 @@ from test_queued_command_names_its_blocker import _dispatch, _hold_runtime
 def _queued_build(setup):
     project = create(setup)
     _hold_runtime(setup, project)
-    queued = _dispatch(setup, "shell_exec", {"command": "npm run build"})
+    # ⚠ 2026-09-28 第 92 轮起，排在服务器后面的构建检查会被宿主当场撤回（见
+    #   test_build_behind_the_dev_server_is_withdrawn），不会再留在队里等人来取消；
+    #   仍会排队的是验收替不了的命令，第 49 轮真机就有这条 npm test。
+    queued = _dispatch(setup, "shell_exec", {"command": "npm test -- --run"})
     assert queued["status"] == "queued", queued
     return queued["operationId"]
 

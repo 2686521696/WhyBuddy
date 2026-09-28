@@ -58,7 +58,9 @@ def test_str_replace_is_fail_closed_when_the_needle_is_missing_or_ambiguous(setu
     ambiguous = execute(setup, "project_str_replace", {
         "path": "src/App.tsx", "oldStr": "task", "newStr": "item",
     })
-    assert ambiguous == {"ok": False, "error": "project_str_replace_ambiguous"}
+    # 2026-09-28 第 92 轮起多处时附上几处、哪几行（test_ambiguous_replace_says_where）。
+    assert {k: v for k, v in ambiguous.items() if k != "hint"} == {"ok": False, "error": "project_str_replace_ambiguous"}
+    assert "出现了 2 处（第 1、2 行）" in ambiguous["hint"]
     assert read_body(setup, "src/App.tsx")["content"] == "task\ntask\n"
 
 

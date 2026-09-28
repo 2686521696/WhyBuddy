@@ -218,6 +218,7 @@ class KernelStrReplaceArguments(ToolArguments):
     path: str = Field(min_length=1, max_length=240)
     oldStr: str = Field(min_length=1, max_length=512 * 1024)
     newStr: str = Field(max_length=512 * 1024)
+    replaceAll: bool = False
 
 
 class FileReadArguments(ToolArguments):
@@ -241,6 +242,7 @@ class FileStrReplaceArguments(ToolArguments):
     file: str = Field(min_length=1, max_length=240)
     old_str: str = Field(min_length=1, max_length=512 * 1024)
     new_str: str = Field(max_length=512 * 1024)
+    replace_all: bool = False
     sudo: bool = False
 
 
@@ -414,6 +416,7 @@ class GithubReplaceArguments(ToolArguments):
     path: str = Field(min_length=1, max_length=240)
     old_string: str = Field(min_length=1, max_length=512 * 1024)
     new_string: str = Field(max_length=512 * 1024)
+    replace_all: bool = False
     sudo: bool = False
 
 
@@ -691,10 +694,10 @@ _DESCRIPTIONS = {
     "project_export": "Return the authorized download path for an immutable source ZIP and hash manifest. Application data, environment secrets and preview credentials are separate. Downloading source is not deployment or verified delivery.",
     "project_patch": "Apply exact file replacements/deletions to this session project using expectedRevision and per-file expectedSha256 (null only for new files). A ready runtime queues source/assets to its existing worker and returns operationId: poll project_status until completed with synchronized=true before using the returned new revision. Dependencies/startup configuration require a stopped, reconciled runtime. Submission is not completion; old verification is not proof for new source. Prefer file_write or file_str_replace for an ordinary single-file edit.",
     "project_write": "Alias of file_write with path/content. Prefer file_write.",
-    "project_str_replace": "Alias of file_str_replace with path/oldStr/newStr. Prefer file_str_replace.",
+    "project_str_replace": "Alias of file_str_replace with path/oldStr/newStr (replaceAll for every occurrence). Prefer file_str_replace.",
     "file_read": "Read one saved source file. file is a project-relative path (absolute sandbox prefixes are stripped). Default (no start_line/end_line) returns path, sha256, size and a short excerpt — not the full text. Pass start_line/end_line (0-based, exclusive end) for a window. sudo=true is rejected. Do not send approvalRef or hashes.",
     "file_write": "Overwrite or append one saved source file. Pass file, content, and optional append/leading_newline/trailing_newline. sudo=true is rejected. Do not send approvalRef, revision, or SHA256 — the server binds the current approved plan. Prefer file_str_replace for a unique in-file edit. Multi-file CAS or deletion still uses project_patch. Office files (.pptx/.docx/.xlsx) are not text source: write them with contentEncoding=base64 (ZIP bytes) or generate them in bash so the host can collect them. A UTF-8 string at an office path is rejected.",
-    "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
+    "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once; if it occurs several times the call fails and says on which lines — add surrounding text so it matches once, or pass replace_all=true to change every occurrence (e.g. one colour used in many rules). sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
     "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other command runs as grok-build bash in /home/user/workspace; multi-line commands and heredocs are fine. The command is at most {command_max} characters — for a longer script, file_write it first, then run it (python3 that file). An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. sudo is rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
@@ -719,7 +722,7 @@ _DESCRIPTIONS = {
     "make_manus_page": "Switch the preview to one existing file. file may be a source .html, or a collected .pptx/.docx/.xlsx (the officeFiles path). A missing path fails. In an office workspace, omitting file shows the newest collected office file; in a web project it shows the project page. This does not start Vite.",
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
-    "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
+    "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero matches fail closed; several matches fail and say on which lines unless replace_all=true, which changes every occurrence. Same store as file_str_replace.",
     "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). Multi-line commands and heredocs are fine; the command is at most {command_max} characters — for a longer script, file_write it first, then python3 that file. An office workspace keeps the same sandbox across commands (installed packages stay). {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace are listed on this receipt as officeFiles; that path is the deliverable — do not base64 the file into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. is_background=true returns running, not completion. sudo is rejected.",
     "grep": "Search saved source with a regular expression across the tree. Optional path is a file or directory prefix; optional glob limits names. This is not shell execution.",
     "list_dir": "List saved source paths under path. path may be '.' for the whole tree.",

@@ -361,6 +361,39 @@ def _is_build_check(data) -> bool:
     return bool(re.search(r"\bnpm run (?:build|check)\b|\btsc\b|\bvite build\b", script))
 
 
+def withdraw_unrunnable_build(adapter, body):
+    """排在常驻开发服务器后面的「看看能不能构建」，宿主当场撤回，不留在队里。
+
+    ⚠ 2026-09-28 隔离真机第 92 轮 sr-20260928071407-JS538JZTFK（时间记录网页，四轮追问）：
+      三轮追问里都是 `shell_exec npm run build` → queued（排在开发服务器后面）→ 照回执提示
+      shell_kill_process → project_verify，一次确认要三发；同一轮里还犯了两遍。翻全库：
+      这种排队 37 次，26 次是 npm run build、4 次 npm run check；只有 18 次被模型取消，
+      剩下的烂在队里——服务器一停，一条过期的构建先占住工程。
+      它在服务器停之前永远不会开始，开始时对的也不再是模型想确认的那一版。
+      所以这一种（且只有这一种：挡路的是没在停的开发服务器、排的是构建检查）当场撤回，
+      回执说清撤了、为什么、该走 project_verify。别的命令排队照旧只解释，不替模型做主。
+    """
+    if not isinstance(body, dict) or body.get("status") != "queued" or not body.get("operationId"):
+        return body
+    blocker = queue_blocker(adapter, body["operationId"])
+    if blocker is None or not (blocker["neverYields"] and blocker["buildCheck"]):
+        return body
+    try:
+        if adapter.supervisor is None:
+            adapter.store.request_operation_cancel(body["operationId"], owner_id=adapter.owner_id)
+        else:
+            adapter.supervisor.cancel(body["operationId"], owner_id=adapter.owner_id)
+        status = adapter.store.get_operation(body["operationId"], owner_id=adapter.owner_id).status
+    except Exception:
+        return body  # 撤不掉就照旧排队 + 解释（增强类，fail-open）
+    hid = blocker["operationId"]
+    return {**body, "status": status, "withdrawn": True, "commandFinished": False,
+        "blockedBy": {k: blocker[k] for k in ("operationId", "kind", "status")},
+        "hint": (f"这条构建没有跑，宿主已经把它撤回：开发服务器 {hid} 在跑，占着工程，服务器不停它永远不会开始。"
+                 "确认能不能构建不用停服务器：用 project_verify，它在服务器旁边对当前版本跑 npm run build"
+                 "（含类型检查），回执 verification.build 里有 buildExitCode。不用再 shell_kill_process 这一条。")}
+
+
 def explain_queue(adapter, body):
     """queued 的回执说清被谁挡住、该怎么办。见 queue_blocker。"""
     if not isinstance(body, dict) or body.get("status") != "queued" or not body.get("operationId"):
@@ -1814,7 +1847,8 @@ class ProjectTools:
                 new = parsed.new_string
             else:
                 new = parsed.newStr
-            changes = kernel_str_replace_changes(files, path, old, new)
+            replace_all = bool(getattr(parsed, "replace_all", False) or getattr(parsed, "replaceAll", False))
+            changes = kernel_str_replace_changes(files, path, old, new, replace_all=replace_all)
         result = self._patch(project, PatchArguments.model_validate({
             "approvalRef": approved_reference(authority),
             "expectedRevision": current.revision,

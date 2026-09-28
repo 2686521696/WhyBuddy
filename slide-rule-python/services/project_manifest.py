@@ -131,8 +131,17 @@ def kernel_write_changes(files: Mapping[str, str], path: str, content: str, *, a
     }]
 
 
-def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, new: str) -> list[dict]:
-    """唯一旧串替换。0 次或多于 1 次都 fail-closed，不许默默改错处。"""
+def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, new: str,
+                               *, replace_all: bool = False) -> list[dict]:
+    """唯一旧串替换。0 次或多于 1 次都 fail-closed，不许默默改错处。
+
+    ⚠ 2026-09-28 隔离真机第 92 轮 sr-20260928071407-JS538JZTFK（时间记录网页，追问「整体配色换成
+      暖色调，按钮改成圆角」）：style.css 里同一个色值、同一句 `border-radius: 3px` 出现在好几条
+      规则里。回执只有一个裸的 project_str_replace_ambiguous——几处、在哪几行、怎么办一个字没有，
+      也没有「全部替换」可选。模型一轮里撞了 10 次，中间 grep 一次才摸到行号。
+      现在：多处时照旧拒（不许默默改第一处），但说清几处、哪几行、两条出路；
+      replace_all=True 是明说「每一处都换」（grok / Claude 的 Edit 都有这个开关）。
+    """
     path = source_path(path)
     if path not in files:
         raise ValueError("project_file_not_found")
@@ -144,13 +153,29 @@ def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, ne
     found = body.count(old)
     if found == 0:
         raise ValueError("project_str_replace_not_found")
-    if found > 1:
-        raise ValueError("project_str_replace_ambiguous")
+    if found > 1 and not replace_all:
+        exc = ValueError("project_str_replace_ambiguous")
+        exc.hint = _ambiguous_hint(body, old, found)
+        raise exc
     return [{
         "path": path,
-        "content": body.replace(old, new, 1),
+        "content": body.replace(old, new) if replace_all else body.replace(old, new, 1),
         "expectedSha256": content_hash(body),
     }]
+
+
+def _ambiguous_hint(body: str, old: str, found: int) -> str:
+    lines, start = [], 0
+    while len(lines) < 8:
+        at = body.find(old, start)
+        if at < 0:
+            break
+        lines.append(body.count("\n", 0, at) + 1)
+        start = at + len(old)
+    shown = "、".join(str(n) for n in lines) + ("……" if found > len(lines) else "")
+    return (f"要换的那段在这个文件里出现了 {found} 处（第 {shown} 行），不知道该换哪一处，一处都没改。"
+            "只改其中一处：把要换的那段带上那一处前后的几行，让它只匹配一次；"
+            "每一处都要换（比如同一个色值用在好几条规则里）：加 replace_all=true。")
 
 
 def workspace_file_path(file: str, files: Mapping[str, str] | None = None) -> str:

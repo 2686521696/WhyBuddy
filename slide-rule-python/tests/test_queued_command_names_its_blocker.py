@@ -71,9 +71,11 @@ def test_a_command_behind_the_dev_server_says_who_blocks_it(setup):
     project = create(setup)
     holder = _hold_runtime(setup, project)
     result = _dispatch(setup, "shell_exec", {"command": "npm run build"})
-    assert result["ok"] is True and result["status"] == "queued", result
+    # ⚠ 2026-09-28 第 92 轮起：构建检查排在开发服务器后面，宿主当场撤回（见
+    #   test_build_behind_the_dev_server_is_withdrawn）。回执仍要说清是谁挡着、该走哪条路。
+    assert result["ok"] is True and result["status"] == "cancelled" and result["withdrawn"] is True, result
     assert result["blockedBy"] == {"operationId": holder, "kind": "runtime.start", "status": "running"}
-    hint = result["queueHint"]
+    hint = result["hint"]
     assert holder in hint
     # ⚠ 2026-09-27 第 41 轮起：排的是构建，出路不是停服务器，是 project_verify——它在服务器
     #   旁边对当前版本跑 npm run build，回执里有 buildExitCode。语义：不会开始 + 该走哪条路。
@@ -96,7 +98,7 @@ def test_a_foreground_shell_behind_the_dev_server_does_not_wait_it_out(setup, mo
     project = create(setup)
     _hold_runtime(setup, project)
     started = time.monotonic()
-    result = _dispatch(setup, "shell_exec", {"command": "npm run build"})
+    result = _dispatch(setup, "shell_exec", {"command": "python3 scripts/seed_demo_data.py"})
     assert result["status"] == "queued"
     assert time.monotonic() - started < 4
 
