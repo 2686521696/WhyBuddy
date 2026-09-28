@@ -2028,7 +2028,12 @@ class ProjectTools:
         else:
             end = len(lines)
         if start > len(lines) or end < start:
-            raise ValueError("invalid_project_offset")
+            # ⚠ 2026-09-28 隔离真机第 101 轮 sr-20260928112521-2KQWFPNSG7（保温杯推广方案 Word，追问「每章末尾加小结框」）：
+            #   file_read generate_plan.py 260..430，文件没那么长，回执只有裸错误码，不说有几行。
+            exc = ValueError("invalid_project_offset")
+            exc.hint = (f"{path} 一共 {len(lines)} 行（行号从 0 起，end_line 不含）。"
+                        f"start_line 要在 0..{len(lines)} 之间，end_line 不能小于 start_line。")
+            raise exc
         text = "".join(lines[start:end])
         result = {"revision": revision.revision, "path": path, "sha256": content_hash(files[path]),
             "start_line": start, "end_line": start + text.count("\n") + (0 if text.endswith("\n") or not text else 1),
@@ -2119,7 +2124,9 @@ class ProjectTools:
         if not explicit_read_window(args):
             return _pointer_file(path, text, revision)
         if args.offset > len(text):
-            raise ValueError("invalid_project_offset")
+            exc = ValueError("invalid_project_offset")
+            exc.hint = f"{path} 一共 {len(text)} 字；offset 是字数偏移，要在 0..{len(text)} 之间。"
+            raise exc
         result = {"revision": revision.revision, "path": path, "sha256": content_hash(text),
             "offset": args.offset, "nextOffset": args.offset + args.limit, "truncated": True, "totalChars": len(text)}
         # ⚠ `ok` 是**调用方**加的（`return {"ok": True, **self._read(...)}`），
