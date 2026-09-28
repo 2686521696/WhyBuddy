@@ -337,10 +337,17 @@ def queue_blocker(adapter, operation_id) -> dict | None:
         return None
     if holder.status in _TERMINAL and holder.pendingEvent is None:
         return None
+    # ⚠ 2026-09-28 隔离真机第 89 轮 sr-20260928060820-HRBKWESVYY（习惯打卡网页，追问「刷新后完成的习惯变回未完成」）：
+    #   browser_restart 先 cancel 在跑的那台、再 submit 一台新的。新那台的回执拿到「已经有开发服务器
+    #   fbcc… 在跑，这条启动是多余的…这条排队的取消掉」——而 fbcc 正是这次重启刚叫停的那台。
+    #   模型照做，取消了替补，两台都没了，下一发 project_verify → workspace_lease_lost，再 project_start
+    #   多花 70 秒。挡路的已经在停，就不是「常驻」「多余」，排着的这条是替补，它停下就轮到。
+    stopping = bool(holder.cancelRequested) or holder.status == "cancelling"
     return {"operationId": holder.operationId, "kind": holder.kind, "status": holder.status,
+        "stopping": stopping,
         # 开发服务器 running 就是常驻：等它结束等于等到租约过期。
-        "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL,
-        "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start",
+        "neverYields": holder.kind == "runtime.start" and holder.status not in _TERMINAL and not stopping,
+        "duplicateStart": operation.kind == "runtime.start" and holder.kind == "runtime.start" and not stopping,
         "buildCheck": operation.kind == "runtime.exec" and _is_build_check(operation.input)}
 
 
@@ -362,7 +369,10 @@ def explain_queue(adapter, body):
     if blocker is None:
         return body
     hid = blocker["operationId"]
-    if blocker["duplicateStart"]:
+    if blocker.get("stopping"):
+        hint = (f"这条排在 {hid}（{blocker['kind']}）后面，而 {hid} 已经在停（取消已发出）。它一停下这条就开始——"
+                f"这条是替补，不要取消它。用 project_status 带 {body['operationId']} 看它起来没有。")
+    elif blocker["duplicateStart"]:
         # ⚠ 2026-09-25 K1N7JX1FPS：这里原来也劝「先停掉挡路的」。模型照做，
         #   停掉在跑的那台，排队的旧启动顶上来，它再发一个——6 起 4 停。
         hint = (f"已经有开发服务器 {hid} 在跑，这条启动是多余的。预览、浏览器、验收都直接用 {hid}，"
