@@ -37,6 +37,16 @@ from typing import Any, Dict, List, Sequence, Tuple
 COMPACT_NOTICE_PREFIX = "【会话压缩】"
 #: 最近几条工具结果先留着——下一发 patch 往往还要用。
 _KEEP_TAIL_TOOLS = 2
+#: microcompact 保留最近工具正文的字数预算（至少留 _KEEP_TAIL_TOOLS 条）。
+#:
+#: ⚠ 2026-09-28 隔离真机第 99 轮 sr-20260928103951-6PN9CJ1KGR（家庭菜谱网页，追问「收藏的菜谱可以打分，按分数排序」）：
+#:   原来只按条数留最近 2 条。这一改要同时对着 main.tsx（44 行但 9.4k 字，要分两窗读）和
+#:   style.css（8.4k 字）——三份结果。读第三份，第一份就被折成「用 file_read/grep 再取」；
+#:   模型再读，又挤掉另一份。12 发全是读，一次没写，被「连着只看不写」闸停了。
+#:   立刻折叠本身是对的（09-20：短回合碰不到 60% 窗口线，旧正文会一直占着），错在按条数：
+#:   工作集是按字数算的。40k 字≈1 万 token，不到窗口的 5%，放得下一个小工程要同时看的
+#:   几份文件（第 99 轮三份 22.7k 字）；更早的照旧立刻折叠。
+_MICRO_KEEP_CHARS = 40_000
 #: 这些工具的正文是磁盘上的东西。立刻 snip，不等窗口 60%。
 _POINTER_TOOLS = frozenset({
     "file_read", "read_file", "project_read", "skill", "bash", "shell_exec",
@@ -228,7 +238,8 @@ def compact_messages(
 def microcompact_messages(messages: Sequence[Any]) -> Tuple[List[Dict[str, Any]], CompactReport]:
     """立刻折叠较早的 file_read / skill / bash 正文，不等窗口阈值。
 
-    磁盘是权威。旧工具输出只留路径桩，最近两条完整结果留给下一发对照。
+    磁盘是权威。旧工具输出只留路径桩；最近一段完整结果（_MICRO_KEEP_CHARS 字以内，
+    至少 _KEEP_TAIL_TOOLS 条）留给下一发对照。
     不另插【会话压缩】——那是窗口档的事。fail-open：折不动就原样返回。
     """
     source = [dict(row) if isinstance(row, dict) else {"role": "user", "content": str(row)}
@@ -238,7 +249,14 @@ def microcompact_messages(messages: Sequence[Any]) -> Tuple[List[Dict[str, Any]]
         i for i, row in enumerate(source)
         if row.get("role") == "tool" and _tool_name(source, i) in _POINTER_TOOLS
     ]
-    protected = set(bulky[-_KEEP_TAIL_TOOLS:])
+    protected: set[int] = set()
+    kept_chars = 0
+    for index in reversed(bulky):
+        size = len(str(source[index].get("content") or ""))
+        if len(protected) >= _KEEP_TAIL_TOOLS and kept_chars + size > _MICRO_KEEP_CHARS:
+            break  # 只留连续的最近一段：更早的不管多小都折，别让旧结果插队
+        protected.add(index)
+        kept_chars += size
     folded_names: List[str] = []
     out = source
     for index in bulky:

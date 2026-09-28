@@ -107,7 +107,8 @@ def test_折叠后的桩仍是json():
 
 
 def test_microcompact_snips_old_file_reads_without_waiting_for_window():
-    payload = json.dumps({"path": "src/App.tsx", "content": "X" * 4000}, ensure_ascii=False)
+    # 2026-09-28 第 99 轮起按字数留最近一段（_MICRO_KEEP_CHARS）；四份 15k 的读取仍只留最近两份。
+    payload = json.dumps({"path": "src/App.tsx", "content": "X" * 15000}, ensure_ascii=False)
     messages = [
         {"role": "system", "content": "你是控制面。"},
         {"role": "user", "content": "改标题"},
@@ -142,7 +143,8 @@ def test_microcompact_skill_stub_does_not_tell_model_to_file_read():
     payload = json.dumps({
         "ok": True,
         "skill": "office-skills",
-        "skill_message": '<skill name="office-skills">HOW TO MAKE PPT WITH PYTHON-PPTX ' + ("X" * 800) + "</skill>",
+        # 2026-09-28 第 99 轮起按字数留最近一段；正文要够大才会被折（本条测的是桩的措辞）。
+        "skill_message": '<skill name="office-skills">HOW TO MAKE PPT WITH PYTHON-PPTX ' + ("X" * 15000) + "</skill>",
     }, ensure_ascii=False)
     messages = [
         {"role": "system", "content": "你是控制面。"},
