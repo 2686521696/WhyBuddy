@@ -1409,6 +1409,29 @@ class ProjectTools:
             return command_receipt_from(self, operation.operationId)
         return self._snapshot(operation.operationId)
 
+    def _current_screen(self, operation):
+        """shell_view：终端此刻的最后一屏，不是日志第一页。
+
+        ⚠ 2026-09-28 隔离真机第 83 轮 sr-20260928031857-QGV5XCJ4GS（稍后阅读网页，追问「用 webapp-testing 点一遍」）：
+          `pip install playwright && playwright install chromium && with_server.py … -- python3 flow.py`
+          跑着，模型 shell_view 三次拿回同一段——日志开头 npm ci 的 npm notice（从 seq 0 起翻、
+          页满即止）。它只好猜「耗时在 Chromium 下载」；真实的尾巴是 Chromium 起不来
+          （libnspr4.so 缺失）、服务已停、回到提示符。跟 2026-09-25 _command_log_excerpt 修的是
+          同一个病（读头不读尾），那次只修了跑完的回执，看「正在跑的」这条入口没跟上（§四）。
+          跑完的交回跟 shell_wait 同一份回执；还在跑的给快照 + 尾屏。从头翻用 project_logs。
+        """
+        if operation.status in _TERMINAL and operation.kind == "runtime.exec":
+            return command_receipt_from(self, operation.operationId)
+        snap = self._snapshot(operation.operationId)
+        tail = _command_log_excerpt(self.store, operation.operationId, self.owner_id, snap.get("lastSeq"))
+        snap["screen"] = str(tail or "")[:FILE_READ_EXCERPT_CHARS]
+        total = getattr(tail, "total", None)
+        snap["hint"] = (
+            "screen 是终端此刻的最后一屏"
+            + (f"（共 {total} 字，只给最后 {len(snap['screen'])} 字）" if isinstance(total, int) and total > len(snap["screen"]) else "")
+            + "。从头翻用 project_logs。")
+        return snap
+
     def _snapshot(self, operation_id):
         source = self.store.snapshot_operation(operation_id, owner_id=self.owner_id)
         result = operation_snapshot(source)
@@ -1652,6 +1675,8 @@ class ProjectTools:
             wait = parsed.seconds if parsed.seconds is not None else 2
             operation = self._poll_operation(operation, wait)
             return self._settled_receipt(operation)
+        if name == "shell_view" and operation.kind in {"runtime.exec", "runtime.start"}:
+            return self._current_screen(operation)
         logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))
         if name == "browser_console_view":
             logs["console"] = "runtime"
