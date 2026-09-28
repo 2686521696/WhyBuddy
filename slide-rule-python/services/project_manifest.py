@@ -166,6 +166,15 @@ def kernel_str_replace_changes(files: Mapping[str, str], path: str, old: str, ne
     }]
 
 
+#: 模型把参数里的转义写成了字面字符：(写成的两个字符, 文件里真正的字符, 说法)。
+_LITERAL_ESCAPES = (
+    ("\\n", "\n", "\\n 应是换行"),
+    ("\\t", "\t", "\\t 应是制表符"),
+    ('\\"', '"', '\\" 应是引号 "'),
+    ("\\'", "'", "\\' 应是引号 '"),
+)
+
+
 def _not_found_hint(body: str, old: str) -> str:
     """一处都对不上时，说对不上在哪——只报文件里的事实，不替模型改。
 
@@ -176,10 +185,18 @@ def _not_found_hint(body: str, old: str) -> str:
       前一种：换成真换行就对上，照实说（不替它改——new_str 里的 \\\\n 可能正是 Python 字符串里要的）。
       后一种：第一行在文件里找得到，就给出那一行起文件里真正的样子。
     """
-    unescaped = old.replace("\\n", "\n").replace("\\t", "\t")
-    if unescaped != old and unescaped in body:
-        return ("要换的那段里的换行写成了字面的反斜杠加 n（两个字符），文件里这里是真换行。"
-                f"按真换行写就能对上（{body.count(unescaped)} 处）；new_str 里的换行也同样检查一遍。")
+    # ⚠ 2026-09-28 隔离真机第 105 轮 sr-20260928125559-X5BR6CR7QA（差旅报销 Excel，追问「加一列自动判断是否超预算」）：
+    #   三发全是 `\\"超预算\\"`——引号前多了一个字面的反斜杠，文件里是普通的 `"`。
+    #   第一版只认 \\n，这三发就落到「第一行也找不到」，没说错在哪。
+    escapes = [(pair, real, name) for pair, real, name in _LITERAL_ESCAPES if pair in old]
+    unescaped = old
+    for pair, real, _name in escapes:
+        unescaped = unescaped.replace(pair, real)
+    if escapes and unescaped in body:
+        names = "、".join(name for _pair, _real, name in escapes)
+        return (f"要换的那段里多了字面的反斜杠转义（{names}），文件里这些地方没有反斜杠。"
+                f"去掉那些反斜杠就能对上（{body.count(unescaped)} 处）；new_str 里也同样检查一遍"
+                "（除非那个反斜杠本来就该写进文件）。")
     lines = body.split("\n")
     wanted = [line for line in old.split("\n") if line.strip()]
     if not wanted:

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from project_actor_support import project_actor  # noqa: F401  （夹具）
@@ -33,7 +34,7 @@ def _replace(setup, old):
 def test_a_literal_backslash_n_is_named_as_the_mismatch(setup):
     assert ESCAPED.replace("\\n", "\n") in SOURCE and ESCAPED not in SOURCE   # 夹具前提
     hint = _replace(setup, ESCAPED)
-    assert "反斜杠" in hint and "真换行" in hint and "1 处" in hint
+    assert "反斜杠" in hint and "应是换行" in hint and "1 处" in hint
 
 
 def test_a_wrong_guess_after_a_real_first_line_shows_the_real_text(setup):
@@ -55,3 +56,18 @@ def test_a_real_match_is_unaffected(setup):
     old = ESCAPED.replace("\\n", "\n")
     result = _dispatch(setup, "file_str_replace", {"file": PATH, "old_str": old, "new_str": old + "  # ok"})
     assert result["ok"] is True and "hint" not in result
+
+
+# ⚠ 2026-09-28 隔离真机第 105 轮 sr-20260928125559-X5BR6CR7QA（差旅报销 Excel，追问「加一列自动判断是否超预算，超了标红」）：
+#   三发旧串都是引号前多了字面反斜杠（`\\"超预算\\"`），落到「第一行也找不到」。
+#   夹具是当时那一版脚本与模型第一发 file_str_replace 的原样参数。
+SCRIPT105 = (Path(__file__).parent / "fixtures" / "round105_travel_expense_workbook.py.txt").read_text("utf-8")
+ROUND105 = json.loads((Path(__file__).parent / "fixtures" / "round105_escaped_quote_replace.json").read_text("utf-8"))
+
+
+def test_the_round105_escaped_quotes_are_named(setup):
+    create(setup)
+    assert _dispatch(setup, "file_write", {"file": "scripts/create_travel_expense_workbook.py", "content": SCRIPT105})["ok"]
+    result = _dispatch(setup, "file_str_replace", {"file": "scripts/create_travel_expense_workbook.py", **ROUND105})
+    assert result["ok"] is False and result["error"] == "project_str_replace_not_found"
+    assert '应是引号 "' in result["hint"] and "对上（1 处）" in result["hint"]
