@@ -275,7 +275,11 @@ SANDBOX_FONTS_NOTE = (
     "DejaVu has no Chinese glyphs — Chinese drawn with it comes out as empty boxes. "
     # ⚠ 2026-09-28：第 32、36、39、72、80 轮都先敲了 rg，每次 command not found 再换 grep——
     #   回执事后会点名（_missing_program），可每回都白花一发。事先说清。
-    "ripgrep (rg) is not installed; search with grep -rn."
+    "ripgrep (rg) is not installed; search with grep -rn. "
+    # ⚠ 2026-09-28 第 81 轮：网页工程里 pip install playwright + 下载 Chromium 成功，下一条命令全没了。
+    "In a web (Vite) project every command gets a fresh sandbox (source tree + npm ci) that is reclaimed "
+    "when it ends — packages, browsers or files you install outside the source tree are gone for the next "
+    "command, so install and use them in the same command. An office workspace keeps its sandbox."
 )
 
 

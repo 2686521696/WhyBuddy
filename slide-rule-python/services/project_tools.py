@@ -392,6 +392,9 @@ def operation_snapshot(snapshot):
         result["uploadsSkipped"] = [str(item)[:240] for item in skipped[:8] if isinstance(item, str)]
     if saved.get("officeScan") in {"empty", "failed"}:
         result["officeScan"] = saved["officeScan"]
+    if operation.kind == "runtime.exec" and operation.status in _TERMINAL and not saved.get("keepSandbox"):
+        # 网页工程每条命令一台新沙盒，跑完就回收（worker：「Vite 工程仍拆掉」）。见 _command_pointer。
+        result["sandboxReclaimed"] = True
     if operation.kind == "runtime.patch":
         # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
         #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
@@ -660,6 +663,9 @@ _INSTALL_SEGMENT = re.compile(
     r"|pnpm\s+(?:i|install|add)"
     r"|yarn(?:\s+(?:install|add))?"
     r"|apt(?:-get)?\s+(?:-\S+\s+)*install"
+    # 浏览器也是「装」：第 81 轮 `python3 -m playwright install chromium`。
+    r"|(?:python3?\s+-m\s+)?playwright\s+install"
+    r"|npx\s+(?:-y\s+)?playwright\s+install"
     r")(?:\s|$)"
 )
 
@@ -864,6 +870,18 @@ def _command_pointer(result, excerpt="", full_command=None):
             "如果这条命令本该重新生成它，那次生成没有写出文件，库里仍是旧版。"
             "不要往源码树写占位，也不要把文件 base64 进日志或 file_write。"
             + _download_sentence(result)
+            + hint
+        )
+    if (result.get("sandboxReclaimed") and result.get("exitCode") in (0, "0")
+            and _only_installs(command_text)):
+        # ⚠ 2026-09-28 隔离真机第 81 轮 sr-20260928021545-B6CQ0CM50T（番茄钟网页，追问「用 webapp-testing 把添加、完成、删除
+        #   点一遍」）：`python3 -m pip install playwright && python3 -m playwright install chromium`
+        #   成功、Chromium 下载完；五分钟后 `import playwright` → ModuleNotFoundError，下一条的日志
+        #   里又是一遍 npm ci。网页工程每条命令一台新沙盒（源码树 + npm ci），跑完回收——装的东西
+        #   活不过这一条。模型当成办公工作区那样「装一次一直在」，15 分钟没点成一下。
+        hint = (
+            "这台沙盒在命令结束时已经回收：网页工程每条命令都是一台新沙盒（源码树 + npm ci），"
+            "这条装的东西下一条命令里不在。要用它，就把安装和使用写进同一条命令（装 && 跑）。"
             + hint
         )
     hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
