@@ -62,6 +62,23 @@ TERMINAL = {"completed", "cancelled", "failed"}
 PROJECT_COMMANDS = {"check", "build", "test"}
 
 
+def _numbered_sibling(store, project_id, owner_id, path):
+    """库里已有、只差一个编号后缀的同名办公文件（方案.docx ↔ 方案_1.docx / 方案 (2).docx）。"""
+    folder, _, name = str(path).rpartition("/")
+    stem, dot, ext = name.rpartition(".")
+    if not dot:
+        return None
+    base = re.sub(r"(?:[_ -]\d{1,3}|\s?\(\d{1,3}\))$", "", stem)
+    if base == stem:
+        return None
+    try:
+        rows = store.list(project_id, owner_id=owner_id)
+    except Exception:
+        return None
+    wanted = (folder + "/" if folder else "") + base + "." + ext
+    return next((row for row in rows if isinstance(row, dict) and row.get("path") == wanted), None)
+
+
 #: 对哈希时只认普通的相对路径（不含空白、不以 - 或 / 开头），shell 里不用猜转义。
 _PLAIN_SOURCE_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,239}")
 
@@ -1091,6 +1108,15 @@ class _RuntimeTask:
             #   「按月份的收支趋势折线图」，收尾说「已加入按月份的收支趋势折线图」。回执里写着
             #   原生图表 2 个——跟上一版一样，但没人告诉它「跟上一版一样」。覆盖之前先量一下旧版。
             previous_facts = None
+            sibling = None
+            if before is None:
+                # ⚠ 2026-09-29 隔离真机第 114 轮 sr-20260929095131-9A7P8RP51X（小区垃圾分类方案 Word，追问「加一个按季度的进度表格」）：
+                #   脚本自带「已存在就换名」（while os.path.exists(out): …_{idx}.docx），新版写成
+                #   方案_1.docx，旧的方案.docx 还在库里——用户看到两份，比较也比不上。加了编号的同名
+                #   文件当成那一份的新版来比，并在回执里点出来。
+                sibling = _numbered_sibling(store, self.original.projectId, self.owner_id, path)
+                if sibling is not None:
+                    before = sibling
             if isinstance(before, dict) and before.get("artifactId"):
                 try:
                     _old_meta, old_bytes = store.get_bytes(
@@ -1111,8 +1137,12 @@ class _RuntimeTask:
             stored = meta.get("path", path) if isinstance(meta, dict) else path
             _RuntimeTask._remember_download(
                 self, stored, meta.get("artifactId") if isinstance(meta, dict) else None)
+            if sibling is not None:
+                siblings = dict(self.result.get("officeSiblings") or {})
+                siblings[meta.get("path", path) if isinstance(meta, dict) else path] = str(sibling.get("path"))
+                self.result["officeSiblings"] = siblings
             unchanged = (
-                isinstance(before, dict) and isinstance(meta, dict)
+                sibling is None and isinstance(before, dict) and isinstance(meta, dict)
                 and before.get("sha256") == meta.get("sha256")
             )
             bucket = "officeFilesHeld" if unchanged else "officeFiles"

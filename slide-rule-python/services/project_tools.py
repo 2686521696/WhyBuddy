@@ -512,6 +512,9 @@ def operation_snapshot(snapshot):
     # ⚠ 2026-09-24：成功路径把 template/files/skip 写进 result["gate"]。
     #   skip=True 只表示没跑 npm ci，命令已经跑完。抄进回执后模型读成
     #   「这条没执行」。留在操作记录和 orch_trace，不进这份快照。
+    siblings = saved.get("officeSiblings")
+    if isinstance(siblings, dict) and siblings:
+        result["officeSiblings"] = {str(k)[:240]: str(v)[:240] for k, v in list(siblings.items())[:8]}
     for name in ("officeFiles", "officeFilesHeld", "sandboxOnlyEdits"):
         files = saved.get(name)
         if isinstance(files, list) and files:
@@ -1035,6 +1038,12 @@ def _command_pointer(result, excerpt="", full_command=None):
             + _download_sentence(result)
             + hint
         )
+    siblings = result.get("officeSiblings")
+    if isinstance(siblings, dict) and siblings:
+        # ⚠ 2026-09-29 第 114 轮 sr-20260929095131-9A7P8RP51X：脚本「已存在就换名」，同一份文件变成两份（worker _numbered_sibling 头注）。
+        pairs = "；".join(f"{new}（旧的 {old} 还在）" for new, old in list(siblings.items())[:4])
+        hint = (f"这次写成了新文件：{pairs}。用户那边现在是两份。要改的是同一份，就写回原来的文件名"
+                "（去掉脚本里「已存在就换个名字」那段）；下面的「和上一版比」是跟旧的那份比的。" + hint)
     drifted = result.get("sandboxOnlyEdits")
     if isinstance(drifted, list) and drifted:
         # ⚠ 2026-09-29 第 107 轮 sr-20260929070420-W29Y3BK1EP：沙盒里改的源码下一条命令就被还原（worker _note_sandbox_only_edits 头注）。

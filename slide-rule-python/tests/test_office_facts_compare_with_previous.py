@@ -57,3 +57,34 @@ def test_a_first_version_has_nothing_to_compare(tmp_path, monkeypatch):
     (first,) = _collect(tmp_path, monkeypatch, [[{"path": PATH, "data": _book(b"v1")}]])
     assert "officeFactsBefore" not in first
     assert "和上一版比" not in _hint(first)
+
+
+# ⚠ 2026-09-29 隔离真机第 114 轮 sr-20260929095131-9A7P8RP51X（小区垃圾分类方案 Word，追问「在第二部分加一个按季度的进度表格」）：
+#   脚本自带「已存在就换名」，新版写成 …_1.docx，旧的还在。路径照真机原样。
+BASE = "output/小区垃圾分类推广工作方案.docx"
+NUMBERED = "output/小区垃圾分类推广工作方案_1.docx"
+
+
+def _doc(tables: int) -> bytes:
+    return _zip({"word/document.xml": b"<w:body>" + b"<w:tbl></w:tbl>" * tables + b"</w:body>"})
+
+
+def test_the_round114_numbered_copy_is_compared_with_the_original_and_named(tmp_path, monkeypatch):
+    _first, second = _collect(tmp_path, monkeypatch, [
+        [{"path": BASE, "data": _doc(7)}],
+        [{"path": BASE, "data": _doc(7)}, {"path": NUMBERED, "data": _doc(8)}],
+    ])
+    assert second["officeSiblings"] == {NUMBERED: BASE}
+    assert second["officeFactsBefore"][NUMBERED]["tables"] == 7
+    hint = _hint(second)
+    assert "原生表格 7→8" in hint and "两份" in hint and BASE in hint
+
+
+def test_two_unrelated_files_are_not_siblings(tmp_path, monkeypatch):
+    """反向：不是「同名加编号」的两份文件，各算各的，不挂那句。"""
+    _first, second = _collect(tmp_path, monkeypatch, [
+        [{"path": "output/方案.docx", "data": _doc(1)}],
+        [{"path": "output/预算表.docx", "data": _doc(2)}],
+    ])
+    assert "officeSiblings" not in second
+    assert "两份" not in _hint(second)
