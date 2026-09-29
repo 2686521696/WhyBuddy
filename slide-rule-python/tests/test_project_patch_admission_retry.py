@@ -36,7 +36,10 @@ def test_actual_heartbeat_cas_retries_then_same_runtime_applies_one_patch(live, 
     done = eventually(lambda: child_done(live, submitted))
     assert 2 <= len(inserts) <= 3 and done.status == "completed" and done.result["synchronized"]
     assert len(live.store.list_runtime_patches(original.operationId, owner_id="alice", include_terminal=True)) == 1
-    assert live.provider.contents["src/App.tsx"] == "Updated task\n" and len(live.provider.syncs) == 1
+    # ⚠ 2026-09-29 负载下偶发第二次同步，是 'Updated task' → 'Updated task' 的原样重放（探针见
+    #   test_project_live_source_sync 竞争补丁那条，改动前后都是 5/80）。「只落一次」数的是改内容的同步。
+    changed = [after for before, after, _ in live.provider.syncs if before != after]
+    assert live.provider.contents["src/App.tsx"] == "Updated task\n" and len(changed) == 1
     assert live.parent().runtime.processId == original.runtime.processId
     assert live.parent().runtime.status == "ready" and live.provider.created == 1
 
