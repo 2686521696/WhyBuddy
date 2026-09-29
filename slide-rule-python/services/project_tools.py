@@ -1425,7 +1425,36 @@ class ProjectTools:
                 fix = self._mistyped_operation_id(state, args)
                 if fix:
                     body["hint"] = fix
+            elif str(exc) in {"project_revision_conflict", "project_runtime_patch_unavailable"}:
+                fix = self._stale_revision_hint(state, args, str(exc))
+                if fix:
+                    body["hint"] = fix
             return body
+
+    def _stale_revision_hint(self, state, args, code) -> str:
+        """版本号对不上：说清工程现在是哪一版、你传的是哪一版。闸不放松，照旧拒。
+
+        ⚠ 2026-09-29 隔离真机第 113 轮 sr-20260929092634-ZNB4YGA34R（植物养护网页，追问「逾期没浇水的标红并排到最前面」）：
+          project_start 复用了在跑的服务器，回执 revision 是它当初起来时那一版（prv-7a7b…）；之后的
+          编辑已经实时同步，工程当前是 prv-7ad3…。模型拿旧的当 expectedRevision：project_verify →
+          project_runtime_patch_unavailable，project_exec → project_revision_conflict，两发都没有提示。
+          它读成「验收被拦」，没验就把「验证」待办勾成了完成。
+        """
+        passed = args.get("expectedRevision") if isinstance(args, dict) else None
+        try:
+            project = self.store.get_project_for_session(
+                str(getattr(state, "sessionId", "") or ""), owner_id=self.owner_id)
+            head = self.store.get_revision(project.projectId, owner_id=self.owner_id).revision
+        except Exception:
+            return ""
+        if isinstance(passed, str) and passed.strip() and passed != head:
+            return (f"你传的 expectedRevision 是 {passed}，工程当前是 {head}"
+                    "（之后的编辑已经同步进在跑的服务器，旧号是服务器当初起来时那一版）。"
+                    f"用当前这个再调：expectedRevision={head}。")
+        if code == "project_runtime_patch_unavailable":
+            return ("版本号是对的，是在跑的开发服务器此刻接不了验收（还在同步刚才的编辑、没就绪或已过期）。"
+                    "用 project_status 看 runtime.status，到 ready 再调；服务器没了就先 project_start。")
+        return ""
 
     def _mistyped_operation_id(self, state, args) -> str:
         """传的 operationId 查无此条、却跟本会话某条只差一两个字符：说是抄错了，给原样那串。
