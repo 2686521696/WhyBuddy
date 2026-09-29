@@ -16,11 +16,23 @@ from test_project_tools import create, execute, setup  # noqa: F401  （夹具�
 
 
 def test_the_receipt_names_the_argument_and_its_limit(setup):
+    # 2026-09-29 第 111 轮起 project_read 的 limit 超上限改为按上限读（见下一条）；
+    # 这条仍钉「参数错了要说清是哪个、约束是什么」，换一个仍然会拒的参数。
     project = create(setup)
     result = execute(setup, "project_read", {
-        "path": "src/main.tsx", "revision": project["revision"], "offset": 0, "limit": 10000})
+        "path": "src/main.tsx", "revision": project["revision"], "offset": -1, "limit": 8000})
     assert result["ok"] is False and result["error"] == "project_tool_arguments_invalid"
-    assert "limit=10000" in result["hint"] and "8000" in result["hint"]
+    assert "offset=-1" in result["hint"] and "0" in result["hint"]
+
+
+def test_an_oversized_window_is_read_up_to_the_limit(setup):
+    """⚠ 第 26 轮 limit=10000、第 111 轮 sr-20260929083948-EGWA0HBPM3 同一批两发 limit=12000，全被拒。
+    现在按上限读：拿到的就是 8000 以内的一窗，照旧能接着读。"""
+    project = create(setup)
+    result = execute(setup, "project_read", {
+        "path": "src/App.tsx", "revision": project["revision"], "offset": 0, "limit": 12000})
+    assert result["ok"] is True, result
+    assert len(result["content"]) <= 8000
 
 
 def test_the_same_call_within_the_limit_just_works(setup):

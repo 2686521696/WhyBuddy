@@ -6,7 +6,7 @@ import posixpath
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ToolArguments(BaseModel):
@@ -108,6 +108,19 @@ class ReadArguments(RevisionArguments):
     path: str = Field(min_length=1, max_length=240)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=PROJECT_READ_MAX_CHARS, ge=1, le=PROJECT_READ_MAX_CHARS)
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def _clamp_limit(cls, value):
+        """窗口开得比上限大，就按上限读：回执照旧给 truncated / nextOffset，接着读就行。
+
+        ⚠ 2026-09-27 第 26 轮起补了参数错误的说法，仍一再撞：2026-09-29 隔离真机第 111 轮
+          sr-20260929083948-EGWA0HBPM3（大学生课程表网页，追问「每门课可以设置颜色」）同一批并行两发
+          `project_read limit=12000`，两发全拒。读得比要的少不会读错，拒掉只多一个来回。
+        """
+        if isinstance(value, int) and not isinstance(value, bool) and value > PROJECT_READ_MAX_CHARS:
+            return PROJECT_READ_MAX_CHARS
+        return value
 
 
 class SearchArguments(RevisionArguments):
