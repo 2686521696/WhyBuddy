@@ -426,6 +426,51 @@ def sampling_interrupted_checkpoint(checkpoint: Any) -> Optional[Dict[str, Any]]
     )
 
 
+#: 只读工具：派发出去以后进程死了，结果就算丢了也没有副作用要对账。
+#: 只放明明白白不改任何东西的；浏览器操作、命令、写文件、验收提交都不在里面。
+READ_ONLY_TOOLS = frozenset({
+    "project_status", "project_logs", "project_read", "project_search", "project_revisions",
+    "project_list", "project_verification", "file_read", "read_file", "list_dir", "glob", "grep",
+    "file_find_in_content", "file_find_by_name", "shell_view", "shell_wait", "recall",
+})
+
+
+def dispatch_interrupted_notice() -> str:
+    """只读工具派发中服务重启、新开一轮的合成提示。"""
+    return (
+        "[查询中断] 服务在上一轮查询还没返回时重启了。那次只是查看（没有改动任何东西），结果没有拿到。"
+        "未完成的调用已按中断补齐。操作和源码都以当前状态为准，需要的话再查一次。"
+    )
+
+
+def dispatching_readonly_checkpoint(checkpoint: Any) -> Optional[Dict[str, Any]]:
+    """派发中被打断、而挂着的调用**全是只读工具**：跟 sampling 一样补齐、开新一轮，不必对账。
+
+    ⚠ 2026-09-29 隔离真机第 127 轮 sr-20260929141232-P9X867NGKK（书签网页）：容器重启正好落在
+      `project_status {operationId, waitSeconds: 30}` 等构建的那 30 秒里——checkpoint 停在 dispatching、
+      挂着这一发、没有回执。恢复时 dispatching 一律 control_reconciliation_required，目标记 failed，
+      页面黄条「控制面未返回结果」。一轮里大半时间都花在这种等待上，部署重启几乎总落在这里。
+      dispatching 不许重放是对的（工具可能已经有副作用，见 sampling_interrupted_checkpoint）；只读工具
+      没有副作用可对账。这里也不重放：补一条中断回执，让模型自己决定要不要再查。
+      有一发不是只读（或者没有挂着的调用），返回 None，照旧对账。
+    """
+    if not isinstance(checkpoint, dict) or checkpoint.get("phase") != "dispatching":
+        return None
+    calls = checkpoint.get("pendingCalls")
+    if not isinstance(calls, list) or not calls:
+        return None
+    if not all(isinstance(call, dict) and call.get("name") in READ_ONLY_TOOLS for call in calls):
+        return None
+    messages = checkpoint.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    return continuation_checkpoint(
+        {**checkpoint, "messages": repair_dangling_tool_calls(messages), "phase": "settling",
+         "pendingCalls": []},
+        dispatch_interrupted_notice(),
+    )
+
+
 def operation_settled_notice(operations: Any) -> str:
     """后台命令进终态之后叫醒模型的那句话。
 

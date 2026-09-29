@@ -28,7 +28,8 @@ from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
     progress_mark, sampling_interrupted_checkpoint, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user,
-    unfinished_project_waits_for_user, undelivered_notice, tool_result_count)
+    unfinished_project_waits_for_user, undelivered_notice, tool_result_count,
+    dispatching_readonly_checkpoint)
 from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
@@ -766,6 +767,12 @@ class ControlRunService:
                 #   tool result，开新一轮。dispatching 仍对账，不许借这条
                 #   重放已经发出去的工具。
                 resumed = sampling_interrupted_checkpoint(checkpoint)
+                if resumed is not None:
+                    await port.save(resumed)
+                    checkpoint = resumed
+            if checkpoint is not None and checkpoint.get("phase") == "dispatching":
+                # 挂着的全是只读工具：补齐、开新一轮（dispatching_readonly_checkpoint 头注，第 127 轮）。
+                resumed = dispatching_readonly_checkpoint(checkpoint)
                 if resumed is not None:
                     await port.save(resumed)
                     checkpoint = resumed
