@@ -356,9 +356,14 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
             by_name.setdefault(name, url)
 
     known = set(by_name.values())
+    path_of = {url: str(path) for path, url in downloads.items() if isinstance(url, str) and url.startswith("/api/")}
 
     def swap(match: re.Match) -> str:
+        return _honest_format(_swap(match), path_of)
+
+    def _swap(match: re.Match) -> str:
         label, target = match.group(1), match.group(2)
+        target = target.replace("\\/", "/")      # `\/api\/…`：Markdown 转义的斜杠，同一个地址
         # ⚠ 2026-09-29 隔离真机第 119 轮 sr-20260929114248-GE1TQ9N3T8（新员工入职培训 PPT，追问「封面换深蓝、加问答页」）：
         #   收尾是 `[下载最终 PPTX](https://api/sliderule/projects/…/artifacts/art-…)`——相对地址前面
         #   安了个 `https://`，主机名成了 `api`，点了打不开。它以 https: 开头，下一句原样放过。
@@ -382,6 +387,36 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
         return f"[{label}]({url})" if url else match.group(0)
 
     return _MD_LINK.sub(swap, text)
+
+
+#: 链接文字里明说的格式 → 它该指向的扩展名。只认拉丁字母写法（PDF / PPTX / Word …），中文「文档」「表格」
+#: 太泛，不猜。
+_CLAIMED_FORMATS = (
+    (re.compile(r"(?<![A-Za-z])pdf(?![A-Za-z])", re.IGNORECASE), ".pdf"),
+    (re.compile(r"(?<![A-Za-z])(?:pptx?|powerpoint)(?![A-Za-z])", re.IGNORECASE), ".pptx"),
+    (re.compile(r"(?<![A-Za-z])(?:docx?|word)(?![A-Za-z])", re.IGNORECASE), ".docx"),
+    (re.compile(r"(?<![A-Za-z])(?:xlsx?|excel)(?![A-Za-z])", re.IGNORECASE), ".xlsx"),
+)
+
+
+def _honest_format(link: str, path_of: Mapping[str, str]) -> str:
+    """链接文字说的是一种格式、指向的收回文件是另一种：不许留一个点了拿错文件的链接。
+
+    ⚠ 2026-09-29 隔离真机第 131 轮 sr-20260929164809-ATK2F34V0B（IT 设备领用须知 Word，追问「PDF 第一页加 logo 占位」）：
+      PDF 交不出去（只收 .pptx/.docx/.xlsx），收尾却写 `[下载 PDF](…/artifacts/art-2a8eb32a…)`——
+      那个地址是原来那份 .docx。用户点「下载 PDF」拿到一份旧的 Word。宿主知道每个地址背后是哪个文件，
+      就由宿主拦：链接拆掉，字留着，括号里照实说它其实是什么。文字没说格式、或说的对得上，原样。
+    """
+    match = _MD_LINK.fullmatch(link)
+    url = match.group(2).replace("\\/", "/") if match is not None else ""
+    if url not in path_of:
+        return link
+    label = match.group(1)
+    actual = Path(path_of[url]).suffix.lower()
+    claimed = {ext for pattern, ext in _CLAIMED_FORMATS if pattern.search(label)}
+    if not claimed or actual in claimed:
+        return link
+    return f"{label}（没有这个文件：这个链接其实是 {Path(path_of[url]).name}）"
 
 
 def new_artifact_id() -> str:

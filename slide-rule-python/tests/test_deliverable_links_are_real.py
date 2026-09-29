@@ -141,3 +141,39 @@ def test_links_that_are_not_ours_are_left_as_written(target):
     """反向：只有逐字等于宿主给过的地址才换，真外链和编出来的都不碰。"""
     text = f"[看这里]({target})"
     assert rewrite_deliverable_links(text, {"output/onboarding_training_deck.pptx": ROUND119_URL}) == text
+
+
+
+# ⚠ 2026-09-29 隔离真机第 131 轮 sr-20260929164809-ATK2F34V0B（IT 设备领用须知 Word，追问「PDF 第一页加 logo 占位」）：PDF 交不出去，
+#   收尾写 `[下载 PDF](…/art-2a8e…)`——那是原来那份 .docx。夹具是那一轮收尾原样（含 `\\/api` 转义斜杠）。
+#   把 rewrite_deliverable_links 里 _honest_format 那一层拿掉，下面第一条变红。
+import json as _json
+from pathlib import Path as _Path
+
+ROUND131_CLOSING = _json.loads((_Path(__file__).parent / "fixtures" / "round131_pdf_link_closing.json").read_text("utf-8"))
+ROUND131_DOWNLOADS = {
+    "output/新员工IT设备领用须知.docx": "/api/sliderule/projects/prj-7a8ef95d28bc5b64999eb77f155a6dbb/artifacts/art-2a8eb32a98a66ecca03b9178e1d9cd94a3b6a1a1",
+    "output/新员工IT设备领用须知_2.docx": "/api/sliderule/projects/prj-7a8ef95d28bc5b64999eb77f155a6dbb/artifacts/art-a5cc1123e4b607f53d76ece94d83c6344d1e89ad",
+}
+
+
+def test_the_round131_pdf_link_to_a_word_file_is_taken_down():
+    out = rewrite_deliverable_links(ROUND131_CLOSING, ROUND131_DOWNLOADS)
+    assert "[下载 PDF](" not in out                                  # 点了拿错文件的链接没了
+    assert "下载 PDF（没有这个文件：这个链接其实是 新员工IT设备领用须知.docx）" in out
+    assert "[下载更新后的 DOCX](" in out and "art-a5cc1123e4b607f53d76ece94d83c6344d1e89ad" in out   # 对的那条不动
+    assert out.startswith("已完成：在 PDF 第一页标题区域上方")          # 其余一个字不动
+
+
+@pytest.mark.parametrize("label", ["下载 Word 文档", "新员工IT设备领用须知.docx", "下载文件", "点这里"])
+def test_a_label_that_matches_or_names_no_format_is_left_alone(label):
+    """反向：文字说的格式对得上、或者根本没说格式，链接原样。"""
+    url = ROUND131_DOWNLOADS["output/新员工IT设备领用须知.docx"]
+    text = f"[{label}]({url})"
+    assert rewrite_deliverable_links(text, ROUND131_DOWNLOADS) == text
+
+
+def test_a_link_the_host_did_not_give_is_not_judged():
+    """反向：不是宿主给的地址（外链），不拿它的文字对格式。"""
+    text = "[PDF 版说明](https://example.com/guide.docx)"
+    assert rewrite_deliverable_links(text, ROUND131_DOWNLOADS) == text
