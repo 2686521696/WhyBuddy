@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
@@ -359,6 +359,15 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
 
     def swap(match: re.Match) -> str:
         label, target = match.group(1), match.group(2)
+        # ⚠ 2026-09-29 隔离真机第 119 轮 sr-20260929114248-GE1TQ9N3T8（新员工入职培训 PPT，追问「封面换深蓝、加问答页」）：
+        #   收尾是 `[下载最终 PPTX](https://api/sliderule/projects/…/artifacts/art-…)`——相对地址前面
+        #   安了个 `https://`，主机名成了 `api`，点了打不开。它以 https: 开头，下一句原样放过。
+        #   去掉 scheme 之后 `/` + 主机 + 路径**逐字等于**宿主给的某个地址才换；真外链配不上，不动。
+        split = urlsplit(target)
+        if split.scheme.lower() in {"http", "https"} and "." not in split.netloc:
+            rebuilt = "/" + split.netloc + split.path
+            if rebuilt in known:
+                return f"[{label}]({rebuilt})"
         if _USABLE_TARGET.match(target):
             return match.group(0)
         # ⚠ 2026-09-27 隔离真机第 68 轮 sr-20260927200602-F9YJD14NHC（门店销售 Excel 追问

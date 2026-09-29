@@ -116,3 +116,28 @@ def test_a_sandbox_prefixed_address_the_host_never_gave_is_left_alone():
     """反向：去掉 sandbox: 之后不是宿主给过的那串（这里 art-id 被改了一位），不猜。"""
     forged = f"[下载](sandbox:{ROUND68_URL[:-1]}0)"
     assert rewrite_deliverable_links(forged, {ROUND68_BOOK: ROUND68_URL}) == forged
+
+
+
+# ⚠ 2026-09-29 隔离真机第 119 轮 sr-20260929114248-GE1TQ9N3T8（新员工入职培训 PPT）：收尾最后一行原样。相对地址前面多了 `https://`，
+#   主机名成了 `api`。把 rewrite_deliverable_links 里 urlsplit 那一段删掉，下面第一条变红。
+ROUND119_URL = "/api/sliderule/projects/prj-862f14649fc65b53982563b384fbefbe/artifacts/art-d965f1b6fa4e3fb9826ab489d26500ef8c7ad840"
+ROUND119_CLOSING = ("- 几何、可访问性和 OOXML 包检查均通过。\n\n"
+                    "[下载最终 PPTX](https://api/sliderule/projects/prj-862f14649fc65b53982563b384fbefbe/"
+                    "artifacts/art-d965f1b6fa4e3fb9826ab489d26500ef8c7ad840)")
+
+
+def test_the_round119_scheme_glued_onto_a_relative_link_is_repaired():
+    out = rewrite_deliverable_links(ROUND119_CLOSING, {"output/onboarding_training_deck.pptx": ROUND119_URL})
+    assert out.endswith(f"[下载最终 PPTX]({ROUND119_URL})") and "https://api" not in out
+
+
+@pytest.mark.parametrize("target", [
+    "https://example.com/api/sliderule/projects/prj-862f14649fc65b53982563b384fbefbe/artifacts/x",   # 真外链
+    "https://api/sliderule/projects/prj-other/artifacts/art-other",                                    # 宿主没给过
+    "https://docs.python.org/3/",
+])
+def test_links_that_are_not_ours_are_left_as_written(target):
+    """反向：只有逐字等于宿主给过的地址才换，真外链和编出来的都不碰。"""
+    text = f"[看这里]({target})"
+    assert rewrite_deliverable_links(text, {"output/onboarding_training_deck.pptx": ROUND119_URL}) == text
