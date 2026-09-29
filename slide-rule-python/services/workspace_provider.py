@@ -11,6 +11,11 @@ from typing import Protocol
 PROJECT_REVISION_FILE = "public/__whybuddy_revision.json"
 
 
+#: 远端沙盒已经不在了（过期、被回收）。不是网络抖动：重试多少次都连不上，也没有东西可以再保存或停止。
+#: 与 e2b_connect_failed（可能是暂时的）分开，清理才能区分「该重试」和「该收尾」。
+SANDBOX_GONE = "workspace_sandbox_gone"
+
+
 class WorkspaceProviderError(RuntimeError):
     """A provider operation failed or returned an unusable result."""
 

@@ -34,7 +34,7 @@ from services.project_workspace_artifacts import (
     ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES,
     STATIC_BUILD_SERVER_SCRIPT,
 )
-from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
+from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, SANDBOX_GONE, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
@@ -572,6 +572,11 @@ class E2BWorkspaceProvider:
         try:
             sandbox = _sandbox_class().connect(handle.sandbox_id, timeout=timeout_seconds, api_key=self._api_key)
         except Exception as exc:
+            # ⚠ 2026-09-29 隔离真机（第 127 轮起的栈里发现）：09-25 的一台开发服务器沙盒早被 E2B 回收，
+            #   停它时 connect 抛 SandboxNotFoundException，这里一律包成 e2b_connect_failed——清理把它当暂时故障，
+            #   四天里重试约 640 次，事件流撑满 2000 条后每个扫描周期都卡在认领上。「不在了」要单独说。
+            if any(kind.__name__ == "SandboxNotFoundException" for kind in type(exc).__mro__):
+                raise WorkspaceProviderError(SANDBOX_GONE) from exc
             raise WorkspaceProviderError("e2b_connect_failed") from exc
         if str(getattr(sandbox, "sandbox_id", "")) != handle.sandbox_id:
             raise WorkspaceProviderError("e2b_sandbox_identity_mismatch")

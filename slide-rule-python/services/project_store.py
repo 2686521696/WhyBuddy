@@ -914,9 +914,18 @@ class ProjectStore:
             pending = operation.pendingEvent
             if pending is None:
                 return None
-            event = self.append_event(operation_id, owner_id=owner_id, event_type=pending["type"],
-                payload=pending["payload"], event_id=pending["eventId"],
-                lease_generation=lease_generation, lease_owner=lease_owner)
+            try:
+                event = self.append_event(operation_id, owner_id=owner_id, event_type=pending["type"],
+                    payload=pending["payload"], event_id=pending["eventId"],
+                    lease_generation=lease_generation, lease_owner=lease_owner)
+            except ValueError as exc:
+                # ⚠ 2026-09-29 隔离真机（第 127 轮起的栈里发现）：一台开发服务器的事件流满了 2000 条，发件箱里那条
+                #   状态事件再也写不进去，认领每次在这里抛 operation_event_limit——操作永远停不下来、也取消不掉，
+                #   扫描每个周期重认领一次（租约代数到了 120424）。状态以操作行为准；事件流满了，这条不再进流，
+                #   发件箱照清，操作才能走到终态。别的 ValueError 照旧抛。
+                if str(exc) != "operation_event_limit":
+                    raise
+                event = None
             updated = operation.model_copy(update={"pendingEvent": None})
             params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
             fence = self._fence(operation.projectId, lease_generation, lease_owner, params)

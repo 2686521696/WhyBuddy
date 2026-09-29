@@ -11,7 +11,7 @@ import hashlib
 import time
 
 from services.project_application_data import ProjectApplicationDataStore
-from services.workspace_provider import WorkspaceProviderError
+from services.workspace_provider import SANDBOX_GONE, WorkspaceProviderError
 
 
 def _enabled(task):
@@ -46,17 +46,28 @@ def checkpoint_application_data(task, *, final=False, force=False):
     if not final and not force and time.monotonic() < getattr(task, "_application_checkpoint_after", 0):
         return
     task.heartbeat.check()
-    if final:
-        pid = task.heartbeat.lease.processRefs.get("server")
-        if pid:
-            task.provider.stop(task.handle, pid)
-            task.heartbeat.check()
-            if task.provider.is_process_running(task.handle, pid):
-                raise WorkspaceProviderError("project_application_stop_unconfirmed")
-    records = ProjectApplicationDataStore(task.store)
-    latest = records.load(task.original.projectId, owner_id=task.owner_id)
-    task.heartbeat.check()
-    data = task.provider.read_application_data(task.handle)
+    try:
+        if final:
+            pid = task.heartbeat.lease.processRefs.get("server")
+            if pid:
+                task.provider.stop(task.handle, pid)
+                task.heartbeat.check()
+                if task.provider.is_process_running(task.handle, pid):
+                    raise WorkspaceProviderError("project_application_stop_unconfirmed")
+        records = ProjectApplicationDataStore(task.store)
+        latest = records.load(task.original.projectId, owner_id=task.owner_id)
+        task.heartbeat.check()
+        data = task.provider.read_application_data(task.handle)
+    except WorkspaceProviderError as exc:
+        # ⚠ 2026-09-29 隔离真机（第 127 轮起的栈里发现）：09-25 的开发服务器沙盒早被回收，最后一次保存去停
+        #   进程、连不上，清理判「待重试」——四天约 640 次，事件流撑满后永久卡死。沙盒不在了，里面的数据也
+        #   不在了：重试只会一直失败。头注那句「远端突然没了，恢复的是最后一次保存的检查点」就是这时候的答案。
+        #   照实记下来（不编一份「已保存」），让停止走完。暂时连不上（e2b_connect_failed）照旧重试。
+        if not final or str(exc) != SANDBOX_GONE:
+            raise
+        task.result["applicationData"] = {"status": "sandbox_gone",
+            "note": "sandbox no longer exists; the last saved checkpoint stands"}
+        return
     if data is None:
         if latest is not None:
             # Missing live data after restoring it is data loss, not permission

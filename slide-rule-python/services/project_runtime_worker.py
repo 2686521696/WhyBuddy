@@ -1277,7 +1277,10 @@ class _RuntimeTask:
                     self.provider.destroy(orphan)
         except ProjectConflict:
             raise
-        except Exception:
+        except Exception as exc:
+            # 清理为什么没走完要留在日志里：第 127 轮起那一台四天重试约 640 次，一行原因都没有。
+            logger.warning("project runtime cleanup pending: %s (%s)", self.operation_id,
+                str(exc) if isinstance(exc, (WorkspaceProviderError, ValueError)) else type(exc).__name__)
             self.save("reconciling", status="interrupted", error="project_cleanup_pending")
             # Keep the lease until expiry to bound cleanup retries after outages.
             self.heartbeat.close()
