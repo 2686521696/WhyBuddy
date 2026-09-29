@@ -124,6 +124,45 @@ def _skill_package_files(slug: str, owner_id: str | None) -> dict[str, str] | No
     return None
 
 
+
+def _skill_files_near(package: dict[str, str], wanted: str, *, cap: int = 30) -> str:
+    """技能里没有 wanted 时给它看的清单：离它最近的在前，大堆的同目录文件收成一行。
+
+    ⚠ 2026-09-29 隔离真机第 116 轮 sr-20260929103821-XA38NTEQSB（社区读书会志愿者招募方案 Word）：两轮追问都
+      file_read `standards/structure/docx-structure.md`。office-skills 有 100 个文件，按字母序截前
+      30 个，被 scripts/office/schemas/ 底下的 .xsd 占满——standards/ 排在第 72 个，它要的
+      standards/structure/docx-*.md 一个都没出现，于是下一轮照猜。
+    """
+    wanted_parts = wanted.split("/")[:-1]
+
+    def shared(path: str) -> int:
+        depth = 0
+        for mine, theirs in zip(path.split("/")[:-1], wanted_parts):
+            if mine != theirs:
+                break
+            depth += 1
+        return depth
+
+    ordered = sorted(package, key=lambda path: (-shared(path), path))
+    folder_of = lambda path: path.rsplit("/", 1)[0] if "/" in path else ""
+    wanted_dir = "/".join(wanted_parts)
+    sizes: dict[str, int] = {}
+    for path in package:
+        sizes[folder_of(path)] = sizes.get(folder_of(path), 0) + 1
+    listed: list[str] = []
+    folded: set[str] = set()
+    for path in ordered:
+        folder = folder_of(path)
+        # 它要找的那个目录一个不收；别处一个目录超过 6 个，只留一行
+        if folder and folder != wanted_dir and sizes[folder] > 6:
+            if folder not in folded:
+                folded.add(folder)
+                listed.append(f"{folder}/（{sizes[folder]} 个文件）")
+            continue
+        listed.append(path)
+    shown = ", ".join(listed[:cap])
+    return shown + (f" ……另 {len(listed) - cap} 项" if len(listed) > cap else "")
+
 from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
@@ -1140,11 +1179,45 @@ def command_receipt_from(adapter, operation_id):
     snap = snapper(operation_id)
     store = getattr(adapter, "store", None)
     owner = getattr(adapter, "owner_id", None)
-    return _command_pointer(
+    command = _saved_command(store, operation_id, owner)
+    receipt = _command_pointer(
         snap,
         _command_log_excerpt(store, operation_id, owner, snap.get("lastSeq")),
-        full_command=_saved_command(store, operation_id, owner),
+        full_command=command,
     )
+    missing = _missing_skill_files_sentence(command or snap.get("command"), snap.get("exitCode"), owner)
+    if missing and isinstance(receipt, dict):
+        receipt["hint"] = missing + str(receipt.get("hint") or "")
+    return receipt
+
+
+_SKILL_PATH_IN_COMMAND = re.compile(r"\.sliderule/skills/[A-Za-z0-9][\w.-]{0,63}/[^\s'\"`;|&<>()]+")
+
+
+def _missing_skill_files_sentence(command, exit_code, owner) -> str:
+    """失败的命令点了技能里没有的文件：跟 file_read 同一句话、同一份就近清单（§四）。
+
+    ⚠ 2026-09-29 隔离真机第 116 轮 sr-20260929103821-XA38NTEQSB：file_read 猜错
+      standards/structure/docx-structure.md 之后，下一轮改用 `bash sed -n … docx-structure.md`
+      再猜一次，exit 2，回执只有 sed 的「No such file」。只在命令失败时看；通配符不猜。
+    """
+    if exit_code in (0, "0", None) or not isinstance(command, str):
+        return ""
+    notes, seen = [], set()
+    for match in _SKILL_PATH_IN_COMMAND.finditer(command):
+        located = catalog_skill_file(match.group(0))
+        if located is None or located in seen or any(ch in located[1] for ch in "*?[{$"):
+            continue
+        seen.add(located)
+        package = _skill_package_files(located[0], owner)
+        folder = located[1].rstrip("/") + "/"
+        if package is None or located[1] in package or any(path.startswith(folder) for path in package):
+            continue
+        notes.append(f"技能 {located[0]} 里没有 {located[1]}。它的文件（相对技能目录）："
+                     f"{_skill_files_near(package, located[1])}。")
+        if len(notes) == 2:
+            break
+    return "".join(notes)
 
 
 def _saved_command(store, operation_id, owner):
@@ -2104,7 +2177,7 @@ class ProjectTools:
                 if package is None:
                     raise missing_file(files, path)
                 if located[1] not in package:
-                    listed = ", ".join(sorted(package)[:30])
+                    listed = _skill_files_near(package, located[1])
                     missing = ProjectNotFound("project_file_not_found")
                     missing.hint = f"技能 {located[0]} 里没有 {located[1]}。它的文件（相对技能目录）：{listed}"
                     raise missing

@@ -62,3 +62,40 @@ def test_a_skill_that_is_not_installed_is_not_served(setup, monkeypatch):
     create(setup)
     miss = execute(setup, "file_read", {"file": ".sliderule/skills/mcp-builder/reference/x.md"})
     assert miss["ok"] is False and miss["error"] == "project_file_not_found"
+
+
+# ⚠ 2026-09-29 隔离真机第 116 轮 sr-20260929103821-XA38NTEQSB（社区读书会志愿者招募方案 Word）：两轮追问都
+#   file_read `.sliderule/skills/office-skills/standards/structure/docx-structure.md`。清单按字母序截 30 条，
+#   被 scripts/office/schemas/ 的 .xsd 占满，standards/ 排第 72，它要的那个目录一个也没露出来。
+#   技能包是仓库里 office-skills.zip 原样。把 _skill_files_near 换回 sorted(package)[:30]，这条变红。
+OFFICE_ZIP = ZIP.with_name("office-skills.zip")
+ROUND116_PATH = ".sliderule/skills/office-skills/standards/structure/docx-structure.md"
+
+
+class OfficeCatalog(Catalog):
+    def list_installed(self, owner_id):
+        return [{"slug": "office-skills", "id": "office-skills"}] if owner_id == "alice" else []
+
+    def unpack_package(self, pkg):
+        return unpack_skill_zip(OFFICE_ZIP.read_bytes())
+
+
+def test_the_round116_guess_is_answered_with_its_own_folder_first(setup, monkeypatch):
+    monkeypatch.setattr(skill_catalog_store, "get_skill_catalog_store", lambda: OfficeCatalog())
+    package = unpack_skill_zip(OFFICE_ZIP.read_bytes())
+    same_folder = sorted(p for p in package if p.startswith("standards/structure/"))
+    assert same_folder and sorted(package).index(same_folder[0]) >= 30          # 夹具前提：字母序截 30 看不到
+    create(setup)
+    miss = execute(setup, "file_read", {"file": ROUND116_PATH})
+    assert miss["ok"] is False and miss["error"] == "project_file_not_found"
+    assert all(path in miss["hint"] for path in same_folder), miss["hint"]
+    assert ".xsd" not in miss["hint"].split("standards/structure/")[0]          # 同目录排在一堆 schema 前面
+
+
+def test_the_listing_still_names_the_skill_and_the_missing_file(setup, monkeypatch):
+    """反向：排序变了，不许把「没有这个文件」这句话丢了，也不许把整包 100 个都倒出来。"""
+    monkeypatch.setattr(skill_catalog_store, "get_skill_catalog_store", lambda: OfficeCatalog())
+    create(setup)
+    hint = execute(setup, "file_read", {"file": ROUND116_PATH})["hint"]
+    assert "office-skills 里没有 standards/structure/docx-structure.md" in hint
+    assert hint.count(", ") < 40 and "另" in hint
