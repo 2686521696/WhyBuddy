@@ -303,6 +303,17 @@ class ControlRunStore:
             raise ControlRunNotFound("control_run_not_found")
         return self.get(slots[0]["active_run_id"], owner_id) if slots[0]["active_run_id"] else None
 
+    def previous(self, run_id: str, owner_id: str) -> dict[str, Any] | None:
+        """同一会话里、这个 run 之前的那一个（按 createdAt）。没有就 None。只读。"""
+        _required(owner_id, "control_owner_required")
+        current = json.loads(self._row(run_id, owner_id)["payload"])
+        rows = self._q("select id,payload from wb_control_run where session_id=$1 and owner_id=$2",
+            [current["sessionId"], owner_id])
+        earlier = [(json.loads(row["payload"]).get("createdAt") or "", row["id"]) for row in rows
+                   if row["id"] != run_id]
+        earlier = [item for item in earlier if item[0] < (current.get("createdAt") or "")]
+        return self.get(max(earlier)[1], owner_id) if earlier else None
+
     def submit(self, session_id: str, owner_id: str, idempotency_key: str, payload: dict[str, Any]) -> dict[str, Any]:
         _required(session_id, "control_session_required")
         _required(owner_id, "control_owner_required")

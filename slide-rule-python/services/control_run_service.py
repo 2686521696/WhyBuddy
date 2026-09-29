@@ -28,7 +28,7 @@ from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
     progress_mark, sampling_interrupted_checkpoint, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user,
-    unfinished_project_waits_for_user, undelivered_notice)
+    unfinished_project_waits_for_user, undelivered_notice, tool_result_count)
 from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
@@ -531,6 +531,26 @@ class ControlRunService:
         except Exception:
             return False
 
+    async def _repeats_last_notice(self, record: dict, notice: str) -> bool:
+        """这一轮什么都没做（一个工具结果都没有），上一轮收尾已经是同一句缺项通知：不再说第二遍。
+
+        ⚠ 2026-09-29 隔离真机第 124 轮 sr-20260929131613-S9YHENH029（喝水记录网页）：追问「这些数据存在哪里？换一台电脑还能看到吗？」，
+          模型一个工具没调、照实答了 localStorage——宿主又在后面补一句「这一轮还没有达到可交付：独立浏览器
+          验收没能在这个环境里跑起来……再说『继续』也跑不起来」，跟上一轮收尾一字不差。用户问了个问题，
+          收到的是一句跟问题无关、上一轮已经说过的缺项。
+          目标照旧停成 waiting_user（没交付就是没交付）；只是同一句话不说两遍。这一轮动过工具、或者上一轮
+          没说过这句（第一轮、缺项变了），照说。增强类：查不到上一轮就照说（§七）。
+        """
+        if tool_result_count(record.get("events")) > 0:
+            return False
+        try:
+            previous = await asyncio.to_thread(self.store.previous, record["runId"], record["ownerId"])
+        except Exception:
+            return False
+        said = [event.get("text") for event in (previous or {}).get("events") or []
+                if isinstance(event, dict) and event.get("stopReason") == "goal_not_delivered"]
+        return bool(said) and said[-1] == notice
+
     async def _goal_blocked_reasons(self, record) -> list:
         """服务端判定「还缺什么」。拿不到就返回空——不编原因。"""
         try:
@@ -855,10 +875,12 @@ class ControlRunService:
                             # 「还缺什么」用人话告诉用户（C 保证最后一句露在外面）。
                             status = "waiting_user"
                             blocked = await self._goal_blocked_reasons(latest_record)
-                            await asyncio.to_thread(self.store.append_event, run_id,
-                                self.worker_id, generation,
-                                {"type": "control_text", "text": undelivered_notice(blocked),
-                                 "stopReason": "goal_not_delivered"})
+                            notice = undelivered_notice(blocked)
+                            if not await self._repeats_last_notice(latest_record, notice):
+                                await asyncio.to_thread(self.store.append_event, run_id,
+                                    self.worker_id, generation,
+                                    {"type": "control_text", "text": notice,
+                                     "stopReason": "goal_not_delivered"})
                         goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
                         await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
                             generation, status=goal_status)
