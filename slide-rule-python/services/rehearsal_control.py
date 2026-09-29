@@ -191,7 +191,7 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
-from services.project_tools import (command_receipt_from, explain_queue, present_project_tool_result, queue_blocker,
+from services.project_tools import (TURN_START_REVISION, command_receipt_from, explain_queue, present_project_tool_result, queue_blocker,
     withdraw_unrunnable_build)
 from services.project_store import get_project_store
 from services.session_uploads import upload_fact, workspace_path
@@ -4368,6 +4368,8 @@ async def _run_control_turn_serial(
 
     token = _CONTROL_PAYLOAD.set(payload if isinstance(payload, dict) else {})
     project_token = _PROJECT_TOOLS.set(project_tools)
+    # 编辑回执里「和这一轮开始时比的净改动」量的起点（project_tools._net_change_since_turn_start）。
+    turn_start_token = TURN_START_REVISION.set(getattr(state, "projectRevision", None))
     activate_charter_for_run(state, payload)
     try:
         # 抄 grok 第二层重试预算：**一个回合一份，中途永不清零**。
@@ -4401,6 +4403,7 @@ async def _run_control_turn_serial(
         clear_charter_for_run()
         _CONTROL_PAYLOAD.reset(token)
         _PROJECT_TOOLS.reset(project_token)
+        TURN_START_REVISION.reset(turn_start_token)
 
 
 def _open_question_gaps(state: V5SessionState) -> List[str]:

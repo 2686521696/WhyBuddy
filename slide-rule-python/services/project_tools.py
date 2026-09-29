@@ -14,7 +14,8 @@ import re
 import shlex
 import time
 import uuid
-from difflib import SequenceMatcher
+from contextvars import ContextVar
+from difflib import SequenceMatcher, unified_diff
 from urllib.parse import urlsplit
 from types import SimpleNamespace
 
@@ -162,6 +163,31 @@ def _skill_files_near(package: dict[str, str], wanted: str, *, cap: int = 30) ->
         listed.append(path)
     shown = ", ".join(listed[:cap])
     return shown + (f" ……另 {len(listed) - cap} 项" if len(listed) > cap else "")
+
+
+# 这一轮（一次 control run）开始时的源码版本。rehearsal_control 在点火时设；只读不写。
+TURN_START_REVISION: ContextVar[str | None] = ContextVar("project_turn_start_revision", default=None)
+
+
+def _net_change_sentence(before: dict, after: dict, *, limit: int = 6) -> str:
+    changed = sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
+    if not changed:
+        return ("和这一轮开始时比，源码净改动为零（逐字节相同）：这轮的改动互相抵消了。"
+                "对用户别说新增或修好了什么；要的东西原来就有，就照实说原来就有。")
+    parts = []
+    for path in changed[:limit]:
+        old, new = before.get(path), after.get(path)
+        if old is None:
+            parts.append(f"{path}（新文件）")
+        elif new is None:
+            parts.append(f"{path}（删掉）")
+        else:
+            lines = list(unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=0))
+            plus = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
+            minus = sum(1 for line in lines if line.startswith("-") and not line.startswith("---"))
+            parts.append(f"{path} +{plus}/−{minus} 行")
+    more = f" 等 {len(changed)} 个文件" if len(changed) > limit else ""
+    return f"和这一轮开始时比的净改动：{'，'.join(parts)}{more}。对用户说改了什么，以这个为准。"
 
 from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
@@ -2063,7 +2089,36 @@ class ProjectTools:
         if note:
             result = {**result, "syntaxError": note["syntaxError"],
                       "hint": note["hint"] + str(result.get("hint") or "")}
+        net = self._net_change_since_turn_start(project, current.revision, files, changes)
+        if net:
+            result = {**result, "hint": str(result.get("hint") or "") + net}
         return result
+
+    def _net_change_since_turn_start(self, project, current_revision, files, changes) -> str:
+        """这一轮开始以来源码的净改动，宿主量的（增强类：量不到就不说，§七）。
+
+        ⚠ 2026-09-29 隔离真机第 118 轮 sr-20260929111945-BCHHHHSVVS（读书清单网页，追问「每本书后面加一个删除按钮」）：
+          按钮第一轮就有。模型说了句「删除按钮其实已经在了」，又说 Hook 导入不完整、补了一行重复 import，
+          构建挂掉再删回去——treeHash 和这轮开始时一模一样。收尾写「每本书后新增删除按钮（×）……已修复
+          重复导入问题」。第 117 轮 sr-20260929105530-CZYB2ZSN44 同一个样子：原有的下拉框只加了个可见标签，报成「已加上」。
+          提示词里那句「原来就有就照实说」（test_control_project_prompt）挡不住，它看不见自己改了多少。
+          办公文件有「和上一版比」（_facts_delta）；这里给源码同样的一把尺子：只在这一轮已经动过之后
+          才说（第一笔改动的净改动就是它自己，不必唠叨）。
+        """
+        start = TURN_START_REVISION.get()
+        if not start or start == current_revision:
+            return ""
+        try:
+            before = self.store.read_files(project.projectId, start, owner_id=self.owner_id)
+        except Exception:
+            return ""
+        after = dict(files)
+        for change in changes:
+            if change.get("content") is None:
+                after.pop(change["path"], None)
+            else:
+                after[change["path"]] = change["content"]
+        return _net_change_sentence(before, after)
 
     def _patch(self, project, args):
         active = self.store.get_lease(project.projectId, owner_id=self.owner_id)
