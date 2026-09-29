@@ -32,6 +32,8 @@ def assert_live_guidance(messages, offered, *, has_project=True):
     # 真实性边界：排队≠完成。ae5b487f 精简时把这句删了，没有判据拦住。
     assert "如实交回 operationId" in prompt
     assert "宣称完成" in prompt
+    # 2026-09-29 第 117 轮 sr-20260929105530-CZYB2ZSN44：原来就有的下拉框被报成「已加上」。按意思钉：原有的照实说原有。
+    assert "原来就有" in prompt and "别把原有的说成这次新加的" in prompt
     assert "修改前先取消活跃运行" not in prompt
     # 2026-09-26 sr-20260926043506-7B49NNSE1M：模型当沙盒什么都有，写完脚本直接跑，
     # 第一发 ModuleNotFoundError。按意思钉环境事实；只陈述、不排步骤。
