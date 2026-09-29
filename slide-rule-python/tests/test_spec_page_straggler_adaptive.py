@@ -213,6 +213,11 @@ class Test真并发下的自适应:
         res = spec_page_html.generate_pages_parallel(
             _spec(2), llm_call=_maker({"p1": 1.0, "p2": 30}), max_workers=2
         )
-        assert "2.0s" in res["failed"]["p2"], (
-            f"报的不是算出来的 2.0s 预算：{res['failed']['p2']}"
+        # ⚠ 2026-09-29 全量 -n 4 + 隔离栈同时在跑：首页实测 1.05s，报的是「2.1s」——那正是算出来的
+        #   预算（1.05 × 2.0），判据却只认字面「2.0s」而红。盯语义：是首页用时 × 倍率，不是下限常数。
+        import re
+        reported = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)s", res["failed"]["p2"])]
+        assert reported and 2.0 <= reported[0] < 3.0, (
+            f"报的不是算出来的预算（首页 1.0s × 2.0 起）：{res['failed']['p2']}"
         )
+        assert reported[0] != 0.5, f"报成了下限常数：{res['failed']['p2']}"
