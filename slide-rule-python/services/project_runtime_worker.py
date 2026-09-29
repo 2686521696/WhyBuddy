@@ -1086,6 +1086,18 @@ class _RuntimeTask:
                     self.original.projectId, path, owner_id=self.owner_id)
             except Exception:
                 before = None
+            # ⚠ 2026-09-29 隔离真机第 112 轮 sr-20260929090856-0GZ9EPV769（家庭年度收支 Excel，追问「加一张按月份的
+            #   收支趋势折线图」）：看板里本来就有那张 LineChart。模型只把小标题「月度趋势」改成
+            #   「按月份的收支趋势折线图」，收尾说「已加入按月份的收支趋势折线图」。回执里写着
+            #   原生图表 2 个——跟上一版一样，但没人告诉它「跟上一版一样」。覆盖之前先量一下旧版。
+            previous_facts = None
+            if isinstance(before, dict) and before.get("artifactId"):
+                try:
+                    _old_meta, old_bytes = store.get_bytes(
+                        self.original.projectId, before["artifactId"], owner_id=self.owner_id)
+                    previous_facts = office_facts(old_bytes, path)
+                except Exception:
+                    previous_facts = None
             try:
                 meta = store.put(
                     self.original.projectId,
@@ -1115,6 +1127,10 @@ class _RuntimeTask:
                 measured = dict(self.result.get("officeFacts") or {})
                 measured[stored] = facts
                 self.result["officeFacts"] = measured
+                if previous_facts:
+                    prior = dict(self.result.get("officeFactsBefore") or {})
+                    prior[stored] = previous_facts
+                    self.result["officeFactsBefore"] = prior
         _RuntimeTask._remember_held_office_files(self, report_miss)
 
     def _flush_stdin(self):

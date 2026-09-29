@@ -516,13 +516,14 @@ def operation_snapshot(snapshot):
         files = saved.get(name)
         if isinstance(files, list) and files:
             result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
-    measured = saved.get("officeFacts")
-    if isinstance(measured, dict) and measured:
-        result["officeFacts"] = {
-            str(path)[:240]: {k: v for k, v in facts.items() if isinstance(v, int)}
-            for path, facts in list(measured.items())[:8]
-            if isinstance(path, str) and isinstance(facts, dict)
-        }
+    for key in ("officeFacts", "officeFactsBefore"):
+        measured = saved.get(key)
+        if isinstance(measured, dict) and measured:
+            result[key] = {
+                str(path)[:240]: {k: v for k, v in facts.items() if isinstance(v, int)}
+                for path, facts in list(measured.items())[:8]
+                if isinstance(path, str) and isinstance(facts, dict)
+            }
     downloads = saved.get("officeDownloads")
     if isinstance(downloads, dict) and downloads:
         result["officeDownloads"] = {
@@ -918,12 +919,29 @@ def _office_facts_sentence(result) -> str:
     measured = result.get("officeFacts") if isinstance(result, dict) else None
     if not isinstance(measured, dict) or not measured:
         return ""
+    before = result.get("officeFactsBefore") if isinstance(result, dict) else None
+    before = before if isinstance(before, dict) else {}
     rows = "；".join(
-        office_facts_sentence(path, facts)
+        office_facts_sentence(path, facts) + _facts_delta(before.get(path), facts)
         for path, facts in list(measured.items())[:8]
         if isinstance(facts, dict)
     )
     return f"文件实况（宿主从文件里量的）：{rows}。向用户描述这份文件时以这些数为准。"
+
+
+_FACT_NAMES = (("slides", "页数"), ("sheets", "工作表"), ("charts", "原生图表"), ("pictures", "图片"),
+               ("tables", "原生表格"), ("pivotTables", "数据透视表"))
+
+
+def _facts_delta(previous, current) -> str:
+    """和覆盖前那一版比，哪些数变了（第 112 轮 sr-20260929090856-0GZ9EPV769：图表 2 → 2，收尾却说「已加入」一张）。"""
+    if not isinstance(previous, dict) or not isinstance(current, dict):
+        return ""
+    moved = [f"{name} {previous.get(key, 0)}→{current.get(key, 0)}" for key, name in _FACT_NAMES
+             if (key in previous or key in current) and previous.get(key, 0) != current.get(key, 0)]
+    if moved:
+        return "（和上一版比：" + "，".join(moved) + "；其余没变）"
+    return "（和上一版比：这些数一个都没变——没多出来的东西别说成新增）"
 
 
 #: 把一个文件打到屏幕上的命令：sed -n / cat / head / tail / nl / awk 带一个像文件名的参数。
