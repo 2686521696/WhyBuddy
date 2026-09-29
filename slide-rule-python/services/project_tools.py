@@ -1537,6 +1537,10 @@ class ProjectTools:
                 fix = self._stale_revision_hint(state, args, str(exc))
                 if fix:
                     body["hint"] = fix
+            elif str(exc) == "project_revision_not_found":
+                fix = self._unknown_revision_hint(state, args)
+                if fix:
+                    body["hint"] = fix
             return body
 
     def _stale_revision_hint(self, state, args, code) -> str:
@@ -1563,6 +1567,38 @@ class ProjectTools:
             return ("版本号是对的，是在跑的开发服务器此刻接不了验收（还在同步刚才的编辑、没就绪或已过期）。"
                     "用 project_status 看 runtime.status，到 ready 再调；服务器没了就先 project_start。")
         return ""
+
+    def _unknown_revision_hint(self, state, args) -> str:
+        """传的 revision 查无此版：说当前是哪一版、不传就是读当前；只差几个字符的那一版点名。闸不放松。
+
+        ⚠ 2026-09-29 隔离真机第 128 轮 sr-20260929153009-SV45EX6FHQ（书签网页，追问「深色模式不要了，恢复成之前的样子」）：
+          模型三发 project_list / project_search 带 revision=prv-f82aea105e78b2ac53cdbcc2882bb90b0——33 位，
+          真的那版是 32 位（多抄了一个字符），回执只有 project_revision_not_found。它读成「版本号跟上下文不一致」，
+          放弃按版本找回，改成手工删深色代码；结束时的源码跟加深色之前并不逐字相同。
+        """
+        if not isinstance(args, dict):
+            return ""
+        passed = next((args[key] for key in ("revision", "expectedRevision", "baseRevision")
+                       if isinstance(args.get(key), str) and args[key].strip()), "")
+        if not passed:
+            return ""
+        try:
+            project = self.store.get_project_for_session(
+                str(getattr(state, "sessionId", "") or ""), owner_id=self.owner_id)
+            head = project.currentRevision
+            known, cursor = [], head
+            while cursor and len(known) < MAX_REVISIONS:
+                known.append(cursor)
+                cursor = self.store.get_revision(project.projectId, cursor, owner_id=self.owner_id).parentRevision
+        except Exception:
+            return ""
+        if passed in known:
+            return ""
+        close = [item for item in known if SequenceMatcher(None, passed, item).ratio() >= OPERATION_ID_TYPO_RATIO]
+        named = (f"本工程的 {close[0]} 跟它只差几个字符，多半是抄错了（一个字符都不能差），要那一版就原样用它。"
+                 if len(close) == 1 else "")
+        return (f"本工程没有 {passed} 这一版。{named}工程当前是 {head}；不传 revision 就是读当前版本，"
+                "要看有哪些版本用 project_revisions。")
 
     def _mistyped_operation_id(self, state, args) -> str:
         """传的 operationId 查无此条、却跟本会话某条只差一两个字符：说是抄错了，给原样那串。
