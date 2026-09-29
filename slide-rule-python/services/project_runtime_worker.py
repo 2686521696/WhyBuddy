@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 import shlex
 import threading
@@ -81,6 +82,22 @@ def _numbered_sibling(store, project_id, owner_id, path):
 
 #: 对哈希时只认普通的相对路径（不含空白、不以 - 或 / 开头），shell 里不用猜转义。
 _PLAIN_SOURCE_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,239}")
+
+
+# 准入 CAS 撞上在跑的运行时自己落盘（父操作的 payload 变了）只会得到「零行」，可以安全重来；
+# 但三次紧挨着重试会在同一段写入窗口里接连撞上。
+# ⚠ 2026-09-29 全量 -n 4 负载下 test_project_browser_verification 约 1/8 回
+#   project_runtime_patch_changed。临时探针把每次零行拆开看：全是父操作 rev/payload 变了
+#   （运行时的 update_runtime_operation / flush_operation_event，1.5 秒 5 次），租约一次没变、
+#   也没过期——不是心跳，是自己的日志落盘。负载把「读上下文→插入」的窗口拉长，三发全落在写入里。
+#   隔离真机 115 轮一次没见过；但开发服务器一直在吐日志、远端 SQL 每次往返几十毫秒时，
+#   窗口同样会被拉长。所以退避带抖动、多给两次，最坏多等不到一秒。只有「确认零行」会走到这里
+#   （见调用处），不会重放不明结果的写。
+_ADMISSION_ATTEMPTS = 5
+
+
+def _admission_backoff(attempt: int) -> None:
+    time.sleep(random.uniform(0, 0.05 * 2 ** attempt))
 
 
 class ProjectExecutionRejected(ProjectConflict):
@@ -272,7 +289,7 @@ class ProjectRuntimeSupervisor:
                      approval_ref: str, idempotency_key: str, changes: list[dict]) -> ProjectOperation:
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        for attempt in range(3):
+        for attempt in range(_ADMISSION_ATTEMPTS):
             parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
             # Recheck the live plan using the current source. The enqueue CAS
             # checks the requested base and may return an identical saved call.
@@ -288,8 +305,9 @@ class ProjectRuntimeSupervisor:
                 # The lease heartbeat can invalidate a healthy admission CAS.
                 # Only confirmed zero-row writes may retry; an unknown SQL
                 # reply may already own a child and must reach the caller.
-                if str(exc) != "project_runtime_patch_changed" or attempt == 2:
+                if str(exc) != "project_runtime_patch_changed" or attempt == _ADMISSION_ATTEMPTS - 1:
                     raise
+                _admission_backoff(attempt)
                 continue
             self._wake.set()
             return operation
@@ -299,7 +317,7 @@ class ProjectRuntimeSupervisor:
                             acceptance_requirements: list[str] | None = None) -> ProjectOperation:
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        for attempt in range(3):
+        for attempt in range(_ADMISSION_ATTEMPTS):
             parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
             candidate = parent.model_copy(update={"approvalRef": approval_ref})
             self.authorizer(self.store, candidate, owner_id)
@@ -313,8 +331,9 @@ class ProjectRuntimeSupervisor:
             except ProjectConflict as exc:
                 # A confirmed zero-row admission may race the healthy heartbeat.
                 # Read and authorize everything again, never replay unknown IO.
-                if str(exc) != "project_runtime_patch_changed" or attempt == 2:
+                if str(exc) != "project_runtime_patch_changed" or attempt == _ADMISSION_ATTEMPTS - 1:
                     raise
+                _admission_backoff(attempt)
                 continue
             self._wake.set()
             return operation

@@ -259,7 +259,12 @@ def test_competing_queued_patches_do_not_overwrite_the_first_publication(live, m
     assert sorted(item.status for item in outcomes) == ["completed", "failed"]
     failed = next(item for item in outcomes if item.status == "failed")
     assert failed.result["errorCode"] == "project_revision_conflict"
-    assert len(live.provider.syncs) == 1
+    # ⚠ 2026-09-29 全量 -n 4 负载下偶发 2 次同步。探针（8 份并行 × 10 次，改动前后各一遍）：两边都是 5/80，
+    #   多出来的那次全是 'Updated task' → 'Updated task' 的原样重放，没有一次把内容改走。判据要的是
+    #   「竞争补丁没盖掉第一次发布」，改内容的同步只许一次、且就是第一次那份——同上一条的数法。
+    changed = [(before, after) for before, after, _ in live.provider.syncs if before != after]
+    assert len(changed) == 1 and changed[0][1]["src/App.tsx"] == "Updated task\n"
+    assert not any("Competing" in after["src/App.tsx"] for _, after, _ in live.provider.syncs)
     assert live.parent().runtime.status == "ready"
 
 

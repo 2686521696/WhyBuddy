@@ -72,7 +72,9 @@ class Provider:
         self.handles.pop(handle.sandbox_id, None)
 
 
-def eventually(predicate, *, timeout=6):
+# ⚠ 2026-09-29 八份并行负载下 test_expired_plan_before_dispatch_blocks_queued_check_without_browser_io
+#   在 6 秒上撞线（工人其实在走，只是慢）。上限只在失败时才等满，放宽不拖慢通过的判据。
+def eventually(predicate, *, timeout=15):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         value = predicate()

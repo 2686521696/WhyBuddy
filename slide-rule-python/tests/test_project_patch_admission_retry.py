@@ -84,7 +84,7 @@ def test_unknown_insert_reply_is_returned_without_repeating_an_already_saved_adm
     assert done.status == "completed" and len(live.provider.syncs) == 1
 
 
-def test_repeated_confirmed_heartbeat_conflicts_stop_after_three_admissions(live, monkeypatch):
+def test_repeated_confirmed_heartbeat_conflicts_stop_after_five_admissions(live, monkeypatch):
     real, inserts = live.store._q, []
     def racing(sql, params=None):
         if admission_sql(sql):
@@ -94,5 +94,37 @@ def test_repeated_confirmed_heartbeat_conflicts_stop_after_three_admissions(live
     monkeypatch.setattr(live.store, "_q", racing)
     result = live.tools.execute("project_patch", patch_args(live), live.state)
     assert result == {"ok": False, "error": "project_runtime_patch_changed"}
-    assert len(inserts) == 3 and not live.provider.syncs
+    assert len(inserts) == 5 and not live.provider.syncs
     assert not live.store.list_runtime_patches(live.started["operationId"], owner_id="alice", include_terminal=True)
+
+
+# ⚠ 2026-09-29 全量 -n 4 负载下，验收准入连撞三次心跳就把 project_runtime_patch_changed 交给模型
+#   （test_project_browser_verification 约 1/8；撞的是运行时自己落盘改了父操作）。三发紧挨着的重试落在同一段写入窗口里。
+#   这里让前三次准入都撞上，第四次放行：退避带抖动、多给两次之后，验收照样排上。
+def test_three_back_to_back_collisions_still_admit_the_check_after_backing_off(live, monkeypatch):
+    import services.project_runtime_worker as worker
+    real, inserts, waits = live.store._q, [], []
+    def racing(sql, params=None):
+        if admission_sql(sql):
+            inserts.append(True)
+            if len(inserts) <= 3:
+                renew(live)
+        return real(sql, params)
+    monkeypatch.setattr(worker, "_admission_backoff", lambda attempt: waits.append(attempt))
+    monkeypatch.setattr(live.store, "_q", racing)
+    result = live.tools.execute("project_verify", {"approvalRef": live.approval,
+        "expectedRevision": live.parent().runtime.revision,
+        "runtimeOperationId": live.started["operationId"], "idempotencyKey": "verify-after-collisions"}, live.state)
+    assert result["ok"], result
+    assert len(inserts) == 4 and waits == [0, 1, 2]
+
+
+def test_a_refusal_other_than_a_collision_is_not_retried_or_delayed(live, monkeypatch):
+    """反向：只有确认零行才退避重来；别的拒绝当场交回，不白等。"""
+    import services.project_runtime_worker as worker
+    waits = []
+    monkeypatch.setattr(worker, "_admission_backoff", lambda attempt: waits.append(attempt))
+    result = live.tools.execute("project_verify", {"approvalRef": live.approval,
+        "expectedRevision": "prv-" + "0" * 32,
+        "runtimeOperationId": live.started["operationId"], "idempotencyKey": "verify-stale"}, live.state)
+    assert not result["ok"] and waits == []
