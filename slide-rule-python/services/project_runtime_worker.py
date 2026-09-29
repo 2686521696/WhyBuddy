@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shlex
 import threading
 import time
 import uuid
@@ -35,6 +37,7 @@ from services.project_preview_config import (
     published_preview_url,
 )
 from services.vite_preview_hosts import injected_preview_dev_command
+from services.project_manifest import content_hash
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.deliverable_kind import (
@@ -57,6 +60,10 @@ from services.skill_hydrate import hydrate_owner_into
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "cancelled", "failed"}
 PROJECT_COMMANDS = {"check", "build", "test"}
+
+
+#: 对哈希时只认普通的相对路径（不含空白、不以 - 或 / 开头），shell 里不用猜转义。
+_PLAIN_SOURCE_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,239}")
 
 
 class ProjectExecutionRejected(ProjectConflict):
@@ -703,6 +710,9 @@ class _RuntimeTask:
             restore_application_data(self)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
+            # 留住这台沙盒的工作区才谈得上「命令在沙盒里改了源码」：记下刚写进去的样子，命令跑完对一遍。
+            self._synced_hashes = ({name: content_hash(text) for name, text in files.items() if isinstance(text, str)}
+                                   if skip_install else None)
             self._mount_session_uploads()
             if not reused:
                 # ⚠ 2026-09-28 隔离真机第 78 轮 sr-20260928004742-PZZS967DE4（@office-skills 做新品发布会 PPT，追问
@@ -880,6 +890,7 @@ class _RuntimeTask:
         self._persist_process_output(pid, executed)
         # 命令结束后都扫。失败也可能已经写出 .pptx；收集 fail-open。
         self._collect_office_artifacts()
+        self._note_sandbox_only_edits()
         if executed.exit_code is None:
             raise WorkspaceProviderError("project_command_result_unknown", result=executed)
         if executed.exit_code != 0:
@@ -991,6 +1002,39 @@ class _RuntimeTask:
         if path not in downloads and len(downloads) < 8:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
+
+    def _note_sandbox_only_edits(self):
+        """命令在沙盒里改了工程源码文件：记下来，回执照实说「只在沙盒里、下一条命令会被还原」。
+
+        ⚠ 2026-09-29 隔离真机第 107 轮 sr-20260929070420-W29Y3BK1EP（设计工作室员工手册 Word）：
+          追问「把考勤与休假那一章改成表格」，模型用 python heredoc 在沙盒里改了
+          scripts/create_handbook.py 并重新生成（文档 10 张表）。工程源码里的脚本没变。下一个追问
+          「加页眉页脚」读的是源码那版、file_str_replace 在源码上改；每条命令开跑前 worker 按源码把
+          文件重写进沙盒——考勤表格那段被还原，重新生成后 7 张表。用户要的改动悄悄没了，没有一句报错。
+          源码是权威，这条不改；只在命令结束时对一遍哈希，把「只改在沙盒里」的文件点名。
+          增强类，对不上、跑不了都当没有（fail-open，§七）。
+        """
+        synced = getattr(self, "_synced_hashes", None)
+        runner = getattr(self.provider, "run", None)
+        if not synced or not callable(runner) or self.handle is None:
+            return
+        paths = sorted(name for name in synced if _PLAIN_SOURCE_PATH.fullmatch(name))[:200]
+        if not paths:
+            return
+        try:
+            probe = runner(self.handle, "sha256sum -- " + " ".join(shlex.quote(p) for p in paths)
+                           + " 2>/dev/null; true", timeout_seconds=30)
+        except Exception:
+            logger.warning("sandbox source drift probe failed", exc_info=True)
+            return
+        changed = []
+        for line in str(getattr(probe, "stdout", "") or "").splitlines():
+            digest, _sep, name = line.partition("  ")
+            name = name.strip()
+            if name in synced and re.fullmatch(r"[0-9a-f]{64}", digest) and digest != synced[name]:
+                changed.append(name)
+        if changed:
+            self.result["sandboxOnlyEdits"] = changed[:8]
 
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。

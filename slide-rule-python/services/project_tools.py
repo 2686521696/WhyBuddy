@@ -512,7 +512,7 @@ def operation_snapshot(snapshot):
     # ⚠ 2026-09-24：成功路径把 template/files/skip 写进 result["gate"]。
     #   skip=True 只表示没跑 npm ci，命令已经跑完。抄进回执后模型读成
     #   「这条没执行」。留在操作记录和 orch_trace，不进这份快照。
-    for name in ("officeFiles", "officeFilesHeld"):
+    for name in ("officeFiles", "officeFilesHeld", "sandboxOnlyEdits"):
         files = saved.get(name)
         if isinstance(files, list) and files:
             result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
@@ -1017,6 +1017,13 @@ def _command_pointer(result, excerpt="", full_command=None):
             + _download_sentence(result)
             + hint
         )
+    drifted = result.get("sandboxOnlyEdits")
+    if isinstance(drifted, list) and drifted:
+        # ⚠ 2026-09-29 第 107 轮 sr-20260929070420-W29Y3BK1EP：沙盒里改的源码下一条命令就被还原（worker _note_sandbox_only_edits 头注）。
+        named = ", ".join(str(item) for item in drifted[:8])
+        hint = (f"这条命令在沙盒里改了工程源码文件：{named}。改动只在沙盒里，工程源码还是旧版；"
+                "下一条命令开跑前会按工程源码把它们重写回去，这次的改动就没了。"
+                "要留住：用 file_write 把改后的完整内容写回（或者改用 file_str_replace 改源码再跑）。" + hint)
     if (result.get("sandboxReclaimed") and result.get("exitCode") in (0, "0")
             and _only_installs(command_text)):
         # ⚠ 2026-09-28 隔离真机第 81 轮 sr-20260928021545-B6CQ0CM50T（番茄钟网页，追问「用 webapp-testing 把添加、完成、删除
