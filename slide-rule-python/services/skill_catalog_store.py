@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from services.control_skills import SkillInfo, invoke_skill, normalize_skill_name, parse_skill_md
 from services.identity_store import get_identity_store
-from services.skill_blob_store import blob_get, blob_put
+from services.skill_blob_store import blob_exists, blob_get, blob_put
 from services.skill_package_format import skill_md_text, unpack_skill_zip
 
 PACKAGE_TABLE = "wb_skill_package"
@@ -137,6 +137,21 @@ def local_seed_files(slug: str) -> dict[str, str] | None:
         return unpack_skill_zip(path.read_bytes())
     except Exception:
         return None
+
+
+def _blob_present(pkg: dict[str, Any]) -> bool:
+    """表里这一行指着的字节在不在存储里。
+
+    ⚠ 2026-09-30 用户本机连线上库、配只读账号直读线上 MinIO：office-skills 1.0.0 的 GET 是 404，
+      整个 sliderule-skills 桶 ListObjects 0 个——表里 105 行索引，货仓一个字节都没有。
+      ensure_seed 原来只看「表里有同版本」就跳过，从不看 OSS 里在不在，于是这笔账永远不会自己补上
+      （行是别处写进这张表的：那一处的 blob 落在它自己的存储里）。
+      查不清（网络 / 权限）就当在：只在确认缺的时候才补传，不因为一次抖动去写。
+    """
+    try:
+        return blob_exists(str(pkg.get("ossKey") or pkg.get("oss_key") or ""))
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def seed_readiness() -> dict[str, Any]:
@@ -387,9 +402,14 @@ class SkillCatalogStore:
                 jobs.append((path, meta))
         for path, meta in jobs:
             have = existing.get(meta["slug"])
-            if have and have.get("version") == meta["version"]:
+            if have and have.get("version") == meta["version"] and _blob_present(have):
                 continue
-            seeded.append(self._seed_zip(path, meta))
+            try:
+                seeded.append(self._seed_zip(path, meta))
+            except Exception as exc:  # noqa: BLE001 — 只读凭据 / 存储不可写：后面的也写不进去，别刷一百遍
+                print(f"[skills] seed upload stopped at {meta['slug']}: {type(exc).__name__}: {str(exc)[:160]}",
+                      flush=True)
+                break
         self._seed_settled = True
         return [item for item in seeded if item]
 

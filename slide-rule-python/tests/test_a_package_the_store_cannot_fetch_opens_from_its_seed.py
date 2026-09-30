@@ -29,7 +29,7 @@ LIVE_ROW = {"id": "office-skills", "slug": "office-skills", "version": "1.0.0",
 @pytest.fixture()
 def unreachable_blob(monkeypatch, tmp_path):
     monkeypatch.setenv("S3_ENDPOINT", "fs")
-    monkeypatch.setenv("SKILL_BLOB_FS_ROOT", str(tmp_path / "empty"))
+    monkeypatch.setenv("S3_FS_ROOT", str(tmp_path / "empty"))
 
     def missing(key):
         raise FileNotFoundError(key)

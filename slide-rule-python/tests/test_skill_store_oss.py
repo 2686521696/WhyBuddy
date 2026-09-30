@@ -429,3 +429,36 @@ def test_installed_package_wins_over_the_repo_seed(catalog, monkeypatch):
         lambda self, pkg: (_ for _ in ()).throw(RuntimeError("oss down")))
     fallback = {info.name: info for info in catalog.installed_skill_infos("alice")}
     assert fallback["demo"].body == "种子正文"
+
+
+# ⚠ 2026-09-30 用户本机（只读账号直读线上 MinIO）：表里 105 行索引，sliderule-skills 桶 ListObjects
+#   0 个，office-skills 1.0.0 GET 404。ensure_seed 见「同版本在架」就跳过，从不看字节在不在——缺的永远补不回来。
+def test_a_row_whose_bytes_are_gone_is_uploaded_again(catalog, tmp_path):
+    catalog.ensure_seed()
+    row = next(pkg for pkg in catalog.list_packages() if pkg["slug"] == "office-skills")
+    blob = tmp_path / "oss" / row["ossKey"]
+    assert blob.is_file()
+    blob.unlink()                                   # 线上那一发的形状：行在、字节不在
+    catalog._seed_settled = False
+    healed = catalog.ensure_seed()
+    assert "office-skills" in healed and blob.is_file()
+    assert catalog.unpack_package(row) == unpack_skill_zip((Path(__file__).resolve().parents[2] / "skills" / "seeds" / "office-skills.zip").read_bytes())
+
+
+def test_a_read_only_store_stops_after_the_first_refused_write(catalog, monkeypatch, tmp_path):
+    """反向：只读凭据补不进去——停在第一发，不把一百个包都试一遍，也不改表。"""
+    catalog.ensure_seed()
+    for path in (tmp_path / "oss").rglob("*.zip"):
+        path.unlink()
+    before = {pkg["slug"]: pkg["sha256"] for pkg in catalog.list_packages()}
+    puts: list[str] = []
+
+    def refuse(key, data):
+        puts.append(key)
+        raise PermissionError("AccessDenied")
+
+    monkeypatch.setattr("services.skill_catalog_store.blob_put", refuse)
+    catalog._seed_settled = False
+    assert catalog.ensure_seed() == []
+    assert len(puts) == 1
+    assert {pkg["slug"]: pkg["sha256"] for pkg in catalog.list_packages()} == before
