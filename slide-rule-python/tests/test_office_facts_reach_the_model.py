@@ -43,8 +43,9 @@ def _zip(parts: dict[str, bytes]) -> bytes:
 
 
 def test_the_real_deck_has_ten_slides_and_no_native_chart():
+    # 第 153 轮起 pptx 多量一项同色文字（test_text_on_same_color_is_measured 头注）
     assert office_facts(DECK, "2026年第三季度产品复盘.pptx") == {
-        "slides": 10, "charts": 0, "pictures": 0, "tables": 0}
+        "slides": 10, "charts": 0, "pictures": 0, "tables": 0, "textInvisible": 0}
 
 
 def test_a_native_chart_a_picture_and_a_table_are_counted():
@@ -56,7 +57,7 @@ def test_a_native_chart_a_picture_and_a_table_are_counted():
         "ppt/charts/style1.xml": b"<cs:chartStyle/>",  # 图表样式不是图表
         "ppt/media/image1.png": b"\x89PNG",
     })
-    assert office_facts(deck, "a.pptx") == {"slides": 2, "charts": 1, "pictures": 1, "tables": 1}
+    assert office_facts(deck, "a.pptx") == {"slides": 2, "charts": 1, "pictures": 1, "tables": 1, "textInvisible": 0}
     sheet = _zip({"xl/worksheets/sheet1.xml": b"<w/>", "xl/worksheets/sheet2.xml": b"<w/>",
                   "xl/charts/chart1.xml": b"<c/>"})
     # 第 66 轮起多量一项数据透视表（test_pivot_table_is_measured 头注）；
@@ -105,7 +106,7 @@ def test_a_newly_collected_file_carries_its_facts(tmp_path, monkeypatch):
         [{"path": "复盘.pptx", "data": DECK}],  # 同一份字节再扫一遍
     ])
     assert first["officeFiles"] == ["复盘.pptx"]
-    assert first["officeFacts"] == {"复盘.pptx": {"slides": 10, "charts": 0, "pictures": 0, "tables": 0}}
+    assert first["officeFacts"] == {"复盘.pptx": {"slides": 10, "charts": 0, "pictures": 0, "tables": 0, "textInvisible": 0}}
     # 反向：没变的旧文件不是这条命令的产出，不重复报一遍
     assert again["officeFilesHeld"] == ["复盘.pptx"]
     assert "officeFacts" not in again
@@ -124,7 +125,7 @@ def test_the_receipt_states_the_measured_facts():
     saved = {"exitCode": 0, "officeFiles": ["复盘.pptx"],
              "officeFacts": {"复盘.pptx": office_facts(DECK, "复盘.pptx")}}
     snap = _snapshot(saved)
-    assert snap["officeFacts"] == {"复盘.pptx": {"slides": 10, "charts": 0, "pictures": 0, "tables": 0}}
+    assert snap["officeFacts"] == {"复盘.pptx": {"slides": 10, "charts": 0, "pictures": 0, "tables": 0, "textInvisible": 0}}
     hint = _command_pointer(snap, "saved 10")["hint"]
     assert office_facts_sentence("复盘.pptx", snap["officeFacts"]["复盘.pptx"]) in hint
     assert "原生图表 0 个" in hint and "以这些数为准" in hint

@@ -971,7 +971,7 @@ def _office_facts_sentence(result) -> str:
 
 _FACT_NAMES = (("slides", "页数"), ("sheets", "工作表"), ("charts", "原生图表"), ("pictures", "图片"),
                ("tables", "原生表格"), ("pivotTables", "数据透视表"),
-               ("listDoubleMarked", "带双重记号的列表段落"))
+               ("listDoubleMarked", "带双重记号的列表段落"), ("textInvisible", "和底色同色的文字"))
 
 
 def _facts_delta(previous, current) -> str:

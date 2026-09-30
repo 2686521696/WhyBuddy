@@ -241,6 +241,10 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                 slides = [n for n in names if _SLIDE_PART.match(n)]
                 facts["slides"] = len(slides)
                 facts["tables"] = sum(archive.read(n).count(b"<a:tbl>") for n in slides)
+                hidden = _pptx_text_on_same_color(archive, names)
+                facts["textInvisible"] = len(hidden)
+                if hidden:
+                    facts["textInvisibleSamples"] = list(dict.fromkeys(hidden))[:3]   # 三个「查看型号」只举一次
             elif ext == ".docx":
                 body = archive.read("word/document.xml") if "word/document.xml" in names else b""
                 facts["tables"] = body.count(b"<w:tbl>")
@@ -263,6 +267,105 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
             return facts
     except Exception:
         return None
+
+
+_P_NS = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+#: 低于这个对比度，字在预览里等于没有。标定：隔离库 74 份模型交付的 pptx，命中 11 份，
+#: 逐页渲染看过全是真看不清（最高的两处 1.37 / 1.38：蓝底淡蓝页码、黄底白星）；照片上的字不算（见下）。
+_INVISIBLE_CONTRAST = 1.5
+
+
+def _luminance(hex_color: str) -> float:
+    def channel(value: int) -> float:
+        v = value / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _contrast(a: str, b: str) -> float:
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _pptx_box(node: Any) -> tuple[int, int, int, int] | None:
+    off = next(node.iter(_A_NS + "off"), None)
+    ext = next(node.iter(_A_NS + "ext"), None)
+    if off is None or ext is None:
+        return None
+    x, y = _xml_int(off.attrib.get("x")), _xml_int(off.attrib.get("y"))
+    w, h = _xml_int(ext.attrib.get("cx")), _xml_int(ext.attrib.get("cy"))
+    if None in (x, y, w, h):
+        return None
+    return x, y, x + w, y + h
+
+
+def _pptx_fill(node: Any) -> tuple[bool, str | None]:
+    """(有没有填充, 纯色 srgb)。渐变 / 图片 / 主题色填充 = 有填充但颜色量不出来。"""
+    sppr = node.find(_P_NS + "spPr")
+    if sppr is None:
+        return False, None
+    solid = sppr.find(_A_NS + "solidFill")
+    if solid is not None:
+        rgb = solid.find(_A_NS + "srgbClr")
+        return True, (rgb.attrib.get("val", "").upper() or None) if rgb is not None else None
+    return any(sppr.find(_A_NS + t) is not None for t in ("gradFill", "blipFill", "pattFill")), None
+
+
+def _pptx_text_on_same_color(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """字色和它正下方那层底色几乎一样的文字：「第 N 页「字」」。
+
+    ⚠ 2026-09-30 隔离真机第 153 轮（智能手表发布会 PPT，没点名技能，自己编排了 6 个）：
+      封面的「CONCEPT 2025」、第 2 页三个「查看型号」、第 3 页「FOR ATHLETES」、第 8 页「RESERVE NOW」
+      全是亮绿 / 青色胶囊上叠一个同色字的文本框——右栏预览里就是一排没字的色条。模型自己的校验写着
+      「无越界或浅文本框告警」：它查了位置，没查颜色。
+
+    底色 = 自己的纯色填充；没有就沿 z 序往下找第一个盖住文字中心点的形状；再没有才用页面背景。
+    往下找碰到图片 / 图表 / 组合 / 渐变这类颜色量不出来的，不下结论（fail-open）——
+    第一版没算照片，大阪行程那份「照片上的白字」被当成「近白背景上的白字」，误报 14 处。
+    组合里的字不看（坐标要套组合的变换）。
+    """
+    found: list[str] = []
+    for name in _slide_order(names):
+        try:
+            root = ET.fromstring(archive.read(name))
+        except (KeyError, ET.ParseError):
+            continue
+        tree = root.find(f"{_P_NS}cSld/{_P_NS}spTree")
+        if tree is None:
+            continue
+        bg = root.find(f"{_P_NS}cSld/{_P_NS}bg/{_P_NS}bgPr/{_A_NS}solidFill/{_A_NS}srgbClr")
+        background = bg.attrib.get("val", "").upper() if bg is not None else None
+        below: list[tuple[tuple[int, int, int, int], str | None]] = []
+        number = re.search(r"(\d+)\.xml$", name)
+        for node in list(tree):
+            kind = _xml_local(node.tag)
+            box = _pptx_box(node)
+            if kind in ("pic", "graphicFrame", "grpSp"):
+                if box:
+                    below.append((box, None))
+                continue
+            if kind != "sp" or not box:
+                continue
+            filled, own = _pptx_fill(node)
+            text = "".join(t.text or "" for t in node.iter(_A_NS + "t")).strip()
+            colors = {c.attrib.get("val", "").upper() for r in node.iter(_A_NS + "rPr")
+                      for c in r.findall(f"{_A_NS}solidFill/{_A_NS}srgbClr")}
+            colors.discard("")
+            if text and colors and not (filled and own is None):
+                under = own
+                if under is None:
+                    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+                    hit = next((fill for area, fill in reversed(below)
+                                if area[0] <= cx <= area[2] and area[1] <= cy <= area[3]), "")
+                    under = background if hit == "" else hit
+                if under and re.fullmatch(r"[0-9A-F]{6}", under) and all(re.fullmatch(r"[0-9A-F]{6}", c) for c in colors):
+                    if min(_contrast(c, under) for c in colors) < _INVISIBLE_CONTRAST:
+                        found.append(f"第 {number.group(1) if number else '?'} 页「{text[:16]}」")
+            if filled:
+                below.append((box, own))
+    return found
 
 
 def _docx_double_marked(body: bytes, styles: bytes) -> int:
@@ -335,6 +438,12 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
                  "（用户在右侧预览和结果卡缩略图里第一眼看到的这些格子是空白——总分、合计、排名都是空的。"
                  "交付前补上：openpyxl 存不了结果；改用 XlsxWriter，"
                  "worksheet.write_formula(单元格, 公式, 格式, 值) 把 Python 算好的值一起写进去，公式照样保留）")
+    invisible = int(facts.get("textInvisible") or 0)
+    if invisible:
+        # 第 153 轮，见 _pptx_text_on_same_color 头注。
+        samples = "、".join(str(item) for item in (facts.get("textInvisibleSamples") or [])[:3])
+        note += (f"，有 {invisible} 处文字和它下面的底色几乎同色（比如 {samples}）"
+                 "——用户在右侧预览和结果卡缩略图里看到的是一块没字的色块。交付前把这些字改成和底色反差明显的颜色")
     doubled = int(facts.get("listDoubleMarked") or 0)
     if doubled:
         # 第 151 轮，见 _docx_double_marked 头注。
