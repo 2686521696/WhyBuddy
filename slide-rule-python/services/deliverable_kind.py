@@ -264,6 +264,11 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                             uncached += 1
                 facts["formulas"] = formulas
                 facts["formulasUncached"] = uncached
+                if formulas:
+                    wrong = _xlsx_cached_results_that_disagree(archive, names)
+                    facts["formulasWrong"] = len(wrong)
+                    if wrong:
+                        facts["formulasWrongSamples"] = wrong[:3]
             return facts
     except Exception:
         return None
@@ -368,6 +373,268 @@ def _pptx_text_on_same_color(archive: zipfile.ZipFile, names: list[str]) -> list
     return found
 
 
+_SS_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_FORMULA_TOKEN = re.compile(r"""\s*(?:
+    (?P<ref>(?:(?P<sheet>'(?:[^']|'')+'|[^\W\d][\w.]*)!)?\$?(?P<c1>[A-Z]{1,3})\$?(?P<r1>\d+)(?::\$?(?P<c2>[A-Z]{1,3})\$?(?P<r2>\d+))?(?![\w(]))
+  | (?P<num>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
+  | (?P<func>[A-Z][A-Z0-9.]*)\(
+  | (?P<op>[-+*/^(),])
+)""", re.X)
+_SUPPORTED_FUNCS = {"SUM", "AVERAGE", "MIN", "MAX", "COUNT", "ROUND"}
+
+
+class _Unsupported(Exception):
+    """这条公式量不了（函数不认识、引用了文字、循环……）——不下结论。"""
+
+
+def _col_number(letters: str) -> int:
+    n = 0
+    for ch in letters:
+        n = n * 26 + ord(ch) - 64
+    return n
+
+
+def _col_letters(n: int) -> str:
+    out = ""
+    while n:
+        n, rem = divmod(n - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
+def _xlsx_sheet_parts(archive: zipfile.ZipFile) -> dict[str, str]:
+    """工作表名 → 部件路径，走 workbook.xml.rels，不按文件名猜。"""
+    root = ET.fromstring(archive.read("xl/workbook.xml"))
+    rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    target = {r.attrib.get("Id"): r.attrib.get("Target", "") for r in rels}
+    parts = {}
+    for sheet in root.iter(_SS_NS + "sheet"):
+        path = target.get(sheet.attrib.get(_REL_NS + "id"), "")
+        path = path.lstrip("/") if path.startswith("/") else "xl/" + path
+        parts[sheet.attrib.get("name", "")] = path
+    return parts
+
+
+def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """存进文件的公式结果，和按公式重算出来的对不上的：「表!格 存的是 X，按公式算是 Y」。
+
+    ⚠ 2026-09-30 隔离真机第 155 轮（工作室年度预算 Excel）：第 148 轮之后回执教模型「用 XlsxWriter
+      write_formula 把算好的值一起写」，结果从「空白」变成了「错数」——季度汇总 Q4 写的是
+      SUM('月度明细'!D16:D19)（四个季度都按 4 个月切，Q4 落到年度合计行），存的值是 0（XlsxWriter
+      不给值时的默认）；年度合计 580,400 只加了前三季。右栏预览和缩略图照着存的数画，用户看到的是错的，
+      模型的校验只数了「公式在不在」。宿主手里有字节，能核的就核。
+
+    只认最常见的一小撮：单元格、区域、+ - * / ^、SUM / AVERAGE / MIN / MAX / COUNT / ROUND。
+    别的函数、文字参与运算、共享公式、循环一律跳过——量不了不报（fail-open，本仓 §七）。
+    """
+    parts = _xlsx_sheet_parts(archive)
+    strings_root = None
+    cells: dict[tuple[str, str], tuple[str | None, Any]] = {}
+    for sheet, part in list(parts.items())[:20]:
+        if part not in names:
+            continue
+        root = ET.fromstring(archive.read(part))
+        for c in root.iter(_SS_NS + "c"):
+            ref = c.attrib.get("r")
+            if not ref:
+                continue
+            f = c.find(_SS_NS + "f")
+            v = c.find(_SS_NS + "v")
+            kind = c.attrib.get("t", "n")
+            value: Any = None
+            if v is not None and v.text is not None:
+                if kind in ("s", "str", "inlineStr"):
+                    value = "text"
+                elif kind in ("b", "e"):
+                    value = "other"
+                else:
+                    try:
+                        value = float(v.text)
+                    except ValueError:
+                        value = "other"
+            formula = None
+            if f is not None:
+                formula = f.text if (f.text and f.attrib.get("t") not in ("array", "dataTable")) else ""
+            cells[(sheet, ref)] = (formula, value)
+            if len(cells) > 50000:
+                return []
+    del strings_root
+    memo: dict[tuple[str, str], Any] = {}
+    active: set[tuple[str, str]] = set()
+
+    def cell_value(sheet: str, ref: str) -> Any:
+        key = (sheet, ref)
+        formula, value = cells.get(key, (None, None))
+        if formula is None:
+            return value
+        if formula == "":
+            raise _Unsupported
+        if key in memo:
+            return memo[key]
+        if key in active:
+            raise _Unsupported
+        active.add(key)
+        try:
+            memo[key] = evaluate(formula, sheet)
+        finally:
+            active.discard(key)
+        return memo[key]
+
+    def evaluate(formula: str, sheet: str) -> float:
+        tokens = []
+        pos = 0
+        text = formula.strip()
+        while pos < len(text):
+            m = _FORMULA_TOKEN.match(text, pos)
+            if not m or m.end() == pos:
+                raise _Unsupported
+            tokens.append(m)
+            pos = m.end()
+        index = 0
+
+        def peek(kind: str, value: str | None = None) -> bool:
+            if index >= len(tokens):
+                return False
+            got = tokens[index].group(kind)
+            return got is not None and (value is None or got == value)
+
+        def take() -> Any:
+            nonlocal index
+            index += 1
+            return tokens[index - 1]
+
+        def area(m: Any) -> list[Any]:
+            target = m.group("sheet") or sheet
+            if target.startswith("'"):
+                target = target[1:-1].replace("''", "'")
+            if target not in parts:
+                raise _Unsupported
+            c1, r1 = _col_number(m.group("c1")), int(m.group("r1"))
+            c2 = _col_number(m.group("c2")) if m.group("c2") else c1
+            r2 = int(m.group("r2")) if m.group("r2") else r1
+            if (abs(c2 - c1) + 1) * (abs(r2 - r1) + 1) > 20000:
+                raise _Unsupported
+            return [cell_value(target, f"{_col_letters(c)}{r}")
+                    for r in range(min(r1, r2), max(r1, r2) + 1)
+                    for c in range(min(c1, c2), max(c1, c2) + 1)]
+
+        def scalar(value: Any) -> float:
+            if value is None:
+                return 0.0
+            if isinstance(value, float):
+                return value
+            raise _Unsupported
+
+        def primary() -> Any:
+            if peek("num"):
+                return float(take().group("num"))
+            if peek("ref"):
+                m = take()
+                values = area(m)
+                return values if m.group("c2") else scalar(values[0])
+            if peek("func"):
+                name = take().group("func")
+                if name not in _SUPPORTED_FUNCS:
+                    raise _Unsupported
+                args: list[Any] = []
+                if not peek("op", ")"):
+                    args.append(expression(allow_area=True))
+                    while peek("op", ","):
+                        take()
+                        args.append(expression(allow_area=True))
+                if not peek("op", ")"):
+                    raise _Unsupported
+                take()
+                return call(name, args)
+            if peek("op", "("):
+                take()
+                inner = expression()
+                if not peek("op", ")"):
+                    raise _Unsupported
+                take()
+                return inner
+            raise _Unsupported
+
+        def unary() -> Any:
+            if peek("op", "-"):
+                take()
+                return -scalar(unary())
+            if peek("op", "+"):
+                take()
+                return scalar(unary())
+            return primary()
+
+        def power() -> Any:
+            left = unary()
+            while peek("op", "^"):
+                take()
+                left = scalar(left) ** scalar(unary())
+            return left
+
+        def term() -> Any:
+            left = power()
+            while peek("op", "*") or peek("op", "/"):
+                op = take().group("op")
+                right = scalar(power())
+                if op == "/" and right == 0:
+                    raise _Unsupported
+                left = scalar(left) * right if op == "*" else scalar(left) / right
+            return left
+
+        def expression(allow_area: bool = False) -> Any:
+            left = term()
+            if isinstance(left, list) and not allow_area:
+                raise _Unsupported
+            while peek("op", "+") or peek("op", "-"):
+                op = take().group("op")
+                right = scalar(term())
+                left = scalar(left) + right if op == "+" else scalar(left) - right
+            return left
+
+        def call(name: str, args: list[Any]) -> float:
+            numbers: list[float] = []
+            for arg in args:
+                for item in (arg if isinstance(arg, list) else [arg]):
+                    if isinstance(item, float):
+                        numbers.append(item)
+                    elif item not in (None, "text") or not isinstance(arg, list):
+                        raise _Unsupported
+            if name == "SUM":
+                return sum(numbers)
+            if name == "COUNT":
+                return float(len(numbers))
+            if name == "ROUND":
+                if len(args) != 2 or isinstance(args[0], list):
+                    raise _Unsupported
+                return float(round(scalar(args[0]), int(scalar(args[1]))))
+            if not numbers:
+                raise _Unsupported
+            if name == "AVERAGE":
+                return sum(numbers) / len(numbers)
+            return min(numbers) if name == "MIN" else max(numbers)
+
+        result = expression()
+        if index != len(tokens) or isinstance(result, list):
+            raise _Unsupported
+        return scalar(result)
+
+    def shown(x: float) -> str:
+        return f"{x:,.0f}" if abs(x - round(x)) < 1e-9 else f"{x:,.2f}"
+
+    found = []
+    for (sheet, ref), (formula, cached) in cells.items():
+        if not formula or not isinstance(cached, float):
+            continue
+        try:
+            actual = cell_value(sheet, ref)
+        except (_Unsupported, RecursionError, OverflowError, ValueError):
+            continue
+        if abs(actual - cached) > max(0.005, 1e-6 * abs(actual)):
+            found.append(f"{sheet}!{ref} 存的是 {shown(cached)}，按公式 {formula} 算是 {shown(actual)}")
+    return found
+
+
 def _docx_double_marked(body: bytes, styles: bytes) -> int:
     """带自动项目符号 / 编号的段落里，正文又手写了「1.」「•」的段数。
 
@@ -438,6 +705,13 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
                  "（用户在右侧预览和结果卡缩略图里第一眼看到的这些格子是空白——总分、合计、排名都是空的。"
                  "交付前补上：openpyxl 存不了结果；改用 XlsxWriter，"
                  "worksheet.write_formula(单元格, 公式, 格式, 值) 把 Python 算好的值一起写进去，公式照样保留）")
+    wrong = int(facts.get("formulasWrong") or 0)
+    if wrong:
+        # 第 155 轮，见 _xlsx_cached_results_that_disagree 头注。
+        samples = "；".join(str(item) for item in (facts.get("formulasWrongSamples") or [])[:3])
+        note += (f"，公式 {facts.get('formulas', wrong)} 个里 {wrong} 个存的结果和按公式算出来的对不上（{samples}）"
+                 "——右侧预览和卡片缩略图显示的是存的那个数，用户看到的就是错的。交付前核对：写进去的值要等于公式"
+                 "真算出来的结果，也看一眼公式引用的范围本身对不对")
     invisible = int(facts.get("textInvisible") or 0)
     if invisible:
         # 第 153 轮，见 _pptx_text_on_same_color 头注。
