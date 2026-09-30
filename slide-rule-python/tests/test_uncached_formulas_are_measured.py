@@ -31,6 +31,14 @@ def test_the_round148_workbook_reports_its_empty_formula_results():
     assert "12 个没有算好的结果" in sentence and "空白" in sentence
 
 
+def test_the_sentence_asks_for_a_fix_instead_of_excusing_it():
+    """⚠ 第 149 轮：第一版这句带着「用户在 Excel 里打开会重算」，模型两轮都读到了、两轮都照旧收尾。
+    盯语义：要求交付前补上、给出能带值写公式的做法；不许再出现替空白开脱的「打开会重算」。"""
+    sentence = office_facts_sentence(NAME, office_facts(FIXTURE.read_bytes(), NAME))
+    assert "交付前补上" in sentence and "write_formula" in sentence and "算好的值" in sentence
+    assert "打开会重算" not in sentence
+
+
 def test_the_sentence_reaches_the_command_receipt():
     """接在链路上：收回办公文件那张回执里，模型读得到这句（§三）。"""
     facts = office_facts(FIXTURE.read_bytes(), NAME)

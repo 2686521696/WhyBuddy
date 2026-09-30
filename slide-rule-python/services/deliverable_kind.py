@@ -293,9 +293,13 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         # ⚠ 2026-09-30 隔离真机第 148 轮（家庭月度开支 Excel）：openpyxl 写的 12 个 SUM 全是 <v></v>——
         #   Excel 打开会重算，右栏预览（@silurus/ooxml 只读缓存值）和结果卡缩略图里「总计」一整行是空的，
         #   模型说「合计均使用公式」没错，用户在界面上看到的却是空白。沙盒和生产镜像都没有 LibreOffice 可重算。
+        # ⚠ 第 149 轮（班级成绩 Excel + 「加一列排名」）：第一版这句写着「用户在 Excel 里打开会重算」，
+        #   两轮回执都挂上了（20/20、30/30 没结果），模型两轮都读完就收尾、照旧用 openpyxl——那半句
+        #   等于告诉它「不用管」。现在只说用户第一眼看到什么、交付前怎么补，不给台阶。
         note += (f"，公式 {facts.get('formulas', uncached)} 个里 {uncached} 个没有算好的结果"
-                 "（右侧预览和卡片缩略图只显示存好的结果，这些格子是空白；用户在 Excel 里打开会重算。"
-                 "openpyxl 存不了结果，XlsxWriter 的 write_formula 可以连同算好的值一起写）")
+                 "（用户在右侧预览和结果卡缩略图里第一眼看到的这些格子是空白——总分、合计、排名都是空的。"
+                 "交付前补上：openpyxl 存不了结果；改用 XlsxWriter，"
+                 "worksheet.write_formula(单元格, 公式, 格式, 值) 把 Python 算好的值一起写进去，公式照样保留）")
     return f"{path}：" + "，".join(parts) + note
 
 
