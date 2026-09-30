@@ -28,6 +28,7 @@ from stdio_utf8 import configure_stdio_utf8
 configure_stdio_utf8()
 
 import asyncio
+import contextlib
 import os
 import threading
 import re
@@ -361,6 +362,49 @@ def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
     return supervisor
 
 
+#: 启动时接不上工程库/控制面：第一次重试等几秒，之后翻倍，封顶一分钟。测试里调小。
+_RUNTIME_RETRY_FIRST_SECONDS = 2.0
+_RUNTIME_RETRY_MAX_SECONDS = 60.0
+
+
+def _startup_failure(exc: BaseException) -> str:
+    """启动失败的原因：错误码类的异常带上码（它们是固定短语，不含连接串），其余只给类型名。"""
+    name = type(exc).__name__
+    if name in {"ProjectStoreUnavailable", "ControlRunUnavailable", "WorkspaceProviderError"}:
+        return f"{name}({str(exc)[:120]})"
+    return name
+
+
+async def _bring_up_project_runtime(app: FastAPI) -> None:
+    """把还没起来的那一截起来：先工人，再控制面。已经起来的不重起（重试时不会多出第二个工人）。"""
+    if app.state.project_runtime_supervisor is None:
+        supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
+        if supervisor is None:
+            return  # 没开：不是故障，不重试
+        app.state.project_runtime_supervisor = supervisor
+        app.state.project_preview_access = getattr(supervisor, "preview_access", None)
+    if app.state.control_run_service is None:
+        project_store = await asyncio.to_thread(get_project_store)
+        control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
+        service = ControlRunService(control_store, project_store, app.state.project_runtime_supervisor)
+        await service.start()
+        app.state.control_run_service = service
+
+
+async def _retry_project_runtime(app: FastAPI) -> None:
+    delay = _RUNTIME_RETRY_FIRST_SECONDS
+    while True:
+        await asyncio.sleep(delay)
+        try:
+            await _bring_up_project_runtime(app)
+        except Exception as exc:
+            print(f"[startup] project runtime worker still unavailable: {_startup_failure(exc)}")
+            delay = min(delay * 2, _RUNTIME_RETRY_MAX_SECONDS)
+            continue
+        print("[startup] project runtime worker online after retry")
+        return
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
@@ -433,22 +477,25 @@ async def lifespan(app: FastAPI):
     app.state.project_runtime_supervisor = None
     app.state.project_preview_access = None
     app.state.control_run_service = None
+    retry = None
     try:
-        app.state.project_runtime_supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
-        if app.state.project_runtime_supervisor is not None:
-            app.state.project_preview_access = getattr(app.state.project_runtime_supervisor, "preview_access", None)
-            project_store = await asyncio.to_thread(get_project_store)
-            control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
-            app.state.control_run_service = ControlRunService(control_store, project_store,
-                app.state.project_runtime_supervisor)
-            await app.state.control_run_service.start()
+        await _bring_up_project_runtime(app)
     except Exception as exc:
         # Existing sessions remain usable when this optional internal worker is
         # unavailable. Start commands report 503; durable reads still work.
-        print(f"[startup] project runtime worker unavailable: {type(exc).__name__}")
+        # ⚠ 2026-09-30 隔离真机第 132 轮：容器被硬杀后第一次起栈，SQLite 还没从崩溃里缓过来，
+        #   这里抛 ProjectStoreUnavailable——原来打一行就算了，整个进程生命期控制面都是 None，
+        #   每一轮 POST /control-turn-stream 都 503，页面停在空白，二十分钟后库早就好了也没人再试。
+        #   一次性的抖动不该让它永久下线：后台按退避重试，接上为止。
+        print(f"[startup] project runtime worker unavailable: {_startup_failure(exc)}; retrying in background")
+        retry = asyncio.create_task(_retry_project_runtime(app))
     try:
         yield
     finally:
+        if retry is not None:
+            retry.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await retry
         control_service = app.state.control_run_service
         if control_service is not None:
             await control_service.shutdown()
