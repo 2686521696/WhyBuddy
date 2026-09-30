@@ -23,6 +23,11 @@ export function latestPlanDeliverableKind(
   for (let i = (rows?.length ?? 0) - 1; i >= 0; i -= 1) {
     const row = rows?.[i];
     if (row && row.kind === "plan_written") return planDeliverableKind(row);
+    // ⚠ 2026-09-30：复刻出来的会话还没有自己的计划，交付类别由源会话带过来（Python
+    //   ProjectSourceOperations.fork 写在 project_forked 那一行）。不认它，办公工程的复刻右栏画成网页。
+    if (row && row.kind === "project_forked" && typeof row.deliverableKind === "string") {
+      return planDeliverableKind(row);
+    }
   }
   return WEB_APP;
 }

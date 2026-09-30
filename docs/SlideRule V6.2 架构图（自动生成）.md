@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **357** 个，模块 **357** 个
-- 内部依赖边 **1195** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1106** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1197** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1108** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -53,7 +53,7 @@ flowchart TB
   core["core<br/>74 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|163| util
-  flow -->|137| core
+  flow -->|139| core
   flow -->|167| util
 ```
 
@@ -254,7 +254,7 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|38| platform
+  persist -->|39| platform
   run_control -->|1| platform
   runtime -->|2| identity
   runtime -->|11| persist

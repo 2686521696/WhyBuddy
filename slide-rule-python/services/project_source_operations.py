@@ -17,7 +17,11 @@ from services import persistence
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session, sync_session_project
-from services.deliverable_kind import idle_office_exec_allows_source_write, operation_left_on_lease
+from services.deliverable_kind import (
+    idle_office_exec_allows_source_write, operation_left_on_lease, plan_deliverable_kind,
+)
+from services.project_office_artifacts import ProjectOfficeArtifactStore
+from services.scope_authority import latest_control_plan
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 
@@ -164,6 +168,16 @@ class ProjectSourceOperations:
         return self.patch(project_id, expected_revision=expected_revision,
             idempotency_key="restore:" + idempotency_key, changes=changes, approval_ref=approval)
 
+    def _next_revision_created_at(self, project_id, current, target):
+        """target 之后的那一版源码是什么时候生成的；target 就是当前版则 None。"""
+        cursor, child = current, None
+        for _ in range(MAX_REVISIONS):
+            if cursor is None or cursor == target:
+                break
+            saved = self.store.get_revision(project_id, cursor, owner_id=self.owner_id)
+            child, cursor = saved, saved.parentRevision
+        return child.createdAt if child is not None and cursor == target else None
+
     def fork(self, project_id, *, revision, idempotency_key):
         source, state = self.authority(project_id)
         saved = self.store.get_revision(project_id, revision, owner_id=self.owner_id)
@@ -175,13 +189,28 @@ class ProjectSourceOperations:
             spec_revision=saved.specRevision, source_project_id=project_id, source_revision=saved.revision)
         if fork.sourceProjectId != project_id or fork.sourceRevision != saved.revision:
             raise ProjectConflict("project_idempotency_conflict")
+        # ⚠ 2026-09-30 用户点名「Fork 这种逻辑」：复刻只拷源码树。办公交付的成品（.pptx/.docx/.xlsx）
+        #   不在源码树里（产物库，ProjectOfficeArtifactStore 模块头），复刻出来的会话只有生成脚本、
+        #   没有文件，右栏按网页工程画。成品按「那一版源码之后、下一版源码之前」最后收回的那份一起拷；
+        #   交付类别跟着 project_forked 那一行走（前端 latestPlanDeliverableKind 认它）。
+        kind = plan_deliverable_kind(latest_control_plan(state))
+        copied: list[str] = []
+        try:
+            office = ProjectOfficeArtifactStore(self.store)
+            before = self._next_revision_created_at(project_id, source.currentRevision, saved.revision)
+            for path, data in office.files_as_of(project_id, owner_id=self.owner_id, before=before).items():
+                office.put(fork.projectId, owner_id=self.owner_id, path=path, data=data)
+                copied.append(path)
+        except Exception:  # noqa: BLE001 — 成品拷不过去不拖垮复刻：脚本在，重跑能再出（§七 增强类）
+            copied = []
         # Claim is server-only and insert-only. It neither copies the prior plan
         # approval nor lets a retry overwrite a newer conversation in the fork.
         candidate = V5SessionState(sessionId=session_id, ownerId=self.owner_id,
             goal={"text": str(state.goal.get("text") or "Project fork")},
             runtimeKind="project", projectId=fork.projectId, projectRevision=fork.currentRevision,
             controlTranscript=[{"kind": "project_forked", "sourceProjectId": source.projectId,
-                "sourceRevision": saved.revision}], lastTurnId="fork-1")
+                "sourceRevision": saved.revision, "deliverableKind": kind,
+                "officeFiles": sorted(copied)}], lastTurnId="fork-1")
         claimed = persistence.claim_session_record(candidate)
         if not claimed.get("ok") or not isinstance(claimed.get("state"), V5SessionState):
             raise ProjectStoreUnavailable("project_fork_session_unavailable")

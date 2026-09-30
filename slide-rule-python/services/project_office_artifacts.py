@@ -237,6 +237,28 @@ class ProjectOfficeArtifactStore:
             raise ProjectStoreUnavailable("project_office_content_corrupt")
         return {**meta, "sha256": sha256, "sizeBytes": len(data)}, data
 
+    def files_as_of(self, project_id: str, *, owner_id: str, before: str | None) -> dict[str, bytes]:
+        """每份办公文件在某个时刻之前最后收回的那一版（before=None 就是当前版）。复刻历史源码版本用。
+
+        那个时刻还没收回过的文件不算；记版本之前收回、又没有版本记录的，只认得当前那一份。
+        """
+        out: dict[str, bytes] = {}
+        for meta in self.list(project_id, owner_id=owner_id):
+            sha = meta["sha256"]
+            if before is not None:
+                rows = self.store._q(
+                    "select sha256 from wb_project_office_version where artifact_id=$1 and captured_at<$2 "
+                    "order by captured_at desc limit 1",
+                    [meta["artifactId"], before],
+                )
+                if rows:
+                    sha = rows[0]["sha256"]
+                elif str(meta["createdAt"]) >= before:
+                    continue
+            _meta, data = self.get_version_bytes(project_id, meta["artifactId"], sha, owner_id=owner_id)
+            out[meta["path"]] = data
+        return out
+
     def restore_version(self, project_id: str, artifact_id: str, sha256: str, *, owner_id: str) -> dict:
         """把某个历史版本重新设为当前。历史不丢：当前那份仍在版本列表里。"""
         meta, data = self.get_version_bytes(project_id, artifact_id, sha256, owner_id=owner_id)
