@@ -818,8 +818,12 @@ def _unopened_installed_skills(state: V5SessionState) -> list:
     except Exception:
         return []
     opened = _skills_opened_since_user_turn(state)
+    # ⚠ 2026-09-30 隔离真机第 145 轮（@frontend-design 读书打卡网页，装了 15 份）：这里原来截前 12 份，
+    #   按目录顺序截——被截掉的正好是 verification-before-completion、webapp-testing 两份跟网页对口的，
+    #   留下的 12 份大半是 office / pptx / 写作类。没 @ 的网页轮（139/141/142）每轮自己用上 3～4 份，
+    #   这一轮只用了点名那一份。清单不截（已装的就这些），描述在回执里另有截断。
     return [info for info in catalog
-            if getattr(info, "enabled", True) and info.name not in opened][:12]
+            if getattr(info, "enabled", True) and info.name not in opened]
 
 
 def _planning_skills_note(state: V5SessionState) -> str:

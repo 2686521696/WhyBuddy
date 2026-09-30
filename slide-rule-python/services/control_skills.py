@@ -233,6 +233,9 @@ def mentioned_skill_playbooks(skills: Sequence[SkillInfo]) -> str:
     names = "、".join(skill.name for skill in live)
     lines = [
         f"用户这一轮点名了技能：{names}。",
+        # ⚠ 2026-09-30 第 145 轮：@frontend-design 那一轮只用了点名那一份，同类网页轮不点名时每轮用 3～4 份。
+        #   用户定的：@ 的要用，其他已装的照样由 Agent 按需编排进来。这里只陈述这条事实。
+        "点名的这份要用；点名不是只许用它——其他已装技能对这次结果有帮助的，照常按需加载。",
         "下面只给名字、一句话和目录标签。正文不在工程里。"
         "要原文调 skill，回执里就是全文。path 不是工程文件，不要 file_read，也不要在沙盒里 find。",
     ]

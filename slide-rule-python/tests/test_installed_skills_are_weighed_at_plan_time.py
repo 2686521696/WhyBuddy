@@ -126,3 +126,29 @@ def test_the_skill_tool_no_longer_reads_as_format_only():
     desc = skill_tool_description([_skill(n) for n in CATALOG])
     assert "用户自己装的" in desc and "不只看产出格式" in desc and "不要硬套" in desc
     assert "任务对得上下面某一份时再加载" not in desc
+
+
+# ⚠ 2026-09-30 隔离真机第 145 轮（@frontend-design 读书打卡网页）：隔离库装了 15 份，write_plan 回执只列前 12 份——
+#   按目录顺序截，截掉的正是 verification-before-completion、webapp-testing。下面是那一轮已装目录的原样顺序。
+ROUND145_INSTALLED = ["avoid-ai-writing", "data-storytelling", "doc-coauthoring", "frontend-design", "internal-comms",
+                      "kpi-dashboard-design", "office-skills", "pptx-deck-context", "pptx-quality-gates",
+                      "pptx-slide-specification", "responsive-design", "systematic-debugging", "theme-factory",
+                      "verification-before-completion", "webapp-testing"]
+
+
+def test_the_plan_time_list_is_not_cut_short(monkeypatch):
+    infos = [parse_skill_md(f"---\nname: {n}\ndescription: {n} skill\n---\nBODY\n", path=f".sliderule/skills/{n}/SKILL.md")
+             for n in ROUND145_INSTALLED]
+    monkeypatch.setattr(control, "_skill_turn_catalog", lambda state: (infos, None))
+    monkeypatch.setattr(control, "_skills_opened_since_user_turn", lambda state: {"frontend-design"})
+    names = [info.name for info in control._unopened_installed_skills(object())]
+    assert "webapp-testing" in names and "verification-before-completion" in names
+    assert "frontend-design" not in names and len(names) == 14
+
+
+def test_a_mention_is_not_an_exclusive_choice():
+    """@ 的要用，其他已装的照样能编排进来——提示里说清这条，不是只剩点名那一份。"""
+    from services.control_skills import mentioned_skill_playbooks
+    text = mentioned_skill_playbooks([_skill("office-skills")])
+    assert "用户这一轮点名了技能：office-skills" in text
+    assert "不是只许用它" in text and "其他已装技能" in text
