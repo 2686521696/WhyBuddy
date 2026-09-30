@@ -9,7 +9,14 @@
  * （ok/error/skill/available）。把 projectActionDetail 里技能那一支删掉，第一条变红。
  */
 import { describe, expect, it } from "vitest";
-import { applyProjectChip, projectActionDetail, type ProjectActionRow } from "../project-activity";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  applyProjectChip,
+  liveToolResultDetail,
+  projectActionDetail,
+  type ProjectActionRow,
+} from "../project-activity";
 import { timelineRowTitle } from "../session-story";
 import type { TurnStep } from "../types";
 
@@ -61,5 +68,28 @@ describe("失败的技能行留住名字", () => {
 
   it("反向：技能成功不拼错误", () => {
     expect(projectActionDetail({ tool: "skill", ok: true, skill: "office-skills" })).not.toContain("·");
+  });
+});
+
+// ⚠ 2026-09-30 第二张截图（@office-skills 写采购审批方案）：规划阶段那一行「执行失败：加载技能：skill_not_found」
+//   走的是 useSlideRuleSession 里另一条路，只读 event.error。
+describe("规划阶段的步骤文案也留住名字", () => {
+  it("技能失败 → 名字 + 错误码", () => {
+    expect(liveToolResultDetail(notFound)).toBe("docx · skill_not_found");
+  });
+
+  it("反向：别的工具失败照旧是错误码", () => {
+    expect(liveToolResultDetail({ tool: "file_read", ok: false, error: "project_file_not_found" })).toBe(
+      "project_file_not_found"
+    );
+  });
+
+  it("接在实时那条路上：onControlToolResult 用的是它，不是自己再读 event.error", () => {
+    const src = readFileSync(resolve(__dirname, "../useSlideRuleSession.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const handler = src.slice(src.indexOf("onControlToolResult:"), src.indexOf("onControlProjectState:"));
+    expect(handler).toContain("liveToolResultDetail(event)");
+    expect(handler).not.toMatch(/typeof event\.error === "string"/);
   });
 });

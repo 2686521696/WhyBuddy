@@ -100,8 +100,7 @@ import {
   attachProjectChipsToTurns,
   projectActionDetail,
   projectToolStillOpen,
-  turnsHaveProjectChips,
-} from "./project-activity";
+  turnsHaveProjectChips, liveToolResultDetail } from "./project-activity";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -1827,9 +1826,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (!tool) return;
                 const ok = event.ok !== false;
                 const stillOpen = projectToolStillOpen(event);
-                const detail = typeof event.error === "string"
-                  ? event.error
-                  : typeof event.message === "string" ? event.message : "";
+                const detail = liveToolResultDetail(event);
                 const label = !ok
                   ? `${tool.replace(/^正在/, "执行失败：")}`
                   : stillOpen

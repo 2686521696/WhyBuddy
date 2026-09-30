@@ -125,6 +125,20 @@ function short(revision: unknown): string {
  * 顺序即优先级：先说坏消息，再说这次具体干了什么。拿不到就返回空串——
  * 「没有细节」是一个诚实的结果，不许用 kind 之类的内部名凑数。
  */
+/**
+ * 左栏步骤文案「执行失败：加载技能：…」后面那一截。
+ *
+ * ⚠ 2026-09-30 用户本机截图（@office-skills 写采购审批方案）：规划阶段那一行写的是
+ *   「执行失败：加载技能：skill_not_found」——这条路只读 event.error，跟 projectActionDetail
+ *   不是一个口径，技能名又丢了（§四：同一件事的第三处显示）。
+ */
+export function liveToolResultDetail(event: Record<string, unknown>): string {
+  if (event.ok === false && event.tool === "skill") return projectActionDetail(event);
+  return typeof event.error === "string"
+    ? event.error
+    : typeof event.message === "string" ? event.message : "";
+}
+
 export function projectActionDetail(
   event: Record<string, unknown> | null | undefined
 ): string {
