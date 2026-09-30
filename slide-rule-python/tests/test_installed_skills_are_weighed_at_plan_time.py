@@ -152,3 +152,21 @@ def test_a_mention_is_not_an_exclusive_choice():
     text = mentioned_skill_playbooks([_skill("office-skills")])
     assert "用户这一轮点名了技能：office-skills" in text
     assert "不是只许用它" in text and "其他已装技能" in text
+
+
+def test_the_execution_turn_also_names_the_installed_skills_nobody_opened(harness):
+    """⚠ 第 145/146 轮（@frontend-design）：规划只开了点名那一份，执行轮那句话就只提它，其他已装的整个执行期没碰。
+    走真 HTTP 批准那一发，看执行轮第一条 user 消息。把 _planning_skills_note 里 others 那段删掉，本条变红。"""
+    sid, events, _shots = _plan_turn(harness, [
+        llm_tool("skill", {"name": "office-skills"}),
+        llm_tool("write_plan", {"planContent": PLAN}),
+        llm_tool("exit_plan_mode", {}),
+    ])
+    approval = next(e for e in events if e["type"] == "control_plan_approval")
+    seen = []
+    harness.llm_impl = lambda messages, **kw: (seen.append(copy.deepcopy(messages)), llm_text("好的。"))[1]
+    harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
+    first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
+    assert "规划时打开过这些技能：office-skills" in first_user
+    others = first_user.split("其他已装、这次还没打开的技能：", 1)[1].split("（", 1)[0]
+    assert set(others.split("、")) == {"kpi-dashboard-design", "data-storytelling"}

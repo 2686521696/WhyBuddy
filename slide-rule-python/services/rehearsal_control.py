@@ -836,8 +836,21 @@ def _planning_skills_note(state: V5SessionState) -> str:
     opened = [str(name) for name in (latest_control_plan(state).get("openedSkills") or []) if str(name).strip()]
     if not opened:
         return ""
-    return ("规划时打开过这些技能：" + "、".join(opened)
+    note = ("规划时打开过这些技能：" + "、".join(opened)
             + "。这一轮是新的上下文，它们的正文不在这里；执行中要用就先 skill 加载。")
+    # ⚠ 2026-09-30 隔离真机第 145/146 轮（@frontend-design 网页）：规划时只开了点名那一份，执行轮这句话就只提它，
+    #   其他 14 份已装的整个执行期一次没碰；同类网页不点名时（139/141/142）规划开 3～4 份、执行照用。
+    #   write_plan 回执里那张清单模型看了，但那一刻它只想着交计划。执行开工时再摆一次名字（描述在 skill 工具里）。
+    try:
+        catalog, _error = _skill_turn_catalog(state)
+    except Exception:  # noqa: BLE001 — 增强类，目录拿不到就不提
+        catalog = []
+    others = [info.name for info in catalog
+              if getattr(info, "enabled", True) and info.name not in set(opened)]
+    if others:
+        note += ("其他已装、这次还没打开的技能：" + "、".join(others)
+                 + "（说明见 skill 工具）。对这次结果有帮助的，执行中照样可以加载。")
+    return note
 
 
 def _memory_scope_id(state: V5SessionState) -> str:
