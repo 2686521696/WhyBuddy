@@ -162,14 +162,27 @@ function OfficeOoxmlView({
             resize.observe(el);
           }
         } else {
-          const { DocxViewer } = await import("@silurus/ooxml/docx");
+          // ⚠ 2026-09-30 隔离真机第 143 轮 sr-…（@office-skills 员工入职方案 Word，宿主量出 24 张表、91 段）：
+          //   右栏只有封面那一页。DocxViewer 一次只画一页（要调 nextPage），宿主没给翻页，
+          //   后面几页用户根本看不到——跟 2026-09-25 pptx 只画封面是同一个坑，当时只修了 pptx（§四）。
+          //   DocxScrollViewer 把整份文档画成一条可滚动的纸面（按可见区虚拟化），每一页都在。
+          const { DocxScrollViewer } = await import("@silurus/ooxml/docx");
           if (dead) return;
-          const canvas = document.createElement("canvas");
-          canvas.className = "h-full w-full";
-          el.replaceChildren(canvas);
-          const view = new DocxViewer(canvas);
+          const view = new DocxScrollViewer(el, {
+            background: "#f3f4f6",
+            gap: 16,
+            onVisiblePageChange: (index, total) => {
+              if (!dead) setSlide({ index, total });
+            },
+          });
           viewer = view;
           await view.load(bytes);
+          if (dead) return;
+          setSlide({ index: view.topVisiblePage, total: view.pageCount });
+          nav.current = {
+            prev: () => view.scrollToPage(Math.max(view.topVisiblePage - 1, 0)),
+            next: () => view.scrollToPage(Math.min(view.topVisiblePage + 1, view.pageCount - 1)),
+          };
         }
       } catch {
         if (!dead) onErrorRef.current();
@@ -182,7 +195,7 @@ function OfficeOoxmlView({
       viewer?.destroy();
     };
   }, [bytes, kind]);
-  const pager = kind === "pptx" ? slidePagerLabel(slide.index, slide.total) : "";
+  const pager = kind === "xlsx" ? "" : slidePagerLabel(slide.index, slide.total);
   return (
     <div
       className="flex h-full min-h-0 w-full flex-1 flex-col bg-white"
@@ -197,7 +210,7 @@ function OfficeOoxmlView({
         ref={host}
         data-testid="office-ooxml-view"
         data-office-kind={kind}
-        className="min-h-0 w-full flex-1 overflow-auto"
+        className={`min-h-0 w-full flex-1 ${kind === "docx" ? "overflow-hidden" : "overflow-auto"}`}
       />
       {pager ? (
         <div

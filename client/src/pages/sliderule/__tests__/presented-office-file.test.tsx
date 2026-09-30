@@ -65,14 +65,31 @@ vi.mock("@silurus/ooxml/pptx", () => ({
   },
 }));
 
+const docxCalls: string[] = [];
+
+// 替身跟真实 DocxScrollViewer 的接口走（0.88 dist/types/docx.d.ts）：收**容器**不收 canvas，
+// 有 pageCount / topVisiblePage / scrollToPage，滚动时回报 onVisiblePageChange(top, total, done)。
+// 单页的 DocxViewer 故意不给——宿主再退回去用它，import 就拿不到，本文件变红。
 vi.mock("@silurus/ooxml/docx", () => ({
-  DocxViewer: class {
-    constructor(el: HTMLCanvasElement) {
-      el.dataset.viewer = "docx";
+  DocxScrollViewer: class {
+    topVisiblePage = 0;
+    readonly pageCount = 5;
+    private readonly opts: { onVisiblePageChange?: (i: number, t: number, done: boolean) => void };
+    constructor(
+      el: HTMLElement,
+      opts: { onVisiblePageChange?: (i: number, t: number, done: boolean) => void } = {}
+    ) {
+      el.dataset.viewer = "docx-scroll";
+      this.opts = opts;
     }
     load(buf: ArrayBuffer) {
       loaded.push(`docx:${buf.byteLength}`);
       return Promise.resolve();
+    }
+    scrollToPage(index: number) {
+      docxCalls.push(`scroll:${index}`);
+      this.topVisiblePage = index;
+      this.opts.onVisiblePageChange?.(index, this.pageCount, true);
     }
     destroy() {}
   },
@@ -95,6 +112,7 @@ describe("PresentedOfficeFile", () => {
     container = undefined;
     loaded.length = 0;
     pptxCalls.length = 0;
+    docxCalls.length = 0;
     vi.unstubAllGlobals();
   });
 
@@ -205,6 +223,26 @@ describe("PresentedOfficeFile", () => {
     });
     expect(pptxCalls).toContain("next");
     expect(position()).toBe("第 2 / 3 页");
+  });
+
+  /**
+   * ⚠ 2026-09-30 隔离真机第 143 轮（员工入职方案 Word，24 张表）：右栏只有封面。DocxViewer 一次只画一页、
+   *   宿主没给翻页。换回单页查看器或去掉页码栏，本条变红。
+   */
+  it("docx 整份可滚动，页码跟着走，能翻到后面的页", async () => {
+    await show("plan.docx", new Uint8Array([7, 7, 7]));
+    expect(loaded).toEqual(["docx:3"]);
+    const host = container?.querySelector<HTMLElement>('[data-testid="office-ooxml-view"]');
+    expect(host?.dataset.viewer).toBe("docx-scroll");       // 交给的是容器，不是一块 canvas
+    expect(host?.querySelector("canvas")).toBeNull();
+    const position = () =>
+      container?.querySelector('[data-testid="office-slide-position"]')?.textContent;
+    expect(position()).toBe("第 1 / 5 页");
+    await act(async () => {
+      container?.querySelector<HTMLButtonElement>('[data-testid="office-slide-next"]')?.click();
+    });
+    expect(docxCalls).toEqual(["scroll:1"]);
+    expect(position()).toBe("第 2 / 5 页");
   });
 
   it("反向：表格没有幻灯片翻页栏", async () => {
