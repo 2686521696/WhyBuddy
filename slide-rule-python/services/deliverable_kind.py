@@ -250,6 +250,7 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                 facts["tables"] = body.count(b"<w:tbl>")
                 styles = archive.read("word/styles.xml") if "word/styles.xml" in names else b""
                 facts["listDoubleMarked"] = _docx_double_marked(body, styles)
+                facts["tocEmpty"] = int(_docx_toc_is_empty(body))
             else:
                 sheets = [n for n in names if _SHEET_PART.match(n)]
                 facts["sheets"] = len(sheets)
@@ -639,6 +640,22 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
     return found
 
 
+_DOCX_TOC_FIELD = re.compile(rb'(?:<w:instrText[^>]*>\s*TOC\b|w:instr="\s*TOC\b)')
+_DOCX_TOC_ENTRY = re.compile(rb'<w:pStyle w:val="(?:TOC|toc)\s?\d"')
+
+
+def _docx_toc_is_empty(body: bytes) -> bool:
+    """有目录域、域里一条生成好的目录条目都没有。
+
+    ⚠ 2026-09-30 隔离真机第 162 轮（咖啡店店员培训手册）：「目录」标题下面是一个 TOC 域，
+      域结果只有一句「右键单击此处并选择“更新域”」，还写进了 fldChar 里面——右栏预览、结果卡缩略图
+      「目录」下面一片空白。settings 里开了 updateFields，Word 打开会先弹窗问要不要更新。
+      隔离库 61 份 Word 里 17 份有目录域，17 份全是空的：python-docx 只会插域，不会生成条目。
+    条目 = 用 TOC1/TOC2… 样式的段落（Word 自己更新域后就是这么存的）。
+    """
+    return bool(_DOCX_TOC_FIELD.search(body)) and not _DOCX_TOC_ENTRY.search(body)
+
+
 def _docx_double_marked(body: bytes, styles: bytes) -> int:
     """带自动项目符号 / 编号的段落里，正文又手写了「1.」「•」的段数。
 
@@ -722,6 +739,12 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         samples = "、".join(str(item) for item in (facts.get("textInvisibleSamples") or [])[:3])
         note += (f"，有 {invisible} 处文字和它下面的底色几乎同色（比如 {samples}）"
                  "——用户在右侧预览和结果卡缩略图里看到的是一块没字的色块。交付前把这些字改成和底色反差明显的颜色")
+    if facts.get("tocEmpty"):
+        # 第 162 轮，见 _docx_toc_is_empty 头注。
+        note += ("，目录是一个还没生成条目的 Word 域（用户在右侧预览和结果卡缩略图里看到「目录」下面是空的，"
+                 "Word 打开还要先点「更新域」）。交付前把各章节标题作为目录条目写进域结果里——"
+                 "域的 separate 和 end 之间，每条一个用 TOC1 / TOC2 样式的段落，页码可以先不写；"
+                 "Word 打开更新域时会换成带页码的")
     doubled = int(facts.get("listDoubleMarked") or 0)
     if doubled:
         # 第 151 轮，见 _docx_double_marked 头注。
