@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   listOfficeArtifacts,
   officeArtifactDownloadUrl,
+  officeVersionDownloadUrl,
 } from "./office-artifacts-client";
 
 type OfficeKind = "xlsx" | "pptx" | "docx";
@@ -25,11 +26,14 @@ export function PresentedOfficeFile({
   projectId,
   path,
   refreshKey = "",
+  versionSha = null,
 }: {
   projectId: string;
   path: string;
   /** 同名文件被改写、或人按了刷新。变了就重新取字节。 */
   refreshKey?: string;
+  /** 看这份文件的某个历史版本（办公文件版本切换）；null = 当前版本。 */
+  versionSha?: string | null;
 }) {
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [missing, setMissing] = useState(false);
@@ -54,7 +58,9 @@ export function PresentedOfficeFile({
           return;
         }
         const response = await fetch(
-          officeArtifactDownloadUrl(projectId, match.artifactId),
+          versionSha
+            ? officeVersionDownloadUrl(projectId, match.artifactId, versionSha)
+            : officeArtifactDownloadUrl(projectId, match.artifactId),
           { credentials: "include", cache: "no-store", signal: ac.signal }
         );
         if (!response.ok) throw new Error("missing");
@@ -65,7 +71,7 @@ export function PresentedOfficeFile({
         if (!ac.signal.aborted) setMissing(true);
       });
     return () => ac.abort();
-  }, [projectId, path, kind, refreshKey]);
+  }, [projectId, path, kind, refreshKey, versionSha]);
 
   if (!kind || missing) {
     return <p className="m-0 px-3 py-6 text-sm">这份文件读不到。</p>;

@@ -382,6 +382,16 @@ export function hostPreviewChoice(input: {
   return { htmlPath: null, officePath: null };
 }
 
+/** 办公文件版本下拉里的一项：「第 3 版（当前）」/「第 2 版 · 03:47」。时间取本地时分。 */
+export function officeVersionLabel(item: { number: number; current: boolean; capturedAt: string }): string {
+  if (item.current) return `第 ${item.number} 版（当前）`;
+  const at = new Date(item.capturedAt);
+  const hhmm = Number.isNaN(at.getTime())
+    ? ""
+    : ` · ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  return `第 ${item.number} 版${hhmm}`;
+}
+
 /**
  * 一轮收回了几份办公文件时，预览区顶上的文件切换条。只有一份就不出条。
  *

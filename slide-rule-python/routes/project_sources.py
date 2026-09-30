@@ -326,6 +326,40 @@ def download_office_artifact(project_id: str, artifact_id: str, request: Request
         })
 
 
+@router.get("/projects/{project_id}/artifacts/{artifact_id}/versions")
+def list_office_artifact_versions(project_id: str, artifact_id: str, request: Request, response: Response,
+                                  viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _service(request, viewer) as service:
+        service.authority(project_id)
+        return {"versions": ProjectOfficeArtifactStore(service.store).versions(
+            project_id, artifact_id, owner_id=service.owner_id)}
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_id}/versions/{sha256}")
+def download_office_artifact_version(project_id: str, artifact_id: str, sha256: str, request: Request,
+                                     viewer: CurrentUser):
+    with _service(request, viewer) as service:
+        service.authority(project_id)
+        meta, data = ProjectOfficeArtifactStore(service.store).get_version_bytes(
+            project_id, artifact_id, sha256, owner_id=service.owner_id)
+        suffix = office_artifact_suffix(meta["path"]) or ""
+        name = str(meta["path"]).rsplit("/", 1)[-1]
+        return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": _office_disposition(name, suffix),
+        })
+
+
+@router.post("/projects/{project_id}/artifacts/{artifact_id}/versions/{sha256}/restore")
+def restore_office_artifact_version(project_id: str, artifact_id: str, sha256: str, request: Request,
+                                    viewer: CurrentUser):
+    with _service(request, viewer, write=True) as service:
+        service.authority(project_id, write=True)
+        return ProjectOfficeArtifactStore(service.store).restore_version(
+            project_id, artifact_id, sha256, owner_id=service.owner_id)
+
+
 @router.get("/projects/{project_id}/artifacts/{artifact_id}/preview")
 def preview_office_artifact(project_id: str, artifact_id: str, request: Request, response: Response,
                             viewer: CurrentUser):

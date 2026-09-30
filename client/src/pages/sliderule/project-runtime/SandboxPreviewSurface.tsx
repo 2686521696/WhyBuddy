@@ -39,7 +39,7 @@ import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
 import { PresentedOfficeFile } from "./PresentedOfficeFile";
 import { PreviewFileDownload } from "./PreviewFileDownload";
 import { PresentedSourcePage } from "./PresentedSourcePage";
-import { useOfficeArtifacts } from "./office-artifacts-client";
+import { useOfficeArtifacts, restoreOfficeVersion, useOfficeVersions } from "./office-artifacts-client";
 import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
   ProjectWorkspaceError,
@@ -57,6 +57,7 @@ import {
   inspectActionDetail,
   hostPreviewChoice,
   officeFileTabs,
+  officeVersionLabel,
   officePreviewStage,
   resolveComputerView,
   shouldAutoOpenPreview,
@@ -660,6 +661,19 @@ export function SandboxPreviewSurface({
   );
   const presentedOfficePath = officeTabs.current;
   const shownOffice = collectedOffice.find(item => item.path === presentedOfficePath);
+  // ⚠ 2026-09-30 隔离真机第 140 轮（租房指南 Word，两轮追问各改写一次）：同一路径每次收回都覆盖，
+  //   前两版在界面上找不回来。版本列表来自 ProjectOfficeArtifactStore.versions（字节是 CAS，一直在）。
+  const officeVersions = useOfficeVersions(
+    officeDeliverable ? projectId : null,
+    shownOffice?.artifactId ?? null,
+    `${shownOffice?.sha256 ?? ""}:${officeReload}`
+  );
+  const [viewingSha, setViewingSha] = useState<string | null>(null);
+  useEffect(() => setViewingSha(null), [presentedOfficePath, shownOffice?.sha256]);
+  const viewingVersion = viewingSha
+    ? officeVersions.find(item => item.sha256 === viewingSha) ?? null
+    : null;
+  const [restoringVersion, setRestoringVersion] = useState(false);
   // 同一路径改写后 sha 变了就重画。不靠模型再点一次名。
   const officePresentationKey = `${shownOffice?.sha256 ?? ""}:${officeReload}`;
   const previewStage = officePreviewStage({
@@ -1383,11 +1397,11 @@ export function SandboxPreviewSurface({
           <PresentedSourcePage projectId={projectId} path={presentedPath} />
         ) : previewStage === "file" && presentedOfficePath && projectId ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            {officeTabs.tabs.length ? (
+            {officeTabs.tabs.length || officeVersions.length > 1 ? (
               <div
                 role="tablist"
                 data-testid="office-file-tabs"
-                className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#eeeeee] px-2 py-1"
+                className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#eeeeee] px-2 py-1"
               >
                 {officeTabs.tabs.map(item => (
                   <button
@@ -1405,12 +1419,69 @@ export function SandboxPreviewSurface({
                     {item.label}
                   </button>
                 ))}
+                {officeVersions.length > 1 ? (
+                  <label className="ml-auto flex shrink-0 items-center gap-1 text-[12px] text-[#6b6b6b]">
+                    版本
+                    <select
+                      data-testid="office-version-select"
+                      value={viewingSha ?? officeVersions.find(item => item.current)?.sha256 ?? ""}
+                      onChange={event => {
+                        const pick = officeVersions.find(item => item.sha256 === event.target.value);
+                        setViewingSha(pick && !pick.current ? pick.sha256 : null);
+                      }}
+                      className="rounded border border-[#e5e5e5] bg-white px-1 py-0.5 text-[12px] text-[#1f1f1f]"
+                    >
+                      {officeVersions.map(item => (
+                        <option key={item.sha256} value={item.sha256}>
+                          {officeVersionLabel(item)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+            {viewingVersion ? (
+              <div
+                data-testid="office-old-version-banner"
+                className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] text-amber-900"
+              >
+                <span>正在看第 {viewingVersion.number} 版（旧版本），当前是第 {officeVersions.find(item => item.current)?.number ?? officeVersions.length} 版。</span>
+                <button
+                  type="button"
+                  data-testid="office-version-restore"
+                  disabled={restoringVersion || !shownOffice}
+                  onClick={async () => {
+                    if (!shownOffice || !projectId) return;
+                    setRestoringVersion(true);
+                    try {
+                      if (await restoreOfficeVersion(projectId, shownOffice.artifactId, viewingVersion.sha256)) {
+                        setViewingSha(null);
+                        setOfficeReload(value => value + 1);
+                      }
+                    } finally {
+                      setRestoringVersion(false);
+                    }
+                  }}
+                  className="rounded bg-amber-900 px-2 py-0.5 text-white disabled:opacity-50"
+                >
+                  设为当前版本
+                </button>
+                <button
+                  type="button"
+                  data-testid="office-version-back"
+                  onClick={() => setViewingSha(null)}
+                  className="rounded px-2 py-0.5 hover:bg-amber-100"
+                >
+                  回到当前版本
+                </button>
               </div>
             ) : null}
             <PresentedOfficeFile
               projectId={projectId}
               path={presentedOfficePath}
               refreshKey={`${officePresentationKey ?? ""}:${officeReload}`}
+              versionSha={viewingSha}
             />
           </div>
         ) : previewStage === "idle" ? (

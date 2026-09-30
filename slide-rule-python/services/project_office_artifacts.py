@@ -45,6 +45,13 @@ _DDL = (
     "sha256 varchar(64) not null, size_bytes integer not null, content text not null)",
     "create table if not exists wb_project_office_budget("
     "project_id varchar(80) primary key, reserved_bytes bigint not null)",
+    # ⚠ 2026-09-30 隔离真机第 140 轮（租房指南 Word，两轮追问各改一次）：wb_project_office_artifact
+    #   一条路径一行，追问改完就把 sha 覆盖掉——上一版文件在界面上再也找不回来，「版本切换」无从谈起。
+    #   字节本来是 CAS（wb_project_office_content 按 hash 存、从不删），缺的只是「这条路径先后指过哪些 hash」。
+    "create table if not exists wb_project_office_version("
+    "artifact_id varchar(80) not null, project_id varchar(80) not null, path varchar(240) not null, "
+    "sha256 varchar(64) not null, size_bytes integer not null, captured_at text not null, "
+    "primary key(artifact_id, sha256))",
 )
 
 
@@ -170,8 +177,70 @@ class ProjectOfficeArtifactStore:
                 "(id,project_id,path,sha256,size_bytes,created_at) values($1,$2,$3,$4,$5,$6)",
                 [artifact_id, project_id, rel, digest, len(payload), captured],
             )
+        self._record_version(artifact_id, project_id, rel, digest, len(payload), captured)
         self._ensure_preview(artifact_id, payload, rel)
         return self._row(artifact_id)
+
+    def _record_version(self, artifact_id: str, project_id: str, path: str, sha256: str,
+                        size_bytes: int, captured: str) -> None:
+        """这条路径指过的一份字节。同一份再次出现（恢复旧版）只把时间挪到最新。"""
+        self.store._q(
+            "insert into wb_project_office_version"
+            "(artifact_id,project_id,path,sha256,size_bytes,captured_at) values($1,$2,$3,$4,$5,$6) "
+            "on conflict(artifact_id,sha256) do update set captured_at=excluded.captured_at",
+            [artifact_id, project_id, path, sha256, size_bytes, captured],
+        )
+
+    def versions(self, project_id: str, artifact_id: str, *, owner_id: str) -> list[dict]:
+        """这份文件先后收回过的版本，新的在前；当前那份标 current。
+
+        记版本之前收回的文件没有记录：把当前这份补记一条，列表至少有它自己。
+        """
+        self._require_project(project_id, owner_id)
+        meta = self._row(artifact_id)
+        if meta["projectId"] != project_id:
+            raise ProjectNotFound("project_office_artifact_not_found")
+        rows = self.store._q(
+            "select sha256,size_bytes,captured_at from wb_project_office_version "
+            "where artifact_id=$1 order by captured_at desc",
+            [artifact_id],
+        )
+        if not any(row["sha256"] == meta["sha256"] for row in rows):
+            self._record_version(artifact_id, project_id, meta["path"], meta["sha256"],
+                                 meta["sizeBytes"], meta["createdAt"])
+            rows = [{"sha256": meta["sha256"], "size_bytes": meta["sizeBytes"],
+                     "captured_at": meta["createdAt"]}, *rows]
+        total = len(rows)
+        return [{"sha256": row["sha256"], "sizeBytes": row["size_bytes"], "capturedAt": row["captured_at"],
+                 "number": total - index, "current": row["sha256"] == meta["sha256"]}
+                for index, row in enumerate(rows)]
+
+    def get_version_bytes(self, project_id: str, artifact_id: str, sha256: str, *,
+                          owner_id: str) -> tuple[dict, bytes]:
+        """这份文件的某一个历史版本。只认这条路径真的指过的 hash——不许拿任意 hash 去读别人的字节。"""
+        self._require_project(project_id, owner_id)
+        meta = self._row(artifact_id)
+        if meta["projectId"] != project_id:
+            raise ProjectNotFound("project_office_artifact_not_found")
+        known = self.store._q(
+            "select 1 as ok from wb_project_office_version where artifact_id=$1 and sha256=$2",
+            [artifact_id, sha256],
+        )
+        if not known and sha256 != meta["sha256"]:
+            raise ProjectNotFound("project_office_version_not_found")
+        rows = self.store._q(
+            "select content,size_bytes from wb_project_office_content where hash=$1", [sha256])
+        if not rows:
+            raise ProjectStoreUnavailable("project_office_content_missing")
+        data = base64.b64decode(rows[0]["content"], validate=True)
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise ProjectStoreUnavailable("project_office_content_corrupt")
+        return {**meta, "sha256": sha256, "sizeBytes": len(data)}, data
+
+    def restore_version(self, project_id: str, artifact_id: str, sha256: str, *, owner_id: str) -> dict:
+        """把某个历史版本重新设为当前。历史不丢：当前那份仍在版本列表里。"""
+        meta, data = self.get_version_bytes(project_id, artifact_id, sha256, owner_id=owner_id)
+        return self.put(project_id, owner_id=owner_id, path=meta["path"], data=data)
 
     def _row(self, artifact_id: str) -> dict:
         rows = self.store._q(

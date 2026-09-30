@@ -97,3 +97,67 @@ export function officeArtifactDownloadUrl(
 ): string {
   return `${BASE}/projects/${projectId}/artifacts/${artifactId}`;
 }
+
+
+/** 一份办公文件先后收回过的版本（新的在前）。见 Python ProjectOfficeArtifactStore.versions。 */
+export type OfficeArtifactVersion = {
+  sha256: string;
+  sizeBytes: number;
+  capturedAt: string;
+  number: number;
+  current: boolean;
+};
+
+export async function listOfficeVersions(
+  projectId: string,
+  artifactId: string,
+  signal?: AbortSignal
+): Promise<OfficeArtifactVersion[]> {
+  const response = await fetch(`${BASE}/projects/${projectId}/artifacts/${artifactId}/versions`, {
+    credentials: "include",
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) return [];
+  const body = (await response.json()) as { versions?: OfficeArtifactVersion[] };
+  return Array.isArray(body.versions) ? body.versions : [];
+}
+
+export function officeVersionDownloadUrl(projectId: string, artifactId: string, sha256: string): string {
+  return `${BASE}/projects/${projectId}/artifacts/${artifactId}/versions/${sha256}`;
+}
+
+export async function restoreOfficeVersion(projectId: string, artifactId: string, sha256: string): Promise<boolean> {
+  const response = await fetch(
+    `${BASE}/projects/${projectId}/artifacts/${artifactId}/versions/${sha256}/restore`,
+    { method: "POST", credentials: "include", cache: "no-store" }
+  );
+  return response.ok;
+}
+
+/** 这份文件的版本列表；sha 变了（追问改写、恢复旧版）就重取。 */
+export function useOfficeVersions(
+  projectId: string | null | undefined,
+  artifactId: string | null | undefined,
+  refreshKey?: unknown
+): OfficeArtifactVersion[] {
+  const [items, setItems] = useState<OfficeArtifactVersion[]>([]);
+  useEffect(() => {
+    const pid = String(projectId || "").trim();
+    const aid = String(artifactId || "").trim();
+    if (!pid || !aid) {
+      setItems([]);
+      return;
+    }
+    const ac = new AbortController();
+    void listOfficeVersions(pid, aid, ac.signal)
+      .then(next => {
+        if (!ac.signal.aborted) setItems(next);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setItems([]);
+      });
+    return () => ac.abort();
+  }, [projectId, artifactId, refreshKey]);
+  return items;
+}
