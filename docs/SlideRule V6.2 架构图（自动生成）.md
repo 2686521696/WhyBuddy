@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **357** 个，模块 **357** 个
-- 内部依赖边 **1196** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1107** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1195** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1106** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -183,7 +183,7 @@ flowchart LR
   control -->|9| llm_gateway
   control -->|3| model_core
   control -->|11| persist
-  control -->|32| platform
+  control -->|31| platform
   control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence

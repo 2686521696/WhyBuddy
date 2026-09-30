@@ -96,13 +96,17 @@ def test_plan_approval_receipt_enters_project_creation_in_the_existing_loop(setu
     def model(messages, **kwargs):
         if any(m["role"] == "tool" for m in messages):
             return llm_text("Approved source project saved.")
-        current = load_session(setup.state.sessionId)
-        ref = approved_reference(current)
-        assert ref != setup.ref and ref in messages[0]["content"]
-        return llm_tool("project_create", {"approvalRef": ref})
+        # ⚠ 2026-09-30 第 132 轮起：提示里不再摆出 approvalRef 让模型抄，工程操作不传就由服务端绑定
+        #   当前已批准的那一版（WriteArguments 头注）。这条原来钉「新引用在提示里」；它要护的是
+        #   「批准之后建工程用的是**新**批准」——改成直接量建出来的工程绑的是哪一版。
+        return llm_tool("project_create", {})
     harness.llm_impl = model
     events = post(setup.state, toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"})
     assert any(e.get("tool") == "project_create" and e.get("ok") for e in events)
+    ref = approved_reference(load_session(setup.state.sessionId))
+    assert ref != setup.ref
+    created = setup.store.get_project_for_session(setup.state.sessionId, owner_id=TEST_USER_ID)
+    assert setup.store.get_revision(created.projectId, owner_id=TEST_USER_ID).planRef == ref
     assert load_session(setup.state.sessionId).runtimeKind == "project"
     assert not harness.helper_calls
 

@@ -1350,6 +1350,12 @@ class ProjectTools:
                 raise ValueError("project_tool_arguments_invalid")
             parsed = PROJECT_ARGUMENTS[name].model_validate(args)
             session_id = str(getattr(state, "sessionId", "") or "")
+            if "approvalRef" in type(parsed).model_fields and parsed.approvalRef is None:
+                # 没传 approvalRef：绑定会话里当前已批准的那一版（WriteArguments 头注，第 132 轮）。没批准照旧拒。
+                bound = load_authorized_session(session_id, owner_id=self.owner_id)
+                if not plan_execution_authorized(bound):
+                    raise PermissionError("project_plan_approval_required")
+                parsed = parsed.model_copy(update={"approvalRef": approved_reference(bound)})
             # 核写工具不让模型填 approvalRef：会话里已批准的计划就是闸。
             # 旧的 project_patch 仍要模型回传引用，合同不能改一半。
             if name in PROJECT_KERNEL_WRITE_TOOLS:

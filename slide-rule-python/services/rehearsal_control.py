@@ -186,7 +186,6 @@ from services.skill_catalog_store import (
     skill_seed_category,
 )
 from services.drive_full_factory import start_drive_full_factory_run
-from services.project_authority import approved_reference
 from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_MAX_RESULT_CHARS,
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
@@ -4092,7 +4091,8 @@ def _system_prompt(state: V5SessionState) -> str:
                 "若独立浏览器或私有预览缺项，project_verify 必须标记 blocked，不能用构建、API 或模型自述替代。"
             )
         if plan_execution_authorized(state):
-            facts.append(f"工程操作批准引用 approvalRef：{approved_reference(state)}。")
+            # 不再把 110 位的引用原样摆出来让模型抄（WriteArguments 头注，第 132 轮）：不传就由服务端绑定。
+            facts.append("计划已批准：工程操作的 approvalRef 不用传，服务端按已批准的这一版绑定。")
     after_write = None if is_project else _after_write_hint(state)
     if after_write:
         facts.append(after_write.strip())

@@ -34,6 +34,11 @@ def assert_live_guidance(messages, offered, *, has_project=True):
     assert "宣称完成" in prompt
     # 2026-09-29 第 117 轮 sr-20260929105530-CZYB2ZSN44：原来就有的下拉框被报成「已加上」。按意思钉：原有的照实说原有。
     assert "原来就有" in prompt and "别把原有的说成这次新加的" in prompt
+    # 2026-09-30 第 132 轮：不再把 110 位的 approvalRef 原样摆进提示让模型抄（不传就由服务端绑定）。
+    import re as _re
+    #   按意思钉（§二）：任何「计划 id:版本:长摘要」形状的引用都不许出现——夹具里是 test-plan:1:…，真机是 plan-…:1:…。
+    assert not _re.search(r"[\w-]+:\d+:[0-9a-f]{40,}", prompt)
+    assert "approvalRef 不用传" in prompt
     assert "修改前先取消活跃运行" not in prompt
     # 2026-09-26 sr-20260926043506-7B49NNSE1M：模型当沙盒什么都有，写完脚本直接跑，
     # 第一发 ModuleNotFoundError。按意思钉环境事实；只陈述、不排步骤。

@@ -14,7 +14,8 @@ class ToolArguments(BaseModel):
 
 
 class CreateArguments(ToolArguments):
-    approvalRef: str = Field(min_length=1, max_length=240)
+    approvalRef: str | None = Field(default=None, min_length=1, max_length=240,   # 同 WriteArguments 头注
+        description="Omit it: the server binds the currently approved plan. If sent, it must match exactly.")
     # ⚠ 2026-09-25 隔离真机 sr-20260925053053-T4TJXXCW0Z：记账网页选了
     #   react-vite-tasks。那个模板把交付锁死在任务清单验收上（登录、增改筛任务），
     #   记账页写得再好也永远交不了。上一轮同一话题选的是 react-vite——选择不稳定，
@@ -131,7 +132,14 @@ class SearchArguments(RevisionArguments):
 
 
 class WriteArguments(ToolArguments):
-    approvalRef: str = Field(min_length=1, max_length=240)
+    # ⚠ 2026-09-30 隔离真机第 132 轮 sr-20260930001652-TXP71T9C42（团队任务应用，追问「截止日期、过期标红」）：同一批两发
+    #   project_verify 都把 110 位的 approvalRef 抄错（plan-4a391c… 应为 plan-4a772c…），回执给了原样那串，
+    #   模型没再试，这一轮没验就收尾。全库 9 次 project_plan_approval_required，6 次是抄错。系统提示里
+    #   写着「不要自己传 approvalRef」，这里却必填——同一件事两句话打架。核写工具早就不让模型填
+    #   （project_tools.execute 头注「会话里已批准的计划就是闸」）。不传：服务端绑定当前已批准的那一版
+    #   （没批准照旧拒）；传了：照旧逐字核对，对不上照旧拒。闸一点没松。
+    approvalRef: str | None = Field(default=None, min_length=1, max_length=240,
+        description="Omit it: the server binds the currently approved plan. If sent, it must match exactly.")
     expectedRevision: str = Field(min_length=1, max_length=240)
 
 
