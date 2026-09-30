@@ -2010,7 +2010,11 @@ class ProjectTools:
                     if code in BROWSER_ERROR_TEXT:
                         result["hint"] = BROWSER_ERROR_TEXT[code]
             return _strip_preview_host(result)
-        operation = self._operation_by_id(project, session_id, parsed.id)
+        # ⚠ 2026-09-30 隔离真机第 133 轮 sr-20260930004940-9GDY1QZGS4（月度预算网页，追问「加一个按类别统计支出的饼图」）：
+        #   browser_console_view 的参数是 BrowserEmptyArguments（没有 id），这里读 parsed.id——AttributeError
+        #   不在工具层接住的错误里，整轮 run 当场挂掉，用户看见「这一轮没跑完……（AttributeError）」。
+        #   它的说明本来就是「读最近那条命令的日志」：没有 id 就是最近那条。
+        operation = self._operation_by_id(project, session_id, getattr(parsed, "id", None))
         if name == "shell_kill_process":
             if self.supervisor is None:
                 self.store.request_operation_cancel(operation.operationId, owner_id=self.owner_id)
