@@ -21,6 +21,7 @@ from services.deliverable_kind import (
     idle_office_exec_allows_source_write, operation_left_on_lease, plan_deliverable_kind,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore
+from services.revision_turns import label_revisions
 from services.scope_authority import latest_control_plan
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
@@ -58,7 +59,7 @@ class ProjectSourceOperations:
             "sha256": content_hash(files[path]), "content": files[path]}
 
     def revisions(self, project_id, cursor=None, limit=50):
-        project, _ = self.authority(project_id)
+        project, state = self.authority(project_id)
         current = cursor or project.currentRevision
         entries = []
         for _ in range(min(limit, MAX_REVISIONS)):
@@ -68,6 +69,8 @@ class ProjectSourceOperations:
             entries.append({key: getattr(saved, key) for key in (
                 "revision", "parentRevision", "treeHash", "templateVersion", "createdAt")})
             current = saved.parentRevision
+        # 每一版标上第几轮、那一轮的原话（revision_turns 模块头：第 140 轮 13 行裸编号）
+        entries = label_revisions(entries, getattr(state, "controlTranscript", None))
         return {"projectId": project_id, "currentRevision": project.currentRevision,
             "revisions": entries, "nextCursor": current}
 
@@ -206,7 +209,8 @@ class ProjectSourceOperations:
         # Claim is server-only and insert-only. It neither copies the prior plan
         # approval nor lets a retry overwrite a newer conversation in the fork.
         candidate = V5SessionState(sessionId=session_id, ownerId=self.owner_id,
-            goal={"text": str(state.goal.get("text") or "Project fork")},
+            # 标题前加「复刻：」：源会话和复刻会话同名，侧栏里两条一模一样分不清（2026-09-30 第 144 轮复刻）
+            goal={"text": "复刻：" + str(state.goal.get("text") or "Project fork")},
             runtimeKind="project", projectId=fork.projectId, projectRevision=fork.currentRevision,
             controlTranscript=[{"kind": "project_forked", "sourceProjectId": source.projectId,
                 "sourceRevision": saved.revision, "deliverableKind": kind,

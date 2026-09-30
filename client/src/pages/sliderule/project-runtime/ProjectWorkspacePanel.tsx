@@ -37,8 +37,7 @@ import {
   type RevisionPage,
   type SourceCommand,
   type SourceFile,
-  type SourceIndex,
-} from "./project-workspace-client";
+  type SourceIndex, groupRevisionsByTurn } from "./project-workspace-client";
 
 type SourceEditorHandle = { reveal: (from: number, to: number) => void };
 const LazySourceEditor = React.lazy(() => import("./ProjectSourceEditor"));
@@ -270,6 +269,8 @@ function ProjectWorkspaceBody({
     Record<string, { base: SourceFile; content: string }>
   >({});
   const [history, setHistory] = useState<RevisionPage | null>(null);
+  // 版本页按轮分组后，哪几轮的中间版本是展开的（groupRevisionsByTurn 头注）。
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   const [historyLoading, setHistoryLoading] = useState(tab === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [revisionOverride, setRevisionOverride] = useState<
@@ -1040,7 +1041,9 @@ function ProjectWorkspaceBody({
               暂无已保存的源码版本。
             </p>
           ) : null}
-          {history?.revisions.map(row => (
+          {history
+            ? groupRevisionsByTurn(history.revisions).map(group => {
+                const revisionRow = (row: (typeof history.revisions)[number]) => (
             <div
               key={row.revision}
               className="rounded border border-stone-200 bg-white p-3 text-xs"
@@ -1099,7 +1102,40 @@ function ProjectWorkspaceBody({
                 </div>
               ) : null}
             </div>
-          ))}
+                );
+                const open = expandedTurns.has(group.key);
+                return (
+                  <section key={group.key} data-testid="revision-turn-group" className="space-y-1">
+                    {group.turnIndex || !group.head.parentRevision ? (
+                      <p className="truncate text-[12px] text-stone-600" title={group.turnText ?? undefined}>
+                        {group.turnIndex
+                          ? `第 ${group.turnIndex} 轮 · ${group.turnText ?? ""}`
+                          : "建工程时的初始版本"}
+                      </p>
+                    ) : null}
+                    {revisionRow(group.head)}
+                    {group.rest.length ? (
+                      <button
+                        type="button"
+                        data-testid="revision-turn-toggle"
+                        className="text-[12px] text-stone-500 underline"
+                        onClick={() =>
+                          setExpandedTurns(prev => {
+                            const next = new Set(prev);
+                            if (next.has(group.key)) next.delete(group.key);
+                            else next.add(group.key);
+                            return next;
+                          })
+                        }
+                      >
+                        {open ? "收起" : `展开这一轮的 ${group.rest.length} 个中间版本`}
+                      </button>
+                    ) : null}
+                    {open ? group.rest.map(revisionRow) : null}
+                  </section>
+                );
+              })
+            : null}
           {history?.nextCursor ? (
             <button
               className={buttonClass}

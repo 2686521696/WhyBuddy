@@ -716,36 +716,8 @@ def _build_log_tail(store, runtime_operation_id, owner_id, *, since=None, until=
     return ""
 
 
-REVISION_TURNS_HINT = (
-    "turns 按用户的话分组：每一轮开始时是哪一版（startedFrom）、这一轮改出了几版。"
-    "一轮里每处编辑都会存一版；要撤销某一轮的全部改动，恢复到那一轮的 startedFrom——"
-    "只退到上一版（parentRevision）通常只撤掉那一轮最后一处小改动。"
-)
-
-
-def revisions_by_turn(chain, turns, *, keep=6):
-    """把源码版本按「哪一句用户的话之后改出来的」分组。
-
-    ⚠ 2026-09-27 隔离真机第 57 轮（待读书单 + 追问「主色换紫色、按钮改胶囊形」+
-      「刚才这次改动不要了，恢复到改之前的版本」）：紫色那一轮是 11 次 file_str_replace，
-      每次都存一版。project_revisions 一页只给 5 版、只有 revision / parentRevision /
-      createdAt，看不出哪几版是哪一轮改的。模型恢复到「直接上一版」——只撤掉最后一处
-      小改动，紫色还在，回话却说「已恢复到刚才改动之前的版本」。
-    chain：从最早到最新的 (revision, createdAt)；turns：(timestamp, 用户原话)。
-    时间戳同为 ISO 串，直接比较。返回最新在前、只含改出了版本的那几轮。
-    """
-    ordered = sorted((t for t in turns if t[0]), key=lambda t: t[0])
-    out = []
-    for index, (started, text) in enumerate(ordered):
-        ended = ordered[index + 1][0] if index + 1 < len(ordered) else None
-        before = [rev for rev, created in chain if created and created < started]
-        made = [rev for rev, created in chain
-                if created and created >= started and (ended is None or created < ended)]
-        if not made:
-            continue
-        out.append({"turn": text[:60], "at": started, "startedFrom": before[-1] if before else None,
-                    "revisionsMade": len(made), "endedAt": made[-1]})
-    return list(reversed(out))[:keep]
+# 分组口径与工作台「版本」页同一份（revision_turns 模块头）。
+from services.revision_turns import REVISION_TURNS_HINT, revisions_by_turn, user_turns  # noqa: E402,F401
 
 
 def _command_log_excerpt(store, operation_id, owner_id, last_seq=None) -> str:
@@ -1800,10 +1772,7 @@ class ProjectTools:
                 current = saved.parentRevision
         except Exception:
             return []
-        turns = [(str(row.get("timestamp") or ""), str(row.get("text") or ""))
-                 for row in (getattr(state, "controlTranscript", None) or [])
-                 if isinstance(row, dict) and row.get("role") == "user" and row.get("kind") == "turn"]
-        return revisions_by_turn(list(reversed(chain)), turns)
+        return revisions_by_turn(list(reversed(chain)), user_turns(getattr(state, "controlTranscript", None)))
 
     def _settled_receipt(self, operation):
         """等完 / 查状态时，跑完的命令交回**带输出的**回执，不是裸快照。

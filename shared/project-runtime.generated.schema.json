@@ -980,6 +980,35 @@
         "createdAt": {
           "title": "Createdat",
           "type": "string"
+        },
+        "turnIndex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turnindex"
+        },
+        "turnText": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turntext"
+        },
+        "turnLast": {
+          "default": false,
+          "title": "Turnlast",
+          "type": "boolean"
         }
       },
       "required": [

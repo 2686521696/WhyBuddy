@@ -280,3 +280,40 @@ export async function getSourceOperation(
     throw malformed();
   return result.operation;
 }
+
+/**
+ * 「版本」页按轮分组：同一轮用户的话之后改出来的版本归一组，组头是这一轮收尾的那一版，
+ * 其余是中间版本（默认收起）。行已经带着 turnIndex / turnText（Python services.revision_turns）。
+ *
+ * ⚠ 2026-09-30 隔离真机第 140 轮：13 行 prv-… 裸编号，两秒里 7 版，人看不出哪一版是哪一轮的。
+ */
+export type RevisionTurnGroup<Row> = {
+  key: string;
+  turnIndex: number | null;
+  turnText: string | null;
+  head: Row;
+  rest: Row[];
+};
+
+export function groupRevisionsByTurn<
+  Row extends { revision: string; turnIndex?: number | null; turnText?: string | null },
+>(rows: readonly Row[]): RevisionTurnGroup<Row>[] {
+  const groups: RevisionTurnGroup<Row>[] = [];
+  for (const row of rows) {
+    const index = row.turnIndex ?? null;
+    const last = groups[groups.length - 1];
+    // 不属于任何一轮的（建工程的模板版、没带轮次的旧数据）一版一行，不折叠——折叠只替「同一轮的中间版本」做。
+    if (index !== null && last && last.turnIndex === index) {
+      last.rest.push(row);
+      continue;
+    }
+    groups.push({
+      key: `${index ?? "base"}:${row.revision}`,
+      turnIndex: index,
+      turnText: row.turnText ?? null,
+      head: row,
+      rest: [],
+    });
+  }
+  return groups;
+}

@@ -185,6 +185,9 @@ export type ProjectRevisionSummary = {
   "treeHash": string;
   "templateVersion": string;
   "createdAt": string;
+  "turnIndex"?: number | null;
+  "turnText"?: string | null;
+  "turnLast"?: boolean;
 };
 
 export type ProjectSourceCommand = {

@@ -949,6 +949,41 @@ describe("source and history through real HTTP consumers", () => {
     expect(editor().value).toBe("new project");
     expect(container.textContent).not.toContain("private old draft");
   });
+  /**
+   * ⚠ 2026-09-30 隔离真机第 140 轮：「版本」页 13 行 prv-… 裸编号，看不出哪一版是哪一轮改的。
+   *   行的形状照 Python ProjectRevisionSummary（turnIndex / turnText / turnLast，services.revision_turns）。
+   *   把 ProjectWorkspacePanel 里 groupRevisionsByTurn 的分组拿掉，本条变红。
+   */
+  it("groups versions by the user's turn and folds each turn's intermediate versions", async () => {
+    const original = fetcher.getMockImplementation()!;
+    const row = (revision: string, turnIndex: number | null, turnText: string | null, turnLast: boolean) => ({
+      revision, parentRevision: revision === "r0" ? null : "rx", treeHash: "t", templateVersion: "react@1",
+      createdAt: "2026-09-30", turnIndex, turnText, turnLast,
+    });
+    fetcher.mockImplementation(async (...args) =>
+      new URL(String(args[0]), "http://localhost").pathname.endsWith("/revisions")
+        ? response({
+            projectId: "p1", currentRevision: "r3", nextCursor: null,
+            revisions: [
+              row("r3", 2, "加一个按截止日期排序的开关", true),
+              row("r2", 2, "加一个按截止日期排序的开关", false),
+              row("r1", 1, "做一个任务看板", true),
+              row("r0", null, null, false),
+            ],
+          })
+        : original(...args)
+    );
+    await render({ tab: "history" });
+    const text = container.textContent ?? "";
+    expect(text).toContain("第 2 轮 · 加一个按截止日期排序的开关");
+    expect(text).toContain("第 1 轮 · 做一个任务看板");
+    expect(text).toContain("建工程时的初始版本");
+    expect(text).not.toContain("r2 · ");                          // 中间版本默认收起
+    expect(text).not.toMatch(/(^|[^0-9])r2([^0-9]|$)/);
+    await click("展开这一轮的 1 个中间版本");
+    expect(container.textContent).toMatch(/(^|[^0-9])r2([^0-9]|$)/);
+  });
+
   it("restores only after explicit confirmation and binds current revision", async () => {
     await render({ tab: "history" });
     await act(async () => buttons("恢复此版本")[1].click());

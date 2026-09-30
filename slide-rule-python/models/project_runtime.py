@@ -73,6 +73,11 @@ class ProjectRevisionSummary(ProjectContract):
     treeHash: str
     templateVersion: str
     createdAt: str
+    # 第几轮用户的话之后改出来的、那一轮的原话、是不是这一轮收尾的那一版（services.revision_turns）。
+    # 建工程时的模板版不属于任何一轮：turnIndex=None。
+    turnIndex: int | None = None
+    turnText: str | None = None
+    turnLast: bool = False
 
 
 class ProjectRevisionPage(ProjectContract):

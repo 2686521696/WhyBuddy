@@ -194,6 +194,7 @@ modules = [
   "services.closed_tools",
   # 技能商店：zip 开箱 / OSS 字节 / 控制面短目录。三个都是叶子。
   "services.skill_package_format",
+  "services.revision_turns",
   "services.skill_blob_store",
   "services.control_skills",
   "services.session_events",
@@ -910,6 +911,7 @@ modules = [
   "services.schema_legal",
   "services.sql_gateway",
   "services.project_manifest",
+  "services.revision_turns",
   "services.stage_legal",
   "services.turn_context",
   "services.turn_narration",
