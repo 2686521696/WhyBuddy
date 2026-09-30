@@ -207,6 +207,13 @@ _PIVOT_PART = re.compile(r"^xl/pivotTables/pivotTable\d+\.xml$")
 _XLSX_CELL = re.compile(rb"<c\b[^>]*[^/]>(.*?)</c>", re.S)
 #: 公式格里算好的结果：非空的 <v>。
 _XLSX_CACHED = re.compile(rb"<v>[^<]+</v>")
+_DOCX_PARA = re.compile(rb"<w:p[ >].*?</w:p>", re.S)
+_DOCX_PPR = re.compile(rb"<w:pPr>.*?</w:pPr>", re.S)
+_DOCX_PSTYLE = re.compile(rb'<w:pStyle w:val="([^"]+)"')
+_DOCX_STYLE = re.compile(rb'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', re.S)
+_DOCX_TEXT = re.compile(rb"<w:t(?: [^>]*)?>([^<]*)</w:t>")
+#: 正文开头手写的编号 / 符号。「1.5 万」不算（点后面跟数字）。
+_MANUAL_MARKER = re.compile(r"\s*(?:\d{1,2}[.、．)）](?!\d)|[（(]\d{1,2}[)）]|[•·●▪■◆\-–—*]\s?)")
 
 
 def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
@@ -237,6 +244,8 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
             elif ext == ".docx":
                 body = archive.read("word/document.xml") if "word/document.xml" in names else b""
                 facts["tables"] = body.count(b"<w:tbl>")
+                styles = archive.read("word/styles.xml") if "word/styles.xml" in names else b""
+                facts["listDoubleMarked"] = _docx_double_marked(body, styles)
             else:
                 sheets = [n for n in names if _SHEET_PART.match(n)]
                 facts["sheets"] = len(sheets)
@@ -254,6 +263,32 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
             return facts
     except Exception:
         return None
+
+
+def _docx_double_marked(body: bytes, styles: bytes) -> int:
+    """带自动项目符号 / 编号的段落里，正文又手写了「1.」「•」的段数。
+
+    ⚠ 2026-09-30 隔离真机第 151 轮（门店运营报告 Word，追问「结论改成三条要点」）：模型用
+      python-docx 的 List Bullet 样式，正文又写成「1. 旗舰店稳规模…」——右栏预览和 Word 里
+      每条都显示成「• 1.」两个记号。样式自带的圆点在 styles.xml 里（w:numPr），段落本身看不出来，
+      所以样式要一起查。普通段落手写「1. 门店经营表现不均衡」是正常写法，不算。
+    """
+    listed = {m.group(1) for m in _DOCX_STYLE.finditer(styles) if b"<w:numPr" in m.group(0)}
+    count = 0
+    for para in _DOCX_PARA.findall(body):
+        found = _DOCX_PPR.search(para)
+        ppr = found.group(0) if found else b""
+        style = _DOCX_PSTYLE.search(ppr)
+        if b"<w:numPr" in ppr:
+            numbered = b'<w:numId w:val="0"/>' not in ppr      # numId 0 = 显式去掉编号
+        else:
+            numbered = bool(style and style.group(1) in listed)
+        if not numbered:
+            continue
+        text = b"".join(_DOCX_TEXT.findall(para)).decode("utf-8", "replace")
+        if _MANUAL_MARKER.match(text):
+            count += 1
+    return count
 
 
 def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
@@ -300,6 +335,12 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
                  "（用户在右侧预览和结果卡缩略图里第一眼看到的这些格子是空白——总分、合计、排名都是空的。"
                  "交付前补上：openpyxl 存不了结果；改用 XlsxWriter，"
                  "worksheet.write_formula(单元格, 公式, 格式, 值) 把 Python 算好的值一起写进去，公式照样保留）")
+    doubled = int(facts.get("listDoubleMarked") or 0)
+    if doubled:
+        # 第 151 轮，见 _docx_double_marked 头注。
+        note += (f"，有 {doubled} 段列表带着自动项目符号 / 编号、正文又手写了「1.」「•」这类记号"
+                 "（用户在右侧预览和 Word 里看到的是「• 1.」两个记号。交付前去掉正文里手写的那个，"
+                 "或者把这几段改成不带自动符号的普通段落）")
     return f"{path}：" + "，".join(parts) + note
 
 
