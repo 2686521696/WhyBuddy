@@ -39,6 +39,11 @@ COPY slide-rule-python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY slide-rule-python/ ./
+# ⚠ 2026-09-30：services/skill_catalog_store.py 在 import 时读 <仓库根>/skills/seeds/index.json
+#   （Path(__file__).parents[2]），镜像里是 /app/services → /skills。这一行以前没有，
+#   /skills 不存在 → import 抛 FileNotFoundError → rehearsal_control 连带起不来。
+#   种子 zip 也是商店取不到包时的兜底（local_seed_skill_info）。test_the_image_ships_the_skill_seeds 钉着。
+COPY skills/ /skills/
 COPY project-templates/ /project-templates/
 COPY server/project-verification/browser-runner.mjs /server/project-verification/browser-runner.mjs
 COPY --from=project-preview-build /build/dist/project-preview /dist/project-preview
