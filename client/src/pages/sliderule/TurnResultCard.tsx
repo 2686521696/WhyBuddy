@@ -34,6 +34,8 @@ import { AppWindow, Check, Copy, ExternalLink, RotateCw } from "lucide-react";
 import { resultCardModel } from "./turn-result-card";
 import { dispatchInspectAction } from "./project-computer-view";
 import type { UiTurn } from "./types";
+import { isOfficeFileDeliverable } from "./deliverable-kind";
+import { OfficeThumbnail } from "./project-runtime/OfficeThumbnail";
 
 function Star({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -72,6 +74,7 @@ export function TurnResultCard({
   projectRevision,
   hasPages,
   thumbnailUrl,
+  officeThumbnail,
   deliverableKind,
   hasOfficeArtifact,
   delivered,
@@ -87,6 +90,8 @@ export function TurnResultCard({
   /** 结果卡缩略图取这个工程最近一次验收的截图。 */
   hasPages?: boolean;
   thumbnailUrl?: string | null;
+  /** 办公会话：最新收回的那份文件，卡上画它的第一页（OfficeThumbnail 头注）。只给最新交付那一轮。 */
+  officeThumbnail?: { projectId: string; path: string; key: string } | null;
   deliverableKind?: string | null;
   hasOfficeArtifact?: boolean;
   /** 宿主交付判定，只给最新一轮（见 delivery-verdict-client.ts）。 */
@@ -175,6 +180,14 @@ export function TurnResultCard({
             </button>
           ) : (
             <img src={model.thumbnailUrl} alt="" className={THUMB_IMG} data-testid="turn-result-thumb" />
+          )
+        ) : officeThumbnail && isOfficeFileDeliverable(deliverableKind) ? (
+          model.canOpen && onOpen ? (
+            <button type="button" onClick={() => openPreview(turn.id, onOpen)} className="block w-full text-left" aria-label="打开预览">
+              <OfficeThumbnail projectId={officeThumbnail.projectId} path={officeThumbnail.path} refreshKey={officeThumbnail.key} />
+            </button>
+          ) : (
+            <OfficeThumbnail projectId={officeThumbnail.projectId} path={officeThumbnail.path} refreshKey={officeThumbnail.key} />
           )
         ) : null}
       </section>

@@ -49,6 +49,18 @@ export function useOfficeArtifacts(
   return items;
 }
 
+/**
+ * 产物库里最新收回的那份办公文件（按收回顺序，后者更新）。读不到当没有（fail-closed）。
+ * 结果卡的缩略图画这一份——与右栏宿主默认呈现的是同一份（hostPreviewChoice 取最后收回的）。
+ */
+export function useLatestOfficeArtifact(
+  projectId: string | null | undefined,
+  refreshKey?: unknown
+): OfficeArtifactMeta | null {
+  const items = useOfficeArtifacts(projectId, refreshKey);
+  return items.length ? items[items.length - 1] : null;
+}
+
 /** 产物库有没有办公文件。读不到当没有（fail-closed）。 */
 export function useOfficeArtifactPresent(
   projectId: string | null | undefined,

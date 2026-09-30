@@ -334,7 +334,9 @@ describe("通电：真的接在完成轮的渲染上（§3）", () => {
     expect(src).toContain("hasPages={Boolean(turn.main)}");
     expect(src).toContain("deliverableKind={deliverableKind}");
     expect(src).toContain("hasOfficeArtifact={hasOfficeArtifact}");
-    expect(src).toMatch(/useOfficeArtifactPresent\(/);
+    // 2026-09-30：产物库查询换成 useLatestOfficeArtifact（结果卡缩略图要知道是哪一份），「有没有」由它派生。
+    expect(src).toMatch(/useLatestOfficeArtifact\(/);
+    expect(src).toMatch(/const hasOfficeArtifact = Boolean\(latestOffice\);/);
     expect(src).not.toMatch(/hasOfficeArtifact=\{true\}/);
     // 反向：不许挂在还在跑的那一支上（那会让卡片在跑的过程中闪出来）
     const streamingBranch = src.slice(

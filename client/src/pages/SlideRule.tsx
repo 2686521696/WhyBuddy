@@ -31,7 +31,7 @@ import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
 import { deriveProjectActivity } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
-import { useOfficeArtifactPresent } from "./sliderule/project-runtime/office-artifacts-client";
+import { useLatestOfficeArtifact } from "./sliderule/project-runtime/office-artifacts-client";
 import {
   useProjectDeliveryVerdict,
   type DeliveryVerdict,
@@ -605,6 +605,8 @@ const ImSurfaceContext = React.createContext<{
    *   拿回来的还是同一份。取数提到这儿只发一次，卡片只管画。
    */
   thumbnailUrl?: string | null;
+  /** 办公会话结果卡的第一页缩略图（最新收回的那份）。 */
+  officeThumbnail?: { projectId: string; path: string; key: string } | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -628,6 +630,7 @@ const ImSurfaceContext = React.createContext<{
   projectRevision: null,
   sessionState: null,
   thumbnailUrl: null,
+  officeThumbnail: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -794,6 +797,9 @@ function ImAssistantMessage() {
            贴到三轮之前那张卡上就是张张牛头不对马嘴的图。 */
       thumbnailUrl={
         turn.id === ctx.verdictTurnId ? ctx.thumbnailUrl : null
+      }
+      officeThumbnail={
+        turn.id === ctx.verdictTurnId ? ctx.officeThumbnail : null
       }
       hasPages={Boolean(turn.main)}
       deliverableKind={deliverableKind}
@@ -1146,11 +1152,19 @@ export function ClaudeChatSurface({
       : null,
     isRunning
   );
-  const hasOfficeArtifact = useOfficeArtifactPresent(
+  const latestOffice = useLatestOfficeArtifact(
     runtimeKind === "project" && isOfficeFileDeliverable(deliverableKind)
       ? projectId
       : null,
     isRunning
+  );
+  const hasOfficeArtifact = Boolean(latestOffice);
+  // 结果卡缩略图画最新收回的那份（OfficeThumbnail 头注）；sha 变了就重画。
+  const officePath = latestOffice?.path ?? null;
+  const officeSha = latestOffice?.sha256 ?? "";
+  const officeThumbnail = useMemo(
+    () => (officePath && projectId ? { projectId, path: officePath, key: officeSha } : null),
+    [projectId, officePath, officeSha]
   );
   const ctxValue = useMemo(
     () => ({
@@ -1164,6 +1178,7 @@ export function ClaudeChatSurface({
       projectRevision,
       sessionState: controlTodo ? { controlTodo } : null,
       thumbnailUrl: verifiedThumbnail,
+      officeThumbnail,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -1193,6 +1208,7 @@ export function ClaudeChatSurface({
       uiTurns,
       deliverableKind,
       hasOfficeArtifact,
+      officeThumbnail,
       deliveryVerdict,
       stoppedByError,
     ]
