@@ -28,8 +28,8 @@ from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
     progress_mark, sampling_interrupted_checkpoint, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user,
-    unfinished_project_waits_for_user, undelivered_notice, tool_result_count,
-    dispatching_readonly_checkpoint)
+    unfinished_project_waits_for_user, undelivered_notice,
+    dispatching_readonly_checkpoint, READ_ONLY_TOOLS)
 from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
@@ -542,7 +542,11 @@ class ControlRunService:
           目标照旧停成 waiting_user（没交付就是没交付）；只是同一句话不说两遍。这一轮动过工具、或者上一轮
           没说过这句（第一轮、缺项变了），照说。增强类：查不到上一轮就照说（§七）。
         """
-        if tool_result_count(record.get("events")) > 0:
+        # ⚠ 2026-09-30 隔离真机第 138 轮 sr-20260930025424-FMGS3825MJ（便签墙，追问「刷新页面后撤销记录还在吗？」）：模型为了答准先
+        #   project_search / project_read 看了三眼代码——上一版只认「一个工具都没调」，照样把同一句缺项又说一遍。
+        #   只读查看改不了目标的证据，跟没调一样；改过东西、跑过命令、提过验收的，照说。
+        if any(isinstance(event, dict) and event.get("type") == "control_tool_result"
+               and event.get("tool") not in READ_ONLY_TOOLS for event in record.get("events") or []):
             return False
         try:
             previous = await asyncio.to_thread(self.store.previous, record["runId"], record["ownerId"])

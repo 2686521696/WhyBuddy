@@ -79,3 +79,25 @@ def test_a_turn_that_did_something_says_it_again_even_if_the_words_match():
     idle = {"runId": "r2", "ownerId": "o", "events": [{"type": "control_text", "text": "答了一个问题"}]}
     assert asyncio.run(service._repeats_last_notice(worked, notice)) is False
     assert asyncio.run(service._repeats_last_notice(idle, notice)) is True
+
+
+
+# ⚠ 2026-09-30 隔离真机第 138 轮 sr-20260930025424-FMGS3825MJ（便签墙，追问「刷新页面后撤销记录还在吗？」）：为了答准，模型先
+#   project_search、project_read ×2 看了代码。上一版只认「一个工具都没调」，照样重复缺项。只读查看跟没调一样。
+#   把 _repeats_last_notice 里 READ_ONLY_TOOLS 那一判换回「有任何工具结果就照说」，下面这条变红。
+def test_the_round138_read_only_lookups_do_not_count_as_doing_something():
+    from services.control_goal_continuation import undelivered_notice
+    notice = undelivered_notice(ROUND124_BLOCKED)
+
+    class Store:
+        def previous(self, run_id, owner_id):
+            return {"events": [{"type": "control_text", "text": notice, "stopReason": "goal_not_delivered"}]}
+
+    service = ControlRunService.__new__(ControlRunService)
+    service.store = Store()
+    looked = {"runId": "r3", "ownerId": "o", "events": [
+        {"type": "control_tool_result", "tool": "project_search"},
+        {"type": "control_tool_result", "tool": "project_read"},
+        {"type": "control_tool_result", "tool": "project_read"},
+        {"type": "control_text", "text": "刷新页面后，撤销记录不会保留。"}]}
+    assert asyncio.run(service._repeats_last_notice(looked, notice)) is True
