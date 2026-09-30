@@ -203,6 +203,10 @@ _MEDIA_PART = re.compile(r"^(?:ppt|word|xl)/media/[^/]+$")
 _SLIDE_PART = re.compile(r"^ppt/slides/slide\d+\.xml$")
 _SHEET_PART = re.compile(r"^xl/worksheets/sheet\d+\.xml$")
 _PIVOT_PART = re.compile(r"^xl/pivotTables/pivotTable\d+\.xml$")
+#: 一个单元格的内容（<c …>…</c>；自闭合的空格子不算）。
+_XLSX_CELL = re.compile(rb"<c\b[^>]*[^/]>(.*?)</c>", re.S)
+#: 公式格里算好的结果：非空的 <v>。
+_XLSX_CACHED = re.compile(rb"<v>[^<]+</v>")
 
 
 def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
@@ -234,8 +238,19 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                 body = archive.read("word/document.xml") if "word/document.xml" in names else b""
                 facts["tables"] = body.count(b"<w:tbl>")
             else:
-                facts["sheets"] = sum(1 for n in names if _SHEET_PART.match(n))
+                sheets = [n for n in names if _SHEET_PART.match(n)]
+                facts["sheets"] = len(sheets)
                 facts["pivotTables"] = sum(1 for n in names if _PIVOT_PART.match(n))
+                formulas = uncached = 0
+                for name in sheets:
+                    for cell in _XLSX_CELL.findall(archive.read(name)):
+                        if b"<f" not in cell:
+                            continue
+                        formulas += 1
+                        if not _XLSX_CACHED.search(cell):
+                            uncached += 1
+                facts["formulas"] = formulas
+                facts["formulasUncached"] = uncached
             return facts
     except Exception:
         return None
@@ -273,6 +288,14 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         note += f"，数据透视表 {pivots} 个" + (
             "（公式写的汇总表不是透视表：用户要的是透视表，就照实说给的是公式汇总）"
             if not pivots else "")
+    uncached = int(facts.get("formulasUncached") or 0)
+    if uncached:
+        # ⚠ 2026-09-30 隔离真机第 148 轮（家庭月度开支 Excel）：openpyxl 写的 12 个 SUM 全是 <v></v>——
+        #   Excel 打开会重算，右栏预览（@silurus/ooxml 只读缓存值）和结果卡缩略图里「总计」一整行是空的，
+        #   模型说「合计均使用公式」没错，用户在界面上看到的却是空白。沙盒和生产镜像都没有 LibreOffice 可重算。
+        note += (f"，公式 {facts.get('formulas', uncached)} 个里 {uncached} 个没有算好的结果"
+                 "（右侧预览和卡片缩略图只显示存好的结果，这些格子是空白；用户在 Excel 里打开会重算。"
+                 "openpyxl 存不了结果，XlsxWriter 的 write_formula 可以连同算好的值一起写）")
     return f"{path}：" + "，".join(parts) + note
 
 
