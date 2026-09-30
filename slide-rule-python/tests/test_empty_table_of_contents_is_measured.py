@@ -53,7 +53,7 @@ def test_the_round162_handbook_reports_its_empty_toc():
     facts = office_facts(EMPTY.read_bytes(), NAME)
     assert facts["tocEmpty"] == 1
     sentence = office_facts_sentence(NAME, facts)
-    assert "「目录」下面是空的" in sentence and "TOC1" in sentence and "交付前" in sentence
+    assert "「目录」下面是空的" in sentence and "add_paragraph" in sentence
 
 
 def test_the_sentence_reaches_the_command_receipt():
@@ -61,14 +61,14 @@ def test_the_sentence_reaches_the_command_receipt():
     facts = office_facts(EMPTY.read_bytes(), NAME)
     receipt = _command_pointer({"exitCode": 0, "status": "completed", "officeFiles": [NAME],
                                 "officeFacts": {NAME: facts}, "command": "python3 generate_manual.py"}, "ok")
-    assert "目录是一个还没生成条目的 Word 域" in receipt["hint"]
+    assert "「目录」下面是空的" in receipt["hint"]
 
 
 def test_a_toc_with_entries_is_not_reported():
     """反向：同一份字节按回执的补法写进条目——不报。"""
     facts = office_facts(_filled(), NAME)
     assert facts["tocEmpty"] == 0
-    assert "目录是一个" not in office_facts_sentence(NAME, facts)
+    assert "「目录」下面" not in office_facts_sentence(NAME, facts)
 
 
 def test_a_document_without_a_toc_is_not_reported():
@@ -87,3 +87,50 @@ def test_entries_stuffed_inside_the_fldchar_do_not_count():
     facts = office_facts(stuffed.read_bytes(), "output/智能扫地机器人产品使用说明书.docx")
     assert facts["tocEmpty"] == 1
     assert "是空元素" in office_facts_sentence("a.docx", facts)                    # 回执点名这个错法
+
+
+def test_entries_written_backwards_on_one_line_are_reported():
+    """⚠ 第 164 轮（智能门锁说明书）：条目写在域 end 之后、同一段里、对同一个位置反复插——预览先是 40 行空白，
+    页底一行挤着「5.8 … 5.1 第5章 … 第1章」倒着来。第二版只看 TOC 样式，报成「空」；用户看到的是倒序一行。"""
+    facts = office_facts((FIXTURES / "round164_lock_manual_toc_reversed.docx").read_bytes(), "a.docx")
+    assert facts["tocEmpty"] == 0 and facts["tocDisordered"] == 1
+    sentence = office_facts_sentence("a.docx", facts)
+    assert "顺序对不上" in sentence and "insert_paragraph_before" in sentence
+
+
+W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+def _doc(*paras):
+    """最小 Word：paras 是 (样式, 文字)。"""
+    def ppr(style):
+        return '<w:pPr><w:pStyle w:val="' + style + '"/></w:pPr>' if style else ""
+    body = "".join(f"<w:p>{ppr(style)}<w:r><w:t>{text}</w:t></w:r></w:p>" for style, text in paras)
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("word/document.xml", f'<w:document xmlns:w="{W}"><w:body>{body}</w:body></w:document>')
+    return out.getvalue()
+
+
+CHAPTERS = ["第1章 产品介绍", "第2章 安装准备", "第3章 日常使用"]
+
+
+def test_a_plain_toc_in_order_is_fine():
+    """反向：回执推荐的最稳写法——不用域，「目录」下按顺序一条一段。"""
+    doc = _doc(("", "目录"), *[("", c) for c in CHAPTERS], *[("Heading1", c) for c in CHAPTERS])
+    facts = office_facts(doc, "a.docx")
+    assert facts["tocEmpty"] == 0 and facts["tocDisordered"] == 0
+
+
+def test_the_same_entries_reversed_or_in_one_paragraph_are_disordered():
+    reversed_doc = _doc(("", "目录"), *[("", c) for c in reversed(CHAPTERS)], *[("Heading1", c) for c in CHAPTERS])
+    one_line = _doc(("", "目录"), ("", "".join(CHAPTERS)), *[("Heading1", c) for c in CHAPTERS])
+    assert office_facts(reversed_doc, "a.docx")["tocDisordered"] == 1
+    assert office_facts(one_line, "a.docx")["tocDisordered"] == 1
+
+
+def test_no_chapter_headings_means_no_opinion():
+    """反向：正文没有章节标题样式，量不出「目录该列什么」，不下结论（fail-open）。"""
+    doc = _doc(("", "目录"), ("", "随便一段"), ("", "正文"))
+    facts = office_facts(doc, "a.docx")
+    assert facts["tocEmpty"] == 0 and facts["tocDisordered"] == 0

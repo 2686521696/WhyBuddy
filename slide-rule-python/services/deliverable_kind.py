@@ -250,7 +250,9 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                 facts["tables"] = body.count(b"<w:tbl>")
                 styles = archive.read("word/styles.xml") if "word/styles.xml" in names else b""
                 facts["listDoubleMarked"] = _docx_double_marked(body, styles)
-                facts["tocEmpty"] = int(_docx_toc_is_empty(body))
+                toc = _docx_toc_problem(body)
+                facts["tocEmpty"] = int(toc == "empty")
+                facts["tocDisordered"] = int(toc == "disordered")
             else:
                 sheets = [n for n in names if _SHEET_PART.match(n)]
                 facts["sheets"] = len(sheets)
@@ -641,26 +643,58 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
 
 
 _DOCX_TOC_FIELD = re.compile(rb'(?:<w:instrText[^>]*>\s*TOC\b|w:instr="\s*TOC\b)')
-_DOCX_TOC_ENTRY = re.compile(rb'<w:pStyle w:val="(?:TOC|toc)\s?\d"')
 #: 有内容的 fldChar（它本该是空元素）：里面的东西渲染器不画，不能算成目录条目。
 _DOCX_FLDCHAR_BODY = re.compile(rb"<w:fldChar\b[^>]*[^/]>.*?</w:fldChar>", re.S)
+_DOCX_HEADING_STYLE = re.compile(r"(?i)^(?:heading\s?[1-3]|标题\s?[1-3])$")
+_DOCX_TOC_TITLES = {"目录", "目 录", "contents", "tableofcontents"}
 
 
-def _docx_toc_is_empty(body: bytes) -> bool:
-    """有目录域、域里一条生成好的目录条目都没有。
+def _docx_toc_problem(body: bytes) -> str | None:
+    """用户在「目录」底下真正看到的：空（"empty"）、顺序和正文对不上或全挤一段（"disordered"），没毛病 None。
 
     ⚠ 2026-09-30 隔离真机第 162 轮（咖啡店店员培训手册）：「目录」标题下面是一个 TOC 域，
       域结果只有一句「右键单击此处并选择“更新域”」，还写进了 fldChar 里面——右栏预览、结果卡缩略图
-      「目录」下面一片空白。settings 里开了 updateFields，Word 打开会先弹窗问要不要更新。
-      隔离库 61 份 Word 里 17 份有目录域，17 份全是空的：python-docx 只会插域，不会生成条目。
-    条目 = 用 TOC1/TOC2… 样式的段落（Word 自己更新域后就是这么存的）。
+      「目录」下面一片空白。隔离库 61 份 Word 里 17 份有目录域，17 份全是空的：python-docx 只会插域，
+      不会生成条目。
+    ⚠ 第 163 轮（扫地机器人说明书）：照回执补了 40 多条 TOC1/TOC2 段落，整段塞进了
+      <w:fldChar w:fldCharType="separate">…</w:fldChar> 里——渲染器不看 fldChar 里面，照样空。
+      第一版只数「有没有 TOC 样式段落」，报成了「不空」。
+    ⚠ 第 164 轮（智能门锁说明书）：条目写在了域 end 之后、同一段里、对同一个位置反复插——
+      预览里先是 40 行空白，页底一行挤着「5.8 … 5.1 第5章 … 第1章」倒着来。第二版只看有没有 TOC 样式，
+      说它「空」，用户看到的却是倒序一行。第三版不再猜条目的写法，只量用户看到的：
+      目录区 = 目录域（或「目录」段落）到正文第一个章节标题之间，渲染器会画的字；
+      正文章节标题（Heading 1–3）在这片字里找得到几个、按什么顺序。
+    正文没有章节标题样式就不下结论（fail-open，§七）。
     """
-    # ⚠ 第 163 轮（扫地机器人说明书）：模型照回执补了 40 多条 TOC1/TOC2 段落，却整段塞进了
-    #   <w:fldChar w:fldCharType="separate">…</w:fldChar> 里面——fldChar 是空元素，渲染器不看里面，
-    #   预览照样只有「目录」两个字。第一版只数「文件里有没有 TOC 样式段落」，这一份就报成了「不空」。
-    #   只算渲染器真会画的：先把塞进 fldChar 里的东西剥掉再数。
-    rendered = _DOCX_FLDCHAR_BODY.sub(b"", body)
-    return bool(_DOCX_TOC_FIELD.search(body)) and not _DOCX_TOC_ENTRY.search(rendered)
+    clean = _DOCX_FLDCHAR_BODY.sub(b"", body)
+    paras = []
+    for para in _DOCX_PARA.findall(clean):
+        style = _DOCX_PSTYLE.search(para)
+        name = style.group(1).decode("utf-8", "replace") if style else ""
+        text = b"".join(_DOCX_TEXT.findall(para)).decode("utf-8", "replace")
+        paras.append((name, re.sub(r"\s+", "", text), bool(_DOCX_TOC_FIELD.search(para))))
+    start = next((i for i, (_name, _text, field) in enumerate(paras) if field), None)
+    if start is None:
+        start = next((i + 1 for i, (_name, text, _field) in enumerate(paras) if text.lower() in _DOCX_TOC_TITLES), None)
+    if start is None:
+        return None
+    heads = [(i, text) for i, (name, text, _field) in enumerate(paras)
+             if i >= start and text and _DOCX_HEADING_STYLE.match(name)]
+    if not heads:
+        return None
+    region = [text for _name, text, _field in paras[start:heads[0][0]]]
+    found = []
+    for _i, head in heads:
+        for index, text in enumerate(region):
+            at = text.find(head)
+            if at >= 0:
+                found.append((index, at))
+                break
+    if not found:
+        return "empty"
+    if len(found) >= 3 and (found != sorted(found) or len({index for index, _at in found}) == 1):
+        return "disordered"
+    return None
 
 
 def _docx_double_marked(body: bytes, styles: bytes) -> int:
@@ -746,13 +780,15 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         samples = "、".join(str(item) for item in (facts.get("textInvisibleSamples") or [])[:3])
         note += (f"，有 {invisible} 处文字和它下面的底色几乎同色（比如 {samples}）"
                  "——用户在右侧预览和结果卡缩略图里看到的是一块没字的色块。交付前把这些字改成和底色反差明显的颜色")
-    if facts.get("tocEmpty"):
-        # 第 162 轮，见 _docx_toc_is_empty 头注。
-        note += ("，目录是一个还没生成条目的 Word 域（用户在右侧预览和结果卡缩略图里看到「目录」下面是空的，"
-                 "Word 打开还要先点「更新域」）。交付前把各章节标题作为目录条目写进域结果里——"
-                 "域的 separate 和 end 之间，每条一个用 TOC1 / TOC2 样式的段落，页码可以先不写；"
-                 "<w:fldChar w:fldCharType=\"separate\"/> 是空元素，条目段落写在它后面、和它平级，"
-                 "塞进 fldChar 里面渲染器一个字都不画。Word 打开更新域时会换成带页码的")
+    if facts.get("tocEmpty") or facts.get("tocDisordered"):
+        # 第 162–164 轮，见 _docx_toc_problem 头注。
+        seen = ("「目录」下面是空的" if facts.get("tocEmpty")
+                else "「目录」下面的条目和正文章节的顺序对不上（倒序，或者全挤在一段里）")
+        note += (f"，用户在右侧预览和结果卡缩略图里看到{seen}。最稳的写法：不用 TOC 域，在「目录」标题下"
+                 "按正文章节的顺序一条一段地写（一级顶格、二级缩进一点，页码可以不写）——python-docx 就是"
+                 "按顺序 add_paragraph，别对同一个位置反复 insert_paragraph_before（会整份倒过来）。"
+                 "一定要 Word 自动目录，就把这些段落写在域的 separate 和 end 之间、和 "
+                 "<w:fldChar w:fldCharType=\"separate\"/> 平级（它是空元素，塞进里面渲染器一个字都不画）")
     doubled = int(facts.get("listDoubleMarked") or 0)
     if doubled:
         # 第 151 轮，见 _docx_double_marked 头注。

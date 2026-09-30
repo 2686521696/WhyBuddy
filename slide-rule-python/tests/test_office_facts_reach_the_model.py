@@ -67,7 +67,7 @@ def test_a_native_chart_a_picture_and_a_table_are_counted():
     doc = _zip({"word/document.xml": b"<w:body><w:tbl></w:tbl><w:tbl></w:tbl></w:body>"})
     # 第 151 轮起多量一项列表双重记号（test_double_list_markers_are_measured 头注）
     assert office_facts(doc, "c.docx") == {"tables": 2, "charts": 0, "pictures": 0, "listDoubleMarked": 0,
-                                           "tocEmpty": 0}   # 第 162 轮起多量一项空目录（test_empty_table_of_contents_is_measured）
+                                           "tocEmpty": 0, "tocDisordered": 0}   # 第 162 轮起多量一项空目录（test_empty_table_of_contents_is_measured）
 
 
 def test_what_cannot_be_measured_is_not_invented():
