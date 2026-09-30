@@ -260,7 +260,11 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                         if b"<f" not in cell:
                             continue
                         formulas += 1
-                        if not _XLSX_CACHED.search(cell):
+                        # ⚠ 第 156 轮（餐厅经营表，空白录入模板）：IF(OR(B5="",B5=0),"",G5/B5) 的结果本来就是
+                        #   空字符串，XlsxWriter 存成 <v></v>——和 openpyxl「没存结果」字节一模一样。第一版把这 18 格
+                        #   也算成「没算好」，回执对模型说「总分、合计都是空的」，是宿主在说错话。
+                        #   公式自己能返回 "" 的，空结果不算没算好（分不清就不报，§七）。
+                        if not _XLSX_CACHED.search(cell) and b'""' not in cell and b"&quot;&quot;" not in cell:
                             uncached += 1
                 facts["formulas"] = formulas
                 facts["formulasUncached"] = uncached

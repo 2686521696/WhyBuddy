@@ -59,3 +59,15 @@ def test_formulas_with_cached_results_are_not_reported():
     facts = office_facts(out.getvalue(), NAME)
     assert facts["formulas"] == 12 and facts["formulasUncached"] == 0
     assert "没有算好的结果" not in office_facts_sentence(NAME, facts)
+
+
+def test_a_formula_that_returns_an_empty_string_is_not_uncached():
+    """反向（真文件）：第 156 轮空白录入模板，毛利率 = IF(OR(B5="",B5=0),"",G5/B5)，没录数时结果就是 ""。
+    XlsxWriter 存成 <v></v>，和 openpyxl 没存结果长得一样。第一版把这 18 格算成「没算好」，
+    回执对模型说「总分、合计都是空的」——模型没理，理的话反而会改坏。"""
+    blank = Path(__file__).parent / "fixtures" / "round156_restaurant_blank_template.xlsx"
+    facts = office_facts(blank.read_bytes(), "output/餐厅月度经营表.xlsx")
+    assert facts["formulas"] == 66 and facts["formulasUncached"] == 0
+    assert "没有算好的结果" not in office_facts_sentence("output/餐厅月度经营表.xlsx", facts)
+    # 同一条规矩不许吞掉真没存结果的：第 148 轮的 12 个 SUM 照旧算
+    assert office_facts(FIXTURE.read_bytes(), NAME)["formulasUncached"] == 12
