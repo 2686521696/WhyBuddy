@@ -119,6 +119,33 @@ _LOCAL_INFO_CACHE_MAX = 32
 _local_info_cache: dict[str, SkillInfo] = {}
 
 
+def _seed_zip_path(name: str) -> Path | None:
+    """仓库里这份种子 zip 的路径；没有就 None。"""
+    name = str(name or "").strip()
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return None
+    path = _REPO_SKILLS / "sliderule.zip" if name == "sliderule" else _REPO_SKILLS / "seeds" / f"{name}.zip"
+    return path if path.is_file() else None
+
+
+def local_seed_files(slug: str) -> dict[str, str] | None:
+    """仓库种子 zip 开箱后的全部文件（相对技能根）。没有这份种子或打不开 → None。"""
+    path = _seed_zip_path(slug)
+    if path is None:
+        return None
+    try:
+        return unpack_skill_zip(path.read_bytes())
+    except Exception:
+        return None
+
+
+def seed_readiness() -> dict[str, Any]:
+    """启动时打一行：种子目录在哪、index 里几份、磁盘上能打开几份。只读，不碰表和 OSS。"""
+    readable = [meta["slug"] for meta in _GITHUB_SEEDS if _seed_zip_path(meta["slug"]) is not None]
+    return {"dir": str(_REPO_SKILLS), "indexed": len(_GITHUB_SEEDS), "readable": len(readable),
+            "officeSkills": local_seed_skill_info("office-skills") is not None}
+
+
 def local_seed_skill_info(slug: str) -> SkillInfo | None:
     """仓库里的种子 zip。不经过 OSS。
 
@@ -133,12 +160,8 @@ def local_seed_skill_info(slug: str) -> SkillInfo | None:
     hit = _local_info_cache.get(name)
     if hit is not None:
         return hit
-    path = (
-        _REPO_SKILLS / "sliderule.zip"
-        if name == "sliderule"
-        else _REPO_SKILLS / "seeds" / f"{name}.zip"
-    )
-    if not path.is_file():
+    path = _seed_zip_path(name)
+    if path is None:
         return None
     try:
         files = unpack_skill_zip(path.read_bytes())
@@ -298,11 +321,25 @@ class SkillCatalogStore:
         return out
 
     def unpack_package(self, pkg: dict[str, Any]) -> dict[str, str]:
-        blob = blob_get(str(pkg.get("ossKey") or pkg.get("oss_key") or ""))
-        expected = str(pkg.get("sha256") or "")
-        if expected and hashlib.sha256(blob).hexdigest() != expected:
-            raise ValueError("skill_package_checksum_mismatch")
-        return unpack_skill_zip(blob)
+        """装的那份优先；OSS 取不到时用仓库里同名的种子包。
+
+        ⚠ 2026-09-30 用户本机截图（@office-skills 写员工入职方案，本机 .env 的 APP_STORE_HTTP_API_URL
+          指着线上库）：表里的包行来自线上，oss_key 指向线上 MinIO；本机没配 S3_ENDPOINT，blob 走本地 fs，
+          一个都取不到。skill() 那一支（installed_skill_infos / resolve_invoked_skill）早有种子兜底，
+          沙盒开箱（skill_hydrate.files_for_package）和 file_read 技能文件走这里、没有——沙盒里
+          `find -name SKILL.md` 一个没有。兜底挪到这一处，三条路一个口径（§四）。
+        """
+        try:
+            blob = blob_get(str(pkg.get("ossKey") or pkg.get("oss_key") or ""))
+            expected = str(pkg.get("sha256") or "")
+            if expected and hashlib.sha256(blob).hexdigest() != expected:
+                raise ValueError("skill_package_checksum_mismatch")
+            return unpack_skill_zip(blob)
+        except Exception:
+            seeded = local_seed_files(str(pkg.get("slug") or ""))
+            if seeded is None:
+                raise
+            return seeded
 
     def skill_info(self, pkg: dict[str, Any]) -> SkillInfo | None:
         files = self.unpack_package(pkg)
@@ -411,6 +448,14 @@ def get_skill_catalog_store() -> SkillCatalogStore:
             _store.ensure_seed()
         except Exception:
             pass
+        # ⚠ 2026-09-30 用户本机「加载技能 office-skills · skill_not_found」：目录空、种子也没打开，
+        #   从外面看不出是哪一环。商店第一次建起来时说一句种子在不在、能开几份（增强类，fail-open）。
+        try:
+            ready = seed_readiness()
+            print(f"[skills] seeds dir={ready['dir']} readable={ready['readable']}/{ready['indexed']}"
+                  f" office-skills={'ok' if ready['officeSkills'] else 'MISSING'}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[skills] seeds unavailable: {type(exc).__name__}: {exc}", flush=True)
         return _store
 
 
