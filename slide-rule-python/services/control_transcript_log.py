@@ -77,6 +77,11 @@ def tool_transcript_entry(event: Any) -> dict[str, Any] | None:
         "ok": event.get("ok") is not False,
     }
     detail = tool_result_detail(event)
+    # ⚠ 2026-09-30 用户本机截图（@office-skills）：刷新后三行只剩「skill_not_found」，点的是哪个
+    #   名字查不到。技能失败把名字也留下；前端 projectActionDetail 同一口径（§四：实时 / 回放两处）。
+    skill = event.get("skill")
+    if tool == "skill" and event.get("ok") is False and isinstance(skill, str) and skill.strip() and detail:
+        detail = _clip(f"{skill.strip()} · {detail}")
     if detail:
         row["detail"] = detail
     operation_id = event.get("operationId")

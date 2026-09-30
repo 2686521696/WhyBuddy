@@ -134,6 +134,12 @@ export function projectActionDetail(
     return typeof value === "string" ? value.trim() : "";
   };
   const failure = text("error") || text("errorCode") || text("message");
+  // ⚠ 2026-09-30 用户本机截图（@office-skills 写员工入职方案）：三行「加载技能 skill_not_found」，
+  //   点的是哪个名字一个字都没有——错误码把开场的技能名盖掉了，查都没法查。
+  //   技能失败两样都留：点了什么 + 为什么不行。与 control_transcript_log 同一口径（刷新后一样）。
+  if (failure && text("tool") === "skill" && text("skill")) {
+    return `${text("skill")} · ${failure}`;
+  }
   if (failure) return failure;
 
   const exit = event.exitCode;
