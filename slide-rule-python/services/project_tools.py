@@ -1214,7 +1214,47 @@ def command_receipt_from(adapter, operation_id):
     missing = _missing_skill_files_sentence(command or snap.get("command"), snap.get("exitCode"), owner)
     if missing and isinstance(receipt, dict):
         receipt["hint"] = missing + str(receipt.get("hint") or "")
+    unlocked = _lockfile_out_of_sync_sentence(store, operation_id, owner, snap.get("errorCode"))
+    if unlocked and isinstance(receipt, dict):
+        receipt["hint"] = unlocked + str(receipt.get("hint") or "")
     return receipt
+
+
+_LOCK_OUT_OF_SYNC = re.compile(r"can only install packages when your package\.json and package-lock\.json")
+_LOCK_MISSING = re.compile(r"Missing: ((?:@[\w.-]+/)?[\w.-]+)@\S+ from lock file")
+
+
+def _lockfile_out_of_sync_sentence(store, operation_id, owner, error_code) -> str:
+    """装依赖失败、原因是 package.json 跟锁文件对不上：说清楚，说清后果。只读日志，不改任何东西。
+
+    ⚠ 2026-09-30 隔离真机第 135 轮 sr-20260930014337-TAFH3SE2SD（体重记录网页，追问「用 Chart.js 加一个最近 7 天的折线图」）：
+      模型往 package.json 加了 chart.js。网页工程每条命令先跑 `npm ci`，它只按锁文件装——锁里没有就 EUSAGE，
+      连用来更新锁文件的 `npm install --package-lock-only` 也跑不到。回执只有「输出共 1534 字，excerpt 只有最后
+      800 字」，npm 那句原因在日志开头、被截掉了。模型去手改 package-lock.json 五次，最后悄悄删掉 chart.js、
+      自己用 canvas 画，收尾写「使用 Chart.js 绘制折线图」——工程里一行 chart.js 都没有。
+    """
+    if error_code != "project_dependency_install_failed" or store is None:
+        return ""
+    events, after = [], 0
+    try:
+        for _ in range(5):                       # PTY 回显可能一字节一个事件；npm 那句原因在开头
+            page = store.list_events(str(operation_id), owner_id=owner, after_seq=after, limit=1000)
+            events += page
+            if len(page) < 1000:
+                break
+            after = page[-1].seq
+    except Exception:
+        return ""
+    text = _terminal_text("".join(
+        str((event.payload or {}).get("text") or (event.payload or {}).get("data") or "")
+        for event in events if getattr(event, "type", "") in {"runtime.log", "runtime.console"}))
+    if not _LOCK_OUT_OF_SYNC.search(text):
+        return ""
+    names = list(dict.fromkeys(_LOCK_MISSING.findall(text)))[:6]
+    named = "、".join(names) if names else "新加的依赖"
+    return (f"依赖没装上：package.json 里的 {named} 不在 package-lock.json 里。网页工程每条命令先跑 npm ci，它只按锁文件装，"
+            "对不上就拒装——这条命令本身没跑，之后每条也都会卡在这一步；npm install 同样要先过这一步，这里更新不了锁文件。"
+            "要让工程能跑，把 package.json 里这几项改回去；这个库用不上，就照实告诉用户没装上、用什么代替了，别说用了它。")
 
 
 _SKILL_PATH_IN_COMMAND = re.compile(r"\.sliderule/skills/[A-Za-z0-9][\w.-]{0,63}/[^\s'\"`;|&<>()]+")
