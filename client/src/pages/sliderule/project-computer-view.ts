@@ -383,6 +383,31 @@ export function hostPreviewChoice(input: {
 }
 
 /**
+ * 一轮收回了几份办公文件时，预览区顶上的文件切换条。只有一份就不出条。
+ *
+ * ⚠ 2026-09-30 隔离真机第 137 轮 sr-20260930023832-PDJ9NXAV09（季度销售复盘：6 页 PPT + 原始数据 Excel）：
+ *   两份都收回了，右栏只画最后收回的 Excel。宿主替人挑了一份，另一份在预览里根本看不到、也没有地方点，
+ *   只能下载。人挑过就按人的来（`picked` 在列表里才算数），没挑按宿主的选择。
+ */
+export function officeFileTabs(
+  collected: readonly string[],
+  hostChoice: string | null,
+  picked: string | null
+): { tabs: { path: string; label: string; active: boolean }[]; current: string | null } {
+  const paths = collected.filter(isOfficePath).filter((path, i, all) => all.indexOf(path) === i);
+  const current = picked && paths.includes(picked) ? picked : hostChoice;
+  if (paths.length < 2) return { tabs: [], current };
+  return {
+    current,
+    tabs: paths.map(path => ({
+      path,
+      label: path.split("/").pop() || path,
+      active: path === current,
+    })),
+  };
+}
+
+/**
  * 办公会话的预览槽。有页面 → 源码页；有办公文件 → 那一份；
  * 什么都没有 → 空，不许拿失败的网页运行来充。
  */

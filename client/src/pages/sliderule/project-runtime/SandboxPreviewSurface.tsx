@@ -56,6 +56,7 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   hostPreviewChoice,
+  officeFileTabs,
   officePreviewStage,
   resolveComputerView,
   shouldAutoOpenPreview,
@@ -649,7 +650,15 @@ export function SandboxPreviewSurface({
     office: officeDeliverable,
   });
   const presentedPath = previewChoice.htmlPath;
-  const presentedOfficePath = previewChoice.officePath;
+  // 人在文件切换条上点过的那份；宿主换了呈现对象（新收回 / 模型点名）就作废，跟着宿主走。
+  const [pickedOffice, setPickedOffice] = useState<string | null>(null);
+  useEffect(() => setPickedOffice(null), [previewChoice.officePath]);
+  const officeTabs = officeFileTabs(
+    collectedOffice.map(item => item.path),
+    previewChoice.officePath,
+    pickedOffice
+  );
+  const presentedOfficePath = officeTabs.current;
   const shownOffice = collectedOffice.find(item => item.path === presentedOfficePath);
   // 同一路径改写后 sha 变了就重画。不靠模型再点一次名。
   const officePresentationKey = `${shownOffice?.sha256 ?? ""}:${officeReload}`;
@@ -1373,11 +1382,37 @@ export function SandboxPreviewSurface({
         {previewStage === "page" && presentedPath && projectId ? (
           <PresentedSourcePage projectId={projectId} path={presentedPath} />
         ) : previewStage === "file" && presentedOfficePath && projectId ? (
-          <PresentedOfficeFile
-            projectId={projectId}
-            path={presentedOfficePath}
-            refreshKey={`${officePresentationKey ?? ""}:${officeReload}`}
-          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {officeTabs.tabs.length ? (
+              <div
+                role="tablist"
+                data-testid="office-file-tabs"
+                className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#eeeeee] px-2 py-1"
+              >
+                {officeTabs.tabs.map(item => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    role="tab"
+                    aria-selected={item.active}
+                    title={item.path}
+                    data-testid="office-file-tab"
+                    onClick={() => setPickedOffice(item.path)}
+                    className={`max-w-[240px] truncate rounded px-2 py-0.5 text-[12px] ${
+                      item.active ? "bg-[#f2f2f2] font-medium text-[#1f1f1f]" : "text-[#6b6b6b] hover:bg-[#f7f7f7]"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <PresentedOfficeFile
+              projectId={projectId}
+              path={presentedOfficePath}
+              refreshKey={`${officePresentationKey ?? ""}:${officeReload}`}
+            />
+          </div>
         ) : previewStage === "idle" ? (
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
