@@ -2153,15 +2153,19 @@ class ProjectTools:
             changes = kernel_write_changes(files, path, content, append=getattr(parsed, "append", False))
         else:
             path = workspace_file_path(getattr(parsed, "file", None) or parsed.path, files)
-            old = getattr(parsed, "old_str", None) or getattr(parsed, "old_string", None) or parsed.oldStr
-            if hasattr(parsed, "new_str"):
-                new = parsed.new_str
-            elif hasattr(parsed, "new_string"):
-                new = parsed.new_string
+            edits = getattr(parsed, "edits", None)
+            if edits:
+                changes = _str_replace_edits_changes(files, path, edits)
             else:
-                new = parsed.newStr
-            replace_all = bool(getattr(parsed, "replace_all", False) or getattr(parsed, "replaceAll", False))
-            changes = kernel_str_replace_changes(files, path, old, new, replace_all=replace_all)
+                old = getattr(parsed, "old_str", None) or getattr(parsed, "old_string", None) or parsed.oldStr
+                if getattr(parsed, "new_str", None) is not None:
+                    new = parsed.new_str
+                elif hasattr(parsed, "new_string"):
+                    new = parsed.new_string
+                else:
+                    new = parsed.newStr
+                replace_all = bool(getattr(parsed, "replace_all", False) or getattr(parsed, "replaceAll", False))
+                changes = kernel_str_replace_changes(files, path, old, new, replace_all=replace_all)
         result = self._patch(project, PatchArguments.model_validate({
             "approvalRef": approved_reference(authority),
             "expectedRevision": current.revision,
@@ -2513,3 +2517,25 @@ class ProjectTools:
             result["nextOffset"] = 0
         result["hasMore"] = len(events) == 100
         return result
+
+
+def _str_replace_edits_changes(files, path, edits) -> list[dict]:
+    """file_str_replace 的 edits：同一个文件依次套用，全成才出一份改动（第 161 轮，见 FileStrReplaceArguments 头注）。
+
+    每一项照单处的规矩走（0 处、多处都拒，replace_all 明说才全换）；哪一项对不上就整批不落，
+    回执说第几项、为什么——跟单处的提示同一套话，只在前面加上「第 k 项」。
+    """
+    working = dict(files)
+    target = None
+    for index, edit in enumerate(edits, 1):
+        try:
+            step = kernel_str_replace_changes(working, path, edit.old_str, edit.new_str,
+                                              replace_all=bool(edit.replace_all))
+        except ValueError as exc:
+            failure = ValueError(str(exc))
+            failure.hint = (f"edits 第 {index} 项（共 {len(edits)} 项）没对上，整批一处都没改（全部成功才落盘）。"
+                            + (str(getattr(exc, "hint", "") or "")))
+            raise failure from exc
+        target = step[0]["path"]
+        working[target] = step[0]["content"]
+    return [{"path": target, "content": working[target], "expectedSha256": content_hash(files[target])}]

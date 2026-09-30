@@ -162,7 +162,10 @@ def test_model_sees_file_pack_not_project_write_aliases(setup):
     replace = next(tool["function"] for tool in PROJECT_TOOLS if tool["function"]["name"] == "file_str_replace")
     read = next(tool["function"] for tool in PROJECT_TOOLS if tool["function"]["name"] == "file_read")
     assert set(write["parameters"]["required"]) == {"file", "content"}
-    assert set(replace["parameters"]["required"]) == {"file", "old_str", "new_str"}
+    # 第 161 轮起 old_str/new_str 与 edits 二选一（test_str_replace_takes_a_batch_of_edits），schema 上只有 file 必填，
+    # 二选一由 FileStrReplaceArguments 的校验器强制
+    assert set(replace["parameters"]["required"]) == {"file"}
+    assert {"old_str", "new_str", "edits"} <= set(replace["parameters"]["properties"])
     assert set(read["parameters"]["required"]) == {"file"}
     assert "sudo" in write["parameters"]["properties"]
     token = control._PROJECT_TOOLS.set(setup.tools)

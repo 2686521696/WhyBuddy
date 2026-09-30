@@ -259,12 +259,34 @@ class FileWriteArguments(ToolArguments):
     contentEncoding: str | None = Field(default=None, max_length=16)
 
 
-class FileStrReplaceArguments(ToolArguments):
-    file: str = Field(min_length=1, max_length=240)
+class StrReplaceEdit(ToolArguments):
     old_str: str = Field(min_length=1, max_length=512 * 1024)
     new_str: str = Field(max_length=512 * 1024)
     replace_all: bool = False
+
+
+class FileStrReplaceArguments(ToolArguments):
+    """单处：old_str / new_str；同一个文件好几处不同的改：edits（依次套用，全成才落盘）。
+
+    ⚠ 2026-09-30 隔离真机第 161 轮（员工手册 Word，追问「第 3 章后加一章远程办公规定」）：
+      插一章之后后面四章要顺延编号、目录和交叉引用跟着改——模型连发 19 次 file_str_replace，
+      每次只改一行（净改动 +2/−2 → +30/−23 一格一格往上爬），整个追问 11 分 50 秒。
+      replace_all 只管「同一段字处处换」，不管「好几段不同的字」；grok / Claude 的 MultiEdit 有这把刀。
+    """
+    file: str = Field(min_length=1, max_length=240)
+    old_str: str | None = Field(default=None, min_length=1, max_length=512 * 1024)
+    new_str: str | None = Field(default=None, max_length=512 * 1024)
+    replace_all: bool = False
+    edits: list[StrReplaceEdit] | None = Field(default=None, min_length=1, max_length=50)
     sudo: bool = False
+
+    @model_validator(mode="after")
+    def _one_form(self):
+        if (self.old_str is not None) == (self.edits is not None):
+            raise ValueError("pass old_str/new_str for one change, or edits for several — not both, not neither")
+        if self.old_str is not None and self.new_str is None:
+            raise ValueError("new_str is required with old_str")
+        return self
 
 
 class FileFindContentArguments(ToolArguments):
@@ -744,7 +766,7 @@ _DESCRIPTIONS = {
     "project_str_replace": "Alias of file_str_replace with path/oldStr/newStr (replaceAll for every occurrence). Prefer file_str_replace.",
     "file_read": "Read one saved source file. file is a project-relative path (absolute sandbox prefixes are stripped). Default (no start_line/end_line) returns path, sha256, size and a short excerpt — not the full text. Pass start_line/end_line (0-based, exclusive end) for a window. sudo=true is rejected. Do not send approvalRef or hashes.",
     "file_write": "Overwrite or append one saved source file. Pass file, content, and optional append/leading_newline/trailing_newline. sudo=true is rejected. Do not send approvalRef, revision, or SHA256 — the server binds the current approved plan. Prefer file_str_replace for a unique in-file edit. Multi-file CAS or deletion still uses project_patch. Office files (.pptx/.docx/.xlsx) are not text source: write them with contentEncoding=base64 (ZIP bytes) or generate them in bash so the host can collect them. A UTF-8 string at an office path is rejected.",
-    "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once; if it occurs several times the call fails and says on which lines — add surrounding text so it matches once, or pass replace_all=true to change every occurrence (e.g. one colour used in many rules). sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
+    "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once; if it occurs several times the call fails and says on which lines — add surrounding text so it matches once, or pass replace_all=true to change every occurrence (e.g. one colour used in many rules). Several different changes in the same file (renumbering chapters, renaming a function and its callers): send edits=[{old_str, new_str, replace_all?}, ...] instead of old_str/new_str — applied in order to the same file, each later edit sees the earlier ones, all-or-nothing, one revision. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
     "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other command runs as grok-build bash in /home/user/workspace; multi-line commands and heredocs are fine. The command is at most {command_max} characters — for a longer script, file_write it first, then run it (python3 that file). An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. Project source files (what file_write/file_str_replace save) are re-written from the saved source before every command, so editing them inside the sandbox (python/sed) does not stick — change sources with file_str_replace/file_write. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. sudo is rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
