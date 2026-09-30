@@ -642,6 +642,8 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
 
 _DOCX_TOC_FIELD = re.compile(rb'(?:<w:instrText[^>]*>\s*TOC\b|w:instr="\s*TOC\b)')
 _DOCX_TOC_ENTRY = re.compile(rb'<w:pStyle w:val="(?:TOC|toc)\s?\d"')
+#: 有内容的 fldChar（它本该是空元素）：里面的东西渲染器不画，不能算成目录条目。
+_DOCX_FLDCHAR_BODY = re.compile(rb"<w:fldChar\b[^>]*[^/]>.*?</w:fldChar>", re.S)
 
 
 def _docx_toc_is_empty(body: bytes) -> bool:
@@ -653,7 +655,12 @@ def _docx_toc_is_empty(body: bytes) -> bool:
       隔离库 61 份 Word 里 17 份有目录域，17 份全是空的：python-docx 只会插域，不会生成条目。
     条目 = 用 TOC1/TOC2… 样式的段落（Word 自己更新域后就是这么存的）。
     """
-    return bool(_DOCX_TOC_FIELD.search(body)) and not _DOCX_TOC_ENTRY.search(body)
+    # ⚠ 第 163 轮（扫地机器人说明书）：模型照回执补了 40 多条 TOC1/TOC2 段落，却整段塞进了
+    #   <w:fldChar w:fldCharType="separate">…</w:fldChar> 里面——fldChar 是空元素，渲染器不看里面，
+    #   预览照样只有「目录」两个字。第一版只数「文件里有没有 TOC 样式段落」，这一份就报成了「不空」。
+    #   只算渲染器真会画的：先把塞进 fldChar 里的东西剥掉再数。
+    rendered = _DOCX_FLDCHAR_BODY.sub(b"", body)
+    return bool(_DOCX_TOC_FIELD.search(body)) and not _DOCX_TOC_ENTRY.search(rendered)
 
 
 def _docx_double_marked(body: bytes, styles: bytes) -> int:
@@ -744,7 +751,8 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         note += ("，目录是一个还没生成条目的 Word 域（用户在右侧预览和结果卡缩略图里看到「目录」下面是空的，"
                  "Word 打开还要先点「更新域」）。交付前把各章节标题作为目录条目写进域结果里——"
                  "域的 separate 和 end 之间，每条一个用 TOC1 / TOC2 样式的段落，页码可以先不写；"
-                 "Word 打开更新域时会换成带页码的")
+                 "<w:fldChar w:fldCharType=\"separate\"/> 是空元素，条目段落写在它后面、和它平级，"
+                 "塞进 fldChar 里面渲染器一个字都不画。Word 打开更新域时会换成带页码的")
     doubled = int(facts.get("listDoubleMarked") or 0)
     if doubled:
         # 第 151 轮，见 _docx_double_marked 头注。

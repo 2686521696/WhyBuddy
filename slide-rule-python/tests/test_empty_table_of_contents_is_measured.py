@@ -75,3 +75,15 @@ def test_a_document_without_a_toc_is_not_reported():
     """反向（真文件）：没有目录域的 Word（第 151 轮门店报告）不报。"""
     facts = office_facts((FIXTURES / "round151_store_report_double_markers.docx").read_bytes(), "a.docx")
     assert facts["tocEmpty"] == 0
+
+
+def test_entries_stuffed_inside_the_fldchar_do_not_count():
+    """⚠ 第 163 轮（扫地机器人说明书）：模型照回执补了 TOC1/TOC2 段落，却整段塞进了
+    <w:fldChar w:fldCharType="separate">…</w:fldChar> 里面。无头渲染第 2 页：「目录|提示：……更新域……|第 2 页」，
+    一条条目都没画。第一版只数 TOC 样式段落在不在，这份报成了「不空」。"""
+    stuffed = FIXTURES / "round163_manual_toc_inside_fldchar.docx"
+    with zipfile.ZipFile(stuffed) as archive:
+        assert b'<w:pStyle w:val="TOC1"/>' in archive.read("word/document.xml")    # 条目确实写了
+    facts = office_facts(stuffed.read_bytes(), "output/智能扫地机器人产品使用说明书.docx")
+    assert facts["tocEmpty"] == 1
+    assert "是空元素" in office_facts_sentence("a.docx", facts)                    # 回执点名这个错法
