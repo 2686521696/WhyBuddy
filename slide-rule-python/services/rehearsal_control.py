@@ -4080,6 +4080,17 @@ def _system_prompt(state: V5SessionState) -> str:
         if isinstance(listing, dict) and listing.get("paths"):
             more = f"……共 {listing['total']} 个" if listing["total"] > len(listing["paths"]) else ""
             facts.append(f"当前源码文件（只有这些，别按别的模板猜文件名）：{', '.join(listing['paths'])}{more}。")
+        # ⚠ 2026-09-30 第 141 轮 sr-20260930035424-BJ13TVNV0V：每轮追问一开口 check + build 并行、
+        #   双双被撤回；撤回回执只进那一轮。开口前就把现场说清（见 running_dev_server 头注）。
+        server = (readiness_tool.running_dev_server(getattr(state, "projectId", None))
+                  if readiness_tool is not None and hasattr(readiness_tool, "running_dev_server")
+                  else None)
+        if server:
+            facts.append(
+                f"开发服务器 {server} 现在在跑，占着工程：project_exec / shell_exec 的命令都排在它后面，"
+                "只为确认能不能构建的 build / check 会被当场撤回。确认能构建用 project_verify"
+                "（它在服务器旁边对当前版本跑 npm run build，含类型检查）；改源码不用停服务器。"
+            )
         if isinstance(readiness, dict):
             blockers = readiness.get("blockers") or []
             facts.append(

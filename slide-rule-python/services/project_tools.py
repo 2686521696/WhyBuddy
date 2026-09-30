@@ -1350,6 +1350,31 @@ class ProjectTools:
                  and entry.path != "public/__whybuddy_revision.json"]
         return {"revision": revision.revision, "paths": paths[:limit], "total": len(paths)}
 
+    def running_dev_server(self, project_id: str | None) -> str | None:
+        """这一轮开口时，占着工程的常驻开发服务器（它的 operationId），给系统提示用。
+
+        ⚠ 2026-09-30 隔离真机第 141 轮 sr-20260930035424-BJ13TVNV0V（小组作业分工看板网页，两轮追问）：
+          三次运行各自一开口就并行发 project_exec check + build，两条都被 withdraw_unrunnable_build
+          当场撤回（开发服务器 pop-5a2d… 从第一轮一直在跑）。撤回回执说得对，可它只进那一轮的上下文，
+          下一轮照犯一遍。全库 56 次撤回分布在 46 轮里——几乎每轮追问都要先撞这一下才知道。
+          判据与 queue_blocker 同一条：租约 processRefs 指向一条没在停的 runtime.start。
+          增强类，查不到就 None（fail-open）。
+        """
+        if not project_id:
+            return None
+        try:
+            lease = self.store.get_lease(project_id, owner_id=self.owner_id)
+            holder_id = lease.processRefs.get("operationId") if lease else None
+            if not holder_id:
+                return None
+            holder = self.store.get_operation(holder_id, owner_id=self.owner_id)
+        except Exception:
+            return None
+        if (holder.kind != "runtime.start" or holder.status in _TERMINAL
+                or holder.cancelRequested or holder.status == "cancelling"):
+            return None
+        return holder.operationId
+
     def capability_readiness(self) -> dict:
         """Return local capability facts for planning, without touching a provider.
 
