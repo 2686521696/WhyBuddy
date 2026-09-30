@@ -52,6 +52,32 @@ export function previewAddressTitle(entryUrl: string): string {
   return previewOpenUrl(entryUrl);
 }
 
+/** 框揭开后多久还没等到应用页面的握手，就说它没回应。 */
+export const PREVIEW_UNRESPONSIVE_MS = 12_000;
+
+/**
+ * 框已经「加载完」，但应用页面始终没有回握手（whybuddy:select:ready）。
+ *
+ * ⚠ 2026-09-30 隔离真机：预览网关对 /_whybuddy/authorize 和 / 都回 403（跨源框读不到状态码），
+ *   onLoad 照样触发，previewFrameAfterLoad 当它就绪、撤掉「正在打开预览…」——右栏一整块白，
+ *   没有一个字、没有重试，唤醒按钮也没了。网关注入进真应用页面的桥（shared/project-preview-selection.mjs）
+ *   收到 init 会回 ready；403 页、网关错误页、白屏崩溃的应用都回不了。用它判「页面没出来」。
+ *   只提示、不遮挡：万一桥没注入而应用其实能用，人照样能点。
+ */
+export function previewUnresponsive(input: {
+  entryUrl: string | null;
+  frameReady: boolean;
+  bridgeStatus: "waiting" | "ready" | "missing-source";
+  waitedMs: number;
+}): boolean {
+  return (
+    Boolean(input.entryUrl) &&
+    input.frameReady &&
+    input.bridgeStatus === "waiting" &&
+    input.waitedMs >= PREVIEW_UNRESPONSIVE_MS
+  );
+}
+
 export function previewFrameCovered(input: {
   entryUrl: string | null;
   frameReady: boolean;

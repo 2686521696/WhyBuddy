@@ -138,6 +138,40 @@ describe("authorized project preview", () => {
       )
     ).toThrow("独立来源要求");
   });
+  /**
+   * ⚠ 2026-09-30 隔离真机：网关对 /_whybuddy/authorize 与 / 都回 403，跨源框照样触发 load，
+   *   盖层按「就绪」撤掉——右栏一整块白、一个字没有、唤醒按钮也没了。应用页面里网关注入的桥
+   *   回不了握手（whybuddy:select:ready）。把 SandboxPreviewSurface 里 showUnresponsive 那支删掉，本条变红。
+   */
+  it("a frame that loads but never answers the bridge handshake says so and offers to reopen", async () => {
+    await render();
+    await click();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await act(async () => {
+      frame()!.dispatchEvent(new Event("load"));
+    });
+    const notice = () => container.querySelector('[data-testid="project-preview-unresponsive"]');
+    await act(async () => {
+      vi.advanceTimersByTime(11_000);
+    });
+    expect(notice(), "还没到时间，不许冤枉一个正在起来的应用").toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(notice()?.textContent).toContain("预览页面没有回应");
+    const before = ticketPosts().length;
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="project-preview-unresponsive-reload"]')!
+        .click();
+    });
+    vi.useRealTimers();
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(ticketPosts().length).toBe(before + 1);
+  });
+
   it("reload and polling read status only; one click obtains one isolated iframe ticket", async () => {
     await render();
     expect(container.textContent).toContain("预览已暂停，点击以唤醒。");

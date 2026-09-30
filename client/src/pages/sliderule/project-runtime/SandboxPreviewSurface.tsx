@@ -19,8 +19,7 @@ import {
   previewFrameAfterLoad,
   previewFrameCovered,
   previewIsAuthorizeEntry,
-  previewOpenUrl,
-} from "./project-preview-frame";
+  previewOpenUrl, PREVIEW_UNRESPONSIVE_MS, previewUnresponsive } from "./project-preview-frame";
 import {
   PREVIEW_COMING_UP,
   previewWakeLocked,
@@ -817,6 +816,9 @@ export function SandboxPreviewSurface({
   const [bridgeStatus, setBridgeStatus] = useState<
     "waiting" | "ready" | "missing-source"
   >("waiting");
+  // 框揭开后等了多久还没握手（previewUnresponsive 头注）。
+  const [waitedSinceReady, setWaitedSinceReady] = useState(0);
+  const [unresponsiveDismissed, setUnresponsiveDismissed] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const bridge = useRef<ReturnType<typeof connectPreviewSelection> | null>(
     null
@@ -953,6 +955,25 @@ export function SandboxPreviewSurface({
     setPreviewViewId(id);
     saveProjectPreviewViewId(id);
   };
+  useEffect(() => {
+    setWaitedSinceReady(0);
+    setUnresponsiveDismissed(false);
+    if (!frameReady || bridgeStatus !== "waiting") return;
+    const started = Date.now();
+    const timer = window.setTimeout(
+      () => setWaitedSinceReady(Date.now() - started),
+      PREVIEW_UNRESPONSIVE_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [frameReady, bridgeStatus, preview.entryUrl]);
+  const showUnresponsive =
+    !unresponsiveDismissed &&
+    previewUnresponsive({
+      entryUrl: preview.entryUrl,
+      frameReady,
+      bridgeStatus,
+      waitedMs: waitedSinceReady,
+    });
   const wakePreview = () => {
     if (waking) return;
     void preview.wake();
@@ -1544,6 +1565,35 @@ export function SandboxPreviewSurface({
                 sandbox="allow-scripts allow-forms allow-same-origin allow-modals allow-downloads"
                 referrerPolicy="no-referrer"
               />
+              {showUnresponsive ? (
+                <div
+                  role="alert"
+                  data-testid="project-preview-unresponsive"
+                  className="absolute inset-x-0 top-0 z-[2] flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900"
+                >
+                  <span className="min-w-0 flex-1">
+                    预览页面没有回应：可能是预览网关拒绝了访问，或应用还没起来、启动时出错。
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="project-preview-unresponsive-reload"
+                    onClick={() => {
+                      setFrameReady(false);
+                      reloadPreview();
+                    }}
+                    className="rounded bg-amber-900 px-2 py-0.5 text-white"
+                  >
+                    重新打开
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUnresponsiveDismissed(true)}
+                    className="rounded px-2 py-0.5 hover:bg-amber-100"
+                  >
+                    收起
+                  </button>
+                </div>
+              ) : null}
               {previewFrameCovered({
                 entryUrl: preview.entryUrl,
                 frameReady,
