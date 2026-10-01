@@ -544,6 +544,23 @@ def explain_queue(adapter, body):
         "queueHint": hint}
 
 
+def _snapshot_office_facts(facts: dict) -> dict:
+    """回执快照里的办公文件实况：数（int）照抄，「…Samples」是几条短字符串举例。
+
+    ⚠ 2026-10-01 隔离真机第 170 轮（助学汇报 PPT）：回执写「有 4 处文字和它下面的底色几乎同色（比如 ）」——
+      比如后面是空的。这里原本只放行 int，textInvisibleSamples / formulasWrongSamples 两份举例在快照这一步
+      就被扔了；判据直接把 office_facts 的结果喂给回执，没走这一步，一直是绿的（本仓 §一之二）。
+      模型只知道「有 4 处」，不知道在哪页，两轮改完还剩 2 处。
+    """
+    kept: dict = {}
+    for key, value in facts.items():
+        if isinstance(value, int):
+            kept[key] = value
+        elif str(key).endswith("Samples") and isinstance(value, list):
+            kept[key] = [str(item)[:160] for item in value[:3] if isinstance(item, str)]
+    return kept
+
+
 def operation_snapshot(snapshot):
     operation = snapshot["operation"]
     result = {"operationId": operation.operationId, "kind": operation.kind,
@@ -588,7 +605,7 @@ def operation_snapshot(snapshot):
         measured = saved.get(key)
         if isinstance(measured, dict) and measured:
             result[key] = {
-                str(path)[:240]: {k: v for k, v in facts.items() if isinstance(v, int)}
+                str(path)[:240]: _snapshot_office_facts(facts)
                 for path, facts in list(measured.items())[:8]
                 if isinstance(path, str) and isinstance(facts, dict)
             }

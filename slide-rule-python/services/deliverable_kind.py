@@ -771,14 +771,16 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
     if wrong:
         # 第 155 轮，见 _xlsx_cached_results_that_disagree 头注。
         samples = "；".join(str(item) for item in (facts.get("formulasWrongSamples") or [])[:3])
-        note += (f"，公式 {facts.get('formulas', wrong)} 个里 {wrong} 个存的结果和按公式算出来的对不上（{samples}）"
+        shown = f"（{samples}）" if samples else ""
+        note += (f"，公式 {facts.get('formulas', wrong)} 个里 {wrong} 个存的结果和按公式算出来的对不上{shown}"
                  "——右侧预览和卡片缩略图显示的是存的那个数，用户看到的就是错的。交付前核对：写进去的值要等于公式"
                  "真算出来的结果，也看一眼公式引用的范围本身对不对")
     invisible = int(facts.get("textInvisible") or 0)
     if invisible:
         # 第 153 轮，见 _pptx_text_on_same_color 头注。
         samples = "、".join(str(item) for item in (facts.get("textInvisibleSamples") or [])[:3])
-        note += (f"，有 {invisible} 处文字和它下面的底色几乎同色（比如 {samples}）"
+        shown = f"（比如 {samples}）" if samples else ""
+        note += (f"，有 {invisible} 处文字和它下面的底色几乎同色{shown}"
                  "——用户在右侧预览和结果卡缩略图里看到的是一块没字的色块。交付前把这些字改成和底色反差明显的颜色")
     if facts.get("tocEmpty") or facts.get("tocDisordered"):
         # 第 162–164 轮，见 _docx_toc_problem 头注。

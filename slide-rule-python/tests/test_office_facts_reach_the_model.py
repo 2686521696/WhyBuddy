@@ -160,3 +160,28 @@ def test_real_tables_and_charts_carry_no_warning():
     """反向：真有原生的，不挂那句（否则它就是每条回执都有的噪声）。"""
     sentence = office_facts_sentence("x.pptx", {"slides": 3, "charts": 1, "pictures": 0, "tables": 2})
     assert "原生表格 2 个" in sentence and "拼的不算" not in sentence
+
+
+def test_the_samples_survive_the_snapshot():
+    """⚠ 2026-10-01 第 170 轮：回执写「有 4 处文字和它下面的底色几乎同色（比如 ）」——快照只放行 int，
+    举例在这一步被扔了。走真快照 → 真回执，用第 153 轮 PPT 与第 155 轮 Excel 的原样字节（§一之二：
+    不自己拼回执的输入）。把 _snapshot_office_facts 里 Samples 那一支删掉，这条变红。"""
+    fixtures = Path(__file__).parent / "fixtures"
+    deck = "output/nova_watch_product_launch.pptx"
+    book = "output/小型工作室年度预算_2025.xlsx"
+    saved = {"exitCode": 0, "officeFiles": [deck, book], "officeFacts": {
+        deck: office_facts((fixtures / "round153_watch_launch_same_color_labels.pptx").read_bytes(), deck),
+        book: office_facts((fixtures / "round155_studio_budget_wrong_cached_results.xlsx").read_bytes(), book)}}
+    hint = _command_pointer(_snapshot(saved), "ok")["hint"]
+    assert "比如 第 1 页「CONCEPT 2025」" in hint
+    assert "月度明细!M4 存的是 41,900，按公式 SUM(E4:L4) 算是 23,900" in hint
+    assert "（比如 ）" not in hint
+
+
+def test_a_count_without_samples_does_not_print_an_empty_example():
+    """反向：举例丢了（或量的时候就没有）也不许出现「（比如 ）」这种空括号。"""
+    pptx = office_facts_sentence("a.pptx", {"slides": 1, "charts": 0, "pictures": 0, "tables": 0, "textInvisible": 4})
+    xlsx = office_facts_sentence("a.xlsx", {"sheets": 1, "charts": 0, "pictures": 0, "pivotTables": 0,
+                                            "formulas": 5, "formulasUncached": 0, "formulasWrong": 2})
+    assert "4 处文字" in pptx and "（比如 ）" not in pptx
+    assert "2 个存的结果" in xlsx and "（）" not in xlsx
