@@ -94,3 +94,33 @@ def test_an_unreadable_upload_list_falls_back_to_collecting(tmp_path, monkeypatc
     """fail-open：上传清单读不到时照老样子收——宁可多收一份原件，不许少收模型的产出（§七）。"""
     _result, paths, _present = _run(tmp_path, monkeypatch, [{"path": NAME, "data": UPLOAD}], broken_listing=True)
     assert paths == [NAME]
+
+
+# ── 办公技能的中间底稿（第 175 轮）────────────────────────────────────────────
+# ⚠ 2026-10-01 sr-20261001041148-WXKFWTYK33：模型照 office-skills 的约定先写 bridge/01-cleaned-data.xlsx、
+#   bridge/03-chart-sources.xlsx，宿主当交付收了，PPT 还没写出来完工闸就能亮。路径是那一轮回执原样。
+
+
+def test_bridge_working_files_are_not_deliverables(tmp_path, monkeypatch):
+    working = [{"path": "bridge/01-cleaned-data.xlsx", "data": UPLOAD},
+               {"path": "bridge/03-chart-sources.xlsx", "data": UPLOAD + b""}]
+    result, paths, present = _run(tmp_path, monkeypatch, working)
+    assert paths == [] and present is False
+    assert "officeFiles" not in result
+
+
+def test_the_deck_in_output_is_collected_next_to_the_bridge(tmp_path, monkeypatch):
+    """反向：同一条命令的 output/ 成品照收；名字里带 bridge 的成品也照收（只认顶层目录）。"""
+    result, paths, _present = _run(tmp_path, monkeypatch, [
+        {"path": "bridge/01-cleaned-data.xlsx", "data": UPLOAD},
+        {"path": "output/bridge-年度汇报.docx", "data": REPORT}])
+    assert paths == ["output/bridge-年度汇报.docx"]
+
+
+def test_the_skill_still_says_bridge_is_not_for_the_user():
+    """这条规矩是照 office-skills 的约定定的：那份技能哪天不再这么写，这里先红，别让宿主替它记着过期的约定。"""
+    import zipfile as _zip
+    seed = Path(__file__).resolve().parents[2] / "skills" / "seeds" / "office-skills.zip"
+    with _zip.ZipFile(seed) as archive:
+        body = archive.read(next(n for n in archive.namelist() if n.endswith("SKILL.md"))).decode()
+    assert "`bridge/`: cleaned data" in body and "`output/`: final user-facing artifacts only" in body

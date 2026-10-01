@@ -419,6 +419,10 @@ class ProjectRuntimeSupervisor:
             self._wake.set()
 
 
+#: 办公技能约定的中间产物目录：里面的 xlsx/docx/pptx 是工作底稿，不是给用户的交付（第 175 轮，见收集处）。
+_OFFICE_WORKING_DIRS = frozenset({"bridge"})
+
+
 class _RuntimeTask:
     def __init__(self, supervisor, owner_id, lease, original):
         self.supervisor, self.store, self.provider = supervisor, supervisor.store, None
@@ -1132,6 +1136,13 @@ class _RuntimeTask:
             #   上传是挂到工作区根上的（_mount_session_uploads），跟原件一字不差的就是用户的输入，不收；
             #   模型在原件上改过（sha256 变了），那才是它的产出，照收。
             if originals.get(path) == hashlib.sha256(payload).hexdigest():
+                continue
+            # ⚠ 2026-10-01 隔离真机第 175 轮 sr-20261001041148-WXKFWTYK33（同一张上传表，要一份管理层 PPT）：模型照 office-skills
+            #   的约定先写了 bridge/01-cleaned-data.xlsx、bridge/03-chart-sources.xlsx（清洗后的数据、图表数据源），
+            #   宿主把它们当交付收进产物库，回执说「办公文件已收回：bridge/…。这就是交付」，右栏多出两个标签，
+            #   而那时 PPT 还一页没写——办公目标的完工闸（has_any）已经能亮了。那份技能自己写着
+            #   「bridge/: cleaned data, summaries, chart sources…」「output/: final user-facing artifacts only」。
+            if path.split("/", 1)[0] in _OFFICE_WORKING_DIRS:
                 continue
             # ⚠ 2026-09-23 预览不再在沙盒里转 PDF。右侧用浏览器里的
             #   @silurus/ooxml 画这份字节。soffice 的 PDF 曾被 Chrome 沙箱框屏蔽。
