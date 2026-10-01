@@ -4,6 +4,7 @@ import {
   parseFiveSystemModelFromPerSkillEvidence,
   summarizeClosureForChat,
 } from "./system-screens/five-system-model";
+import { isControlToolChip } from "./project-activity";
 import { finalNarrationStep } from "./turn-route-steps";
 import type { UiTurn } from "./types";
 
@@ -79,6 +80,13 @@ export function assistantTextForTurn(
   // 工程档没有「画出页面」这回事。真机 TicketStream 计划批准后控制面
   // 没点火，HTML 那句「本轮没有画出新的页面」挂在对话里，右侧还是 C4。
   if (opts?.runtimeKind === "project") {
+    return "";
+  }
+  // ⚠ 2026-10-01 隔离复现用户截图那份「做一个象棋游戏」：规划轮停在问卷上，刷新回来正文是
+  //   「本轮已完成，但还没有生成可展示的回答。」——它刚问完问题、等人回答，不是「没回答」。
+  //   工程还没建，会话不算 project，于是落到 HTML 推演的兜底。控制回路的轮次（这一轮有控制工具步，
+  //   同 turnUsesSessionStory）跟工程档一样没有「画出页面」这回事：问题在问卷卡里，正文留白。
+  if ((turn.steps || []).some(isControlToolChip)) {
     return "";
   }
 

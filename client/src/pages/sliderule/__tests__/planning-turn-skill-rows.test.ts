@@ -19,6 +19,7 @@ import {
   projectActionDetail,
   turnUsesSessionStory,
 } from "../project-activity";
+import { assistantTextForTurn } from "../assistant-text-for-turn";
 import { deriveSessionStory, timelineRowTitle } from "../session-story";
 import type { TurnStep, UiTurn } from "../types";
 
@@ -102,5 +103,24 @@ describe("接线：SlideRule.tsx 流式 / 完成两支都按 turnUsesSessionStor
     expect(src.match(/\{usesStory \? \(\s*<SessionStory/g)?.length).toBe(2);
     expect(src.match(/\{!usesStory \? \(\s*<TurnPhaseTimeline/g)?.length).toBe(2);
     expect(src).not.toMatch(/runtimeKind === "project" \? \(\s*<SessionStory/);
+  });
+});
+
+describe("规划轮停在问卷上，刷新回来正文不说「没有回答」", () => {
+  it("控制回路的规划轮：留白（问题在问卷卡里）", () => {
+    const done = { ...planningTurn, status: "complete", assistant: "" } as UiTurn;
+    expect(assistantTextForTurn(done, null, "做一个象棋游戏", { runtimeKind: "html-prototype" })).toBe("");
+  });
+
+  it("反向：HTML 推演的目标轮什么都没产出，照旧诚实兜底", () => {
+    const legacy = {
+      id: "t3",
+      user: "做个采购审批",
+      status: "complete",
+      assistant: "",
+      steps: [{ ...streamChip("起草 SPEC", { capabilityId: "spec", progressType: "completed" }) }],
+    } as unknown as UiTurn;
+    expect(assistantTextForTurn(legacy, null, "做个采购审批", { runtimeKind: "html-prototype" }))
+      .toBe("本轮已完成，但还没有生成可展示的回答。");
   });
 });
