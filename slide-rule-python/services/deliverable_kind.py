@@ -280,9 +280,72 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
             facts["literalNewlines"] = len(stray)
             if stray:
                 facts["literalNewlinesSamples"] = stray[:3]
+            if facts["charts"]:
+                flat = _chart_series_flattened(archive, names)
+                facts["chartSeriesFlat"] = len(flat)
+                if flat:
+                    facts["chartSeriesFlatSamples"] = flat[:3]
             return facts
     except Exception:
         return None
+
+
+_C = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"
+#: 同一根数值轴上，最大值不到轴上最大值的这个比例，画出来就是贴着 0 的一条。
+_FLAT_SERIES_RATIO = 0.02
+
+
+def _chart_series_flattened(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """图表里被同轴的大数压扁的系列：「第 4 页「转化率」最大 19.5，同一根轴上最大 2,760」。
+
+    ⚠ 2026-10-01 隔离真机第 180 轮（门店月度复盘 PPT）：第 4 页「客流与转化」组合图，客流 2350～2760、转化率 17.8～19.5
+      放在同一根数值轴上（python-pptx 不直接支持次坐标轴），转化率那条线贴着 0 画成一条平线，图例里「转化率」还出现两次。
+      模型自己在图下补了一行「组合图中转化率与客流共用主坐标轴，重点读趋势变化」——知道画坏了，用注解盖过去。
+      回执里原生图表 3 个，数对；用户看到的是一条读不出来的线。
+    """
+    pages: dict[str, int] = {}
+    for name in names:
+        hit = re.match(r"ppt/slides/_rels/slide(\d+)\.xml\.rels$", name)
+        if hit:
+            for target in re.findall(rb'Target="\.\./charts/(chart\d+\.xml)"', archive.read(name)):
+                pages["ppt/charts/" + target.decode()] = int(hit.group(1))
+    found: list[str] = []
+    for name in sorted(n for n in names if _CHART_PART.match(n)):
+        try:
+            root = ET.fromstring(archive.read(name))
+        except ET.ParseError:
+            continue
+        area = root.find(f".//{_C}plotArea")
+        if area is None:
+            continue
+        value_axes = {ax.find(f"{_C}axId").get("val") for ax in area.findall(f"{_C}valAx")
+                      if ax.find(f"{_C}axId") is not None}
+        groups: dict[str, list[tuple[str, float]]] = {}
+        for plot in area:
+            if not plot.tag.endswith("Chart") or plot.tag.endswith(("pieChart", "doughnutChart", "pie3DChart")):
+                continue
+            axis = next((ax.get("val") for ax in plot.findall(f"{_C}axId") if ax.get("val") in value_axes), "")
+            for ser in plot.findall(f"{_C}ser"):
+                label = "".join(t.text or "" for t in ser.findall(f"{_C}tx//{_C}v")) or "未命名系列"
+                numbers = []
+                for v in ser.findall(f"{_C}val//{_C}v"):
+                    try:
+                        numbers.append(abs(float(v.text or "")))
+                    except ValueError:
+                        continue
+                if numbers:
+                    groups.setdefault(axis, []).append((label, max(numbers)))
+        for series in groups.values():
+            top = max(peak for _label, peak in series)
+            if top <= 0 or len(series) < 2:
+                continue
+            where = f"第 {pages[name]} 页" if name in pages else "图表"
+            for label, peak in series:
+                if peak < top * _FLAT_SERIES_RATIO:
+                    entry = f"{where}「{label}」最大 {peak:,.4g}，同一根轴上最大 {top:,.4g}"
+                    if entry not in found:
+                        found.append(entry)
+    return found
 
 
 #: 文字节点：xlsx 共享串 / 行内串 <t>，docx <w:t>，pptx <a:t>。
@@ -828,6 +891,14 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         note += (f"，有 {doubled} 段列表带着自动项目符号 / 编号、正文又手写了「1.」「•」这类记号"
                  "（用户在右侧预览和 Word 里看到的是「• 1.」两个记号。交付前去掉正文里手写的那个，"
                  "或者把这几段改成不带自动符号的普通段落）")
+    flat = int(facts.get("chartSeriesFlat") or 0)
+    if flat:
+        # 第 180 轮，见 _chart_series_flattened 头注。
+        samples = "；".join(str(item) for item in (facts.get("chartSeriesFlatSamples") or [])[:3])
+        shown = f"（{samples}）" if samples else ""
+        note += (f"，有 {flat} 个图表系列跟量级大得多的系列挤在同一根数值轴上{shown}——用户看到的是一条贴着 0 的平线，"
+                 "读不出变化。交付前改掉：拆成两张图最稳（python-pptx 不直接支持次坐标轴），或者把它换算到同一量级；"
+                 "不要在图下面加一行注解解释它为什么看不清")
     stray = int(facts.get("literalNewlines") or 0)
     if stray:
         # 第 179 轮，见 _literal_newlines 头注。

@@ -57,13 +57,15 @@ def test_a_native_chart_a_picture_and_a_table_are_counted():
         "ppt/charts/style1.xml": b"<cs:chartStyle/>",  # 图表样式不是图表
         "ppt/media/image1.png": b"\x89PNG",
     })
-    assert office_facts(deck, "a.pptx") == {"slides": 2, "charts": 1, "pictures": 1, "tables": 1, "textInvisible": 0, "literalNewlines": 0}
+    assert office_facts(deck, "a.pptx") == {"slides": 2, "charts": 1, "pictures": 1, "tables": 1, "textInvisible": 0, "literalNewlines": 0,
+                                            "chartSeriesFlat": 0}   # 有图表才量（第 180 轮）
     sheet = _zip({"xl/worksheets/sheet1.xml": b"<w/>", "xl/worksheets/sheet2.xml": b"<w/>",
                   "xl/charts/chart1.xml": b"<c/>"})
     # 第 66 轮起多量一项数据透视表（test_pivot_table_is_measured 头注）；
     # 第 148 轮起多量公式与没算好结果的公式（test_uncached_formulas_are_measured 头注）
     assert office_facts(sheet, "b.xlsx") == {"sheets": 2, "charts": 1, "pictures": 0, "pivotTables": 0,
-                                             "formulas": 0, "formulasUncached": 0, "literalNewlines": 0}
+                                             "formulas": 0, "formulasUncached": 0, "literalNewlines": 0,
+                                             "chartSeriesFlat": 0}
     doc = _zip({"word/document.xml": b"<w:body><w:tbl></w:tbl><w:tbl></w:tbl></w:body>"})
     # 第 151 轮起多量一项列表双重记号（test_double_list_markers_are_measured 头注）
     assert office_facts(doc, "c.docx") == {"tables": 2, "charts": 0, "pictures": 0, "listDoubleMarked": 0,

@@ -990,7 +990,7 @@ _FACT_NAMES = (("slides", "页数"), ("sheets", "工作表"), ("charts", "原生
                ("tables", "原生表格"), ("pivotTables", "数据透视表"),
                ("listDoubleMarked", "带双重记号的列表段落"), ("textInvisible", "和底色同色的文字"),
                ("formulasWrong", "结果对不上的公式"), ("tocEmpty", "空目录"), ("tocDisordered", "顺序不对的目录"),
-               ("literalNewlines", "字面 \\n 的文字"))
+               ("literalNewlines", "字面 \\n 的文字"), ("chartSeriesFlat", "被压成平线的图表系列"))
 
 
 def _facts_delta(previous, current) -> str:
