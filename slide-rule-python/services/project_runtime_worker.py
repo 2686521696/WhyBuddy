@@ -13,6 +13,7 @@ provider has one. Vite stays on `start_process`. The pane reads
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -1072,6 +1073,18 @@ class _RuntimeTask:
         if changed:
             self.result["sandboxOnlyEdits"] = changed[:8]
 
+    def _uploaded_originals(self) -> dict[str, str]:
+        """这个会话上传、挂在工作区根上的文件：{相对路径: sha256}。读不到就当没有（增强类，§七）——
+        那时退回老样子把它收进来，不会因此少收模型的产出。"""
+        session_id = getattr(getattr(self, "original", None), "sessionId", None)
+        if not session_id:
+            return {}
+        try:
+            rows = self.store.list_session_uploads(session_id, owner_id=self.owner_id)
+        except Exception:
+            return {}
+        return {str(row["name"]): str(row["sha256"]) for row in rows if isinstance(row, dict)}
+
     def _collect_office_artifacts(self):
         """命令结束后把沙箱里的办公文件提进主机产物库。
 
@@ -1101,6 +1114,7 @@ class _RuntimeTask:
         except Exception:
             logger.warning("office artifact persist failed", exc_info=True)
             return
+        originals = _RuntimeTask._uploaded_originals(self)
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -1110,6 +1124,14 @@ class _RuntimeTask:
                 continue
             payload = bytes(data)
             if not is_office_artifact_path(path) or not is_office_zip_bytes(payload):
+                continue
+            # ⚠ 2026-10-01 隔离真机第 174 轮 sr-20261001034539-SHFWQM6FET（上传「销售团队季度业绩.xlsx」，要一份 Word 报告）：
+            #   第一条命令只是 load_workbook 读了一眼上传的表，回执就说「办公文件已收回：销售团队季度业绩.xlsx。这就是交付」，
+            #   产物库里多了一份跟上传 sha256 一模一样的 xlsx，右栏和交付文件并排一个标签。更要紧的是办公目标的完工闸
+            #   （control_run_service 里 has_any）只问库里有没有办公文件——光读一眼用户自己的表，这道 fail-closed 的闸就算有交付了。
+            #   上传是挂到工作区根上的（_mount_session_uploads），跟原件一字不差的就是用户的输入，不收；
+            #   模型在原件上改过（sha256 变了），那才是它的产出，照收。
+            if originals.get(path) == hashlib.sha256(payload).hexdigest():
                 continue
             # ⚠ 2026-09-23 预览不再在沙盒里转 PDF。右侧用浏览器里的
             #   @silurus/ooxml 画这份字节。soffice 的 PDF 曾被 Chrome 沙箱框屏蔽。
