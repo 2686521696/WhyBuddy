@@ -110,6 +110,35 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   project_delivery: "确认交付",
 };
 
+/**
+ * 这一步是控制回路的工具调用（加载技能 / 读写文件 / 跑命令 / 问用户……），不是 HTML 推演的工厂步。
+ * 只认表里有的名字和工程工作台前缀——projectActionLabel 对不认识的也会给个兜底名，不能拿它判断。
+ */
+export function isControlToolChip(step: TurnStep): boolean {
+  if (step.kind !== "chip") return false;
+  const tool = String(step.capabilityId || "").trim();
+  return Boolean(TOOL_LABELS[tool]) || isProjectWorkbenchTool(tool);
+}
+
+/**
+ * 左栏这一轮用 SessionStory（工具行开始 / 结束合成一行、带技能名、命令可展开）画，
+ * 还是用 HTML 推演的阶段带（TurnPhaseTimeline：「选材 · 规则选」）画。
+ *
+ * ⚠ 2026-10-01 用户本机截图（「做一个象棋游戏」，规划问答阶段）：左栏两组各六行
+ *   「加载技能 / 已加载技能 / 加载技能 / 已加载技能 …」，一个技能名都没有。
+ *   原来只看会话的 runtimeKind——计划还没批准、工程还没建，会话不算 project，于是控制回路的
+ *   规划轮落到旧阶段带：它只读 chip 的 label，一次加载的开始、结束各成一行，projectDetail（技能名）
+ *   根本不画。批准之后整份会话切到 SessionStory，同一轮又显示正常——隔离环境的会话一开场就是
+ *   工程档，所以那边一直撞不上。现在按这一轮自己有没有控制回路的工具步来分，不等会话变成工程。
+ */
+export function turnUsesSessionStory(
+  turn: Pick<UiTurn, "steps">,
+  runtimeKind?: string | null
+): boolean {
+  if (runtimeKind === "project") return true;
+  return (turn.steps || []).some(isControlToolChip);
+}
+
 export function projectActionLabel(tool: string): string {
   return TOOL_LABELS[tool] || tool.replace(/^(project_|file_|shell_|browser_|deploy_)/, "");
 }

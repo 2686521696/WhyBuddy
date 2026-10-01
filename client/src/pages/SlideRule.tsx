@@ -29,7 +29,7 @@ import { latestDeliveringTurnId } from "./sliderule/turn-result-card";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
-import { deriveProjectActivity } from "./sliderule/project-activity";
+import { deriveProjectActivity, turnUsesSessionStory } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import { useLatestOfficeArtifact } from "./sliderule/project-runtime/office-artifacts-client";
 import {
@@ -828,13 +828,15 @@ function ImAssistantMessage() {
       }}
     />
   );
+  const usesStory = turnUsesSessionStory(turn, runtimeKind);
   return (
     <div className="mb-3 min-w-0 max-w-[640px]">
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           {/* ⚠ 流式 / 完成是成对物（§4）。工程档两支都走 SessionStory，
-              只改完成轮 = 跑的时候又变回三桶并排。 */}
-          {runtimeKind === "project" ? (
+              只改完成轮 = 跑的时候又变回三桶并排。
+              控制回路的规划轮（工程还没建）也走它：turnUsesSessionStory 头注。 */}
+          {usesStory ? (
             <SessionStory
               turn={turn}
               streaming
@@ -860,7 +862,7 @@ function ImAssistantMessage() {
           </div>
           {/* 工程档的动作流是上面那列勾；六步钟/阶段带是 HTML 推演的词汇，
               两套并排会把对话做成看板。 */}
-          {runtimeKind !== "project" ? (
+          {!usesStory ? (
             <TurnPhaseTimeline
               turn={turn}
               llmDraft={llmDraft}
@@ -887,7 +889,7 @@ function ImAssistantMessage() {
           {/* 完成后同样保留开口：它是这一轮「为什么这么做」的唯一记录，
               收尾总结替代不了过程里的判断。工程档走章节面——往上滚
               过程还在，不再只挂 latestTurn。 */}
-          {runtimeKind === "project" ? (
+          {usesStory ? (
             <SessionStory
               turn={turn}
               streaming={false}
@@ -918,7 +920,7 @@ function ImAssistantMessage() {
               }}
             />
           ) : null}
-          {runtimeKind !== "project" ? (
+          {!usesStory ? (
             <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           ) : null}
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
