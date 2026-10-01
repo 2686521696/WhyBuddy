@@ -385,7 +385,8 @@ describe("详情把页面带进来（两条数据源同口径）", () => {
 });
 
 describe("mergeGalleryItems", () => {
-  const sess = (id: string, goal: string): SessionListItem => ({ sessionId: id, goal });
+  // 老 HTML 推演的会话草稿：落过产物（artifactCount > 0）。2026-10-01 起没产出的会话不进「我的应用」。
+  const sess = (id: string, goal: string): SessionListItem => ({ sessionId: id, goal, artifactCount: 2 });
 
   it("App Store 应用 + 未落库会话草稿合流，按 session_id 去重", () => {
     const apps = [summary({ id: "app1", session_id: "s1" })];
@@ -1154,5 +1155,48 @@ describe("project workspace card entry", () => {
     expect(fn).toContain("setMenuFor(null)");
     expect(fn).toContain("canOpenGalleryItem(gi, sessions, authUser)");
     expect(fn).toContain("continueOnCard(gi)");
+  });
+});
+
+
+describe("我的应用：新流程的产出按类别进、空会话不进（2026-10-01 用户截图 771 张）", () => {
+  // 形状照真机 GET /sessions 那一发（隔离库 sr-20261001054104 那类：项目会话带 projectId / workKind / officePath）。
+  const office: SessionListItem = {
+    sessionId: "sr-office", goal: "做一份市场部 2025 年预算执行分析 Excel", artifactCount: 0,
+    projectId: "prj-o", workKind: "office", officePath: "市场部2025年预算执行分析.xlsx", officeSha: "ffab87f3",
+  };
+  const web: SessionListItem = {
+    sessionId: "sr-web", goal: "给社区咖啡店做一个会员招募落地页", artifactCount: 0, projectId: "prj-w", workKind: "web",
+  };
+  const shell: SessionListItem = { sessionId: "sr-shell", goal: "", artifactCount: 0 };
+  const chat: SessionListItem = { sessionId: "sr-chat", goal: "这些数据存在哪里？", artifactCount: 0 };
+  const legacy: SessionListItem = { sessionId: "sr-legacy", goal: "社区宠物走失互助小程序", artifactCount: 3 };
+
+  it("文件和网页工程进来、带着封面要用的字段；空壳和纯聊天不进", () => {
+    const items = mergeGalleryItems([], [office, web, shell, chat, legacy]);
+    expect(items.map(i => i.sessionId)).toEqual(["sr-office", "sr-web", "sr-legacy"]);
+    const card = items.find(i => i.sessionId === "sr-office")!;
+    expect([card.workKind, card.projectId, card.officePath, card.officeSha])
+      .toEqual(["office", "prj-o", "市场部2025年预算执行分析.xlsx", "ffab87f3"]);
+  });
+
+  it("五个标签分完全部：网页工程 / 文件按类别，推演中 / 已闭环 / 待补充只管老推演卡", () => {
+    const items = mergeGalleryItems([], [office, web, legacy]);
+    const draft = deriveAppCardDetail({});
+    // 工程卡的详情 status 恒为 draft——原来「推演中」就是这样把工程卡全数进去的
+    const projectDetail = deriveAppCardDetail({ runtimeKind: "project", projectId: "prj-w" });
+    const cards = items.map(item => ({ item, detail: item.workKind ? projectDetail : draft }));
+    const n = (f: Parameters<typeof filterCards>[1]) => filterCards(cards, f, "").length;
+    expect([n("web"), n("office"), n("draft"), n("runnable"), n("blocked")]).toEqual([1, 1, 1, 0, 0]);
+    expect(n("web") + n("office") + n("draft") + n("runnable") + n("blocked")).toBe(n("all"));
+  });
+
+  it("接在链路上：卡片封面走 WorkThumb，计数用的是同一个 filterCards", () => {
+    // 剥掉注释再匹配（CLAUDE.md §二：同一个词在注释里也有，变异后照样绿）
+    const src = sourceWithoutComments(readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8"));
+    expect(src).toMatch(/if \(item\.workKind && item\.projectId\) return <WorkThumb item=\{item\} \/>;/);
+    expect(src).toContain('const countOf = (f: GalleryFilter) => filterCards(paired, f, "").length;');
+    expect(src).not.toMatch(/runnable: paired\.filter\(/);
+    expect(src).toContain("sessionHasWork(s)");
   });
 });

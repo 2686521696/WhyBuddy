@@ -27,6 +27,7 @@ from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
 # 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
 # gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
+from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
 from services.gate_health import (
     ledger_since as _gate_since,
     record_verdict as _gate_record,
@@ -356,14 +357,21 @@ def list_sess(
     #
     # ⚠ 摘要那条**不兜**：它是这个接口的正事，拿不到就该如实报错，不能假装
     #   "你没有会话"。增强类 fail-open、主链路 fail-closed，别混（第七条）。
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="sessions-list") as pool:
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="sessions-list") as pool:
         summaries_future = pool.submit(list_session_summaries)
         covers_future = pool.submit(app_store.session_covers)
+        work_future = pool.submit(_session_work_index)
         try:
             covers = covers_future.result()
         except Exception as exc:  # noqa: BLE001 — 增强项，不许拖垮主链路
             print(f"[sessions] 封面索引不可用，本次按「会话无绑定应用」列出: {str(exc)[:160]}")
             covers = {}
+        # 产出索引（文件 / 网页工程 + 最新那份文件）同是增强项：查不到就按「没做出东西」列，不拖垮侧栏（第七条）。
+        try:
+            works = work_future.result()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sessions] 产出索引不可用: {str(exc)[:160]}")
+            works = {}
         summaries = summaries_future.result()
 
     items = []
@@ -402,8 +410,20 @@ def list_sess(
             item["has_preview"] = cover["has_preview"]
             item["preview_source"] = cover["preview_source"]
             item["preview_tag"] = cover["preview_tag"]
+        work = works.get(sid)
+        if work:
+            # 字段跟画廊 GalleryItem 同名（projectId / workKind / officePath / officeSha），前端不再逐张拉整份会话猜。
+            item["projectId"] = work["projectId"]
+            item["workKind"] = work["kind"]
+            if work.get("officePath"):
+                item["officePath"] = work["officePath"]
+                item["officeSha"] = work.get("officeSha") or ""
         items.append(item)
     return {"sessions": items}
+
+
+def _session_work_index() -> dict:
+    return get_project_store().session_work_index(office_template=WORKSPACE_TEMPLATE_VERSION)
 
 def _session_payload(state: Any) -> Dict[str, Any]:
     """把会话状态取成 app_access 认识的 payload（dict 或 pydantic 模型都收）。"""

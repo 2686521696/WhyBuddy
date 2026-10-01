@@ -44,6 +44,40 @@ export function xlsxThumbnailViewport(ws: ThumbnailSheet, width: number) {
   };
 }
 
+/**
+ * Word 一次只画一份，排队的每一张有超时（防一份卡死的堵住后面整队）；PPT / Excel 照旧并行直接画。
+ *
+ * ⚠ 2026-10-01 隔离真机「我的应用」文件栏：同屏 6 份 Word 一起画，4 份（智能门锁说明书、入职管理系统方案……）
+ *   停在 loading 30 秒以上，canvas 还是默认的 300×150；同一份单独打开会话画只要一下（448 宽）。PPT / Excel 并发没事，
+ *   是 @silurus/ooxml 的 docx 引擎并发 load + renderPage 互相卡住。
+ *   ⚠ 第一版把三种都排进一条队：实测每张 0.1～2.5 秒、全都画成了，可卡片墙按挂载顺序排队，最上面那排排在一长串
+ *   PPT / Excel 后面，45 秒时还是空白——比并行还难看。只排 Word。
+ *   排队的那一张被卸载（滚出视口、换了标签）就不画了，不占队。
+ */
+let renderQueue: Promise<unknown> = Promise.resolve();
+
+/** 排队的 Word 一张画超过这个时长就放弃（按画不出来处理），别让一份卡死的把后面整队堵住。 */
+export const OFFICE_RENDER_TIMEOUT_MS = 30_000;
+
+function withRenderTimeout<T>(job: () => Promise<T>, signal: AbortSignal,
+  timeoutMs: number = OFFICE_RENDER_TIMEOUT_MS): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("office_render_timeout")), timeoutMs);
+  });
+  return Promise.race([job(), limit]).finally(() => clearTimeout(timer));
+}
+
+export function enqueueOfficeRender<T>(job: () => Promise<T>, signal: AbortSignal,
+  timeoutMs: number = OFFICE_RENDER_TIMEOUT_MS): Promise<T> {
+  const run = renderQueue.then(() => {
+    return withRenderTimeout(job, signal, timeoutMs);
+  });
+  renderQueue = run.catch(() => undefined);
+  return run;
+}
+
 export function OfficeThumbnail({
   projectId,
   path,
@@ -67,7 +101,7 @@ export function OfficeThumbnail({
     let disposer: { destroy?: () => void } | null = null;
     setState("loading");
     const name = path.toLowerCase();
-    void (async () => {
+    const draw = async () => {
       const items = await listOfficeArtifacts(projectId, ac.signal);
       const match = items.find(item => item.path === path);
       if (!match) throw new Error("missing");
@@ -112,7 +146,10 @@ export function OfficeThumbnail({
         setState("ok");
         drawnRef.current?.(true);
       }
-    })().catch(() => {
+    };
+    // Word 排队（见 enqueueOfficeRender 头注）；PPT / Excel 照旧直接画，不加超时——它们从没卡过，
+    // 加了超时反而在同屏 30 张一起画时把慢的那几张误判成「画不出来」（2026-10-01 第二版实测）。
+    void (name.endsWith(".docx") ? enqueueOfficeRender(draw, ac.signal) : draw()).catch(() => {
       if (!ac.signal.aborted) {
         setState("failed");
         drawnRef.current?.(false);

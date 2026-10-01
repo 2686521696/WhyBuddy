@@ -97,6 +97,8 @@ import {
   type AppShelf,
 } from "./app-store-client";
 import { fetchSessionsList } from "./sessions-list-client";
+import { OfficeThumbnail } from "@/pages/sliderule/project-runtime/OfficeThumbnail";
+import { useProjectThumbnail } from "@/pages/sliderule/project-runtime/useProjectThumbnail";
 
 export { appPreviewUrl };
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -135,6 +137,17 @@ export interface SessionListItem {
   has_preview?: boolean;
   preview_source?: string;
   preview_tag?: string;
+  /**
+   * 这个会话做出来的东西（GET /sessions 一次给齐，见 project_store.session_work_index）。
+   *
+   * ⚠ 2026-10-01 用户截图「我的应用」771 张：新流程（网页工程 / PPT / Word / Excel）做完从不进应用库，
+   *   这里一律当「推演中的草稿」——空封面 +「推演未闭环」，交付了的 PPT、跑起来的落地页都一样；
+   *   筛选「推演中 78 + 已闭环 24 + 待补充 1」离 771 差 668。没有这几个字段，卡片只能逐张拉整份会话猜。
+   */
+  projectId?: string;
+  workKind?: "office" | "web";
+  officePath?: string;
+  officeSha?: string;
 }
 
 export type AppCardStatus = "runnable" | "awaiting" | "draft";
@@ -484,6 +497,22 @@ export interface GalleryItem {
   device?: string;
   hasPreview?: boolean;
   previewTag?: string;
+  /** 新流程的产出（见 SessionListItem 同名字段）：文件还是网页工程、封面画哪一份。 */
+  projectId?: string;
+  workKind?: "office" | "web";
+  officePath?: string;
+  officeSha?: string;
+}
+
+/**
+ * 会话卡要不要进「我的应用」。
+ *
+ * ⚠ 2026-10-01（同上）：「(未命名话题)」是点了新建没发话的壳，纯聊天、没做出任何东西的会话也各占一张卡。
+ *   用户定的口径：应用和文件都放，分标签；没产出的不进——它们留在左侧会话列表里。
+ *   有产出 = 有工程（网页 / 文件）、或绑了应用、或老 HTML 推演落过产物。
+ */
+export function sessionHasWork(s: SessionListItem): boolean {
+  return Boolean(s.workKind || s.appId || (s.artifactCount ?? 0) > 0);
 }
 
 /**
@@ -516,7 +545,7 @@ export function mergeGalleryItems(
     apps.map(a => a.session_id).filter((x): x is string => Boolean(x))
   );
   const sessionItems: GalleryItem[] = sessions
-    .filter(s => s.sessionId && !claimed.has(s.sessionId))
+    .filter(s => s.sessionId && !claimed.has(s.sessionId) && sessionHasWork(s))
     .map(s => ({
       key: `session:${s.sessionId}`,
       source: "session",
@@ -532,6 +561,10 @@ export function mergeGalleryItems(
       device: s.device,
       hasPreview: Boolean(s.has_preview),
       previewTag: s.preview_tag,
+      projectId: s.projectId,
+      workKind: s.workKind,
+      officePath: s.officePath,
+      officeSha: s.officeSha,
     }));
   return [...appItems, ...sessionItems];
 }
@@ -606,12 +639,12 @@ export function canOpenGalleryItem(
   return sessionIsAlive(item.sessionId, sessions);
 }
 
-export type GalleryFilter = "all" | "runnable" | "draft" | "blocked";
+export type GalleryFilter = "all" | "web" | "office" | "runnable" | "draft" | "blocked";
 
 /** 筛选口径 = 门语言（E41）：closed 6/6（runnable）/ blocked / 推演中（其余）。 */
 export function filterCards<
   T extends {
-    item: { goal: string; summary?: { product_name?: string } | null };
+    item: { goal: string; summary?: { product_name?: string } | null; workKind?: "office" | "web" };
     detail: AppCardDetail | null;
   },
 >(items: T[], filter: GalleryFilter, query: string): T[] {
@@ -624,6 +657,10 @@ export function filterCards<
     }`.toLowerCase();
     if (q && !haystack.includes(q)) return false;
     if (filter === "all") return true;
+    // 新流程的产出按类别分（列表就带着，不等详情）；推演中 / 已闭环 / 待补充只管老的 HTML 推演——
+    // 原来「推演中」把所有工程卡都数进去（详情 status 恒为 draft），2026-10-01 截图里那 78 张大半是它们。
+    if (filter === "web" || filter === "office") return item.workKind === filter;
+    if (item.workKind) return false;
     if (!detail) return false; // 详情未到不武断归类
     if (filter === "runnable") return detail.status === "runnable";
     if (filter === "blocked") return detail.blocked && detail.status !== "runnable";
@@ -823,6 +860,41 @@ const LazySpecPageStage = React.lazy(() =>
  */
 
 /** 没有封面图时的统一空态（antd Empty，用户 2026-08-22 指定）。 */
+/**
+ * 新流程产出的封面：文件画第一页（OfficeThumbnail，跟结果卡同一个组件），网页工程贴验收 / 预览截图
+ * （useProjectThumbnail，同上）。拿不到就空态，写清楚缺的是什么——不再一律「推演未闭环」。
+ */
+export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "projectId" | "officePath" | "officeSha"> }) {
+  if (item.workKind === "office") {
+    return item.projectId && item.officePath
+      ? <OfficeCover projectId={item.projectId} path={item.officePath} sha={item.officeSha ?? ""} />
+      : <EmptyThumb description="还没有产出文件" />;
+  }
+  return <WebCover projectId={item.projectId ?? ""} />;
+}
+
+function OfficeCover({ projectId, path, sha }: { projectId: string; path: string; sha: string }) {
+  const [failed, setFailed] = React.useState(false);
+  if (failed) return <EmptyThumb description="文件预览画不出来" />;
+  return (
+    // ⚠ 2026-10-01 隔离真机：Word 说明书第一页上方是一大块页边距，卡片画面只有 ~135px 高，按宽铺满只露出那条白边。
+    //   Word 按高缩进整页（居中），PPT / Excel 照旧按宽铺满。
+    <div
+      className={`flex h-full w-full justify-center overflow-hidden bg-[#fafafa] ${
+        /\.docx$/i.test(path) ? "[&>div]:h-full [&>div]:w-auto [&_canvas]:h-full! [&_canvas]:w-auto!" : ""}`}
+      data-testid="app-thumb-office"
+    >
+      <OfficeThumbnail projectId={projectId} path={path} refreshKey={sha} onDrawn={ok => !ok && setFailed(true)} />
+    </div>
+  );
+}
+
+function WebCover({ projectId }: { projectId: string }) {
+  const url = useProjectThumbnail(projectId || null);
+  if (!url) return <EmptyThumb description="还没有页面截图" />;
+  return <img src={url} alt="" className="h-full w-full object-cover object-top" data-testid="app-thumb-web" />;
+}
+
 export function EmptyThumb({ description }: { description?: React.ReactNode }) {
   return (
     <div
@@ -1492,9 +1564,10 @@ export function AppsWorkbench() {
       ])
         .then(([demoState, examples]) => {
           if (!alive) return;
+          // 演示会话是完整的推演态（详情见下面 setDetails）：标上有产出，别被 sessionHasWork 当空会话滤掉。
           const sessionList: SessionListItem[] = [
-            { sessionId: GITHUB_PAGES_DEMO_SESSION_ID, goal: GITHUB_PAGES_DEMO_GOAL },
-            ...examples.map(e => ({ sessionId: e.sessionId, goal: e.goal })),
+            { sessionId: GITHUB_PAGES_DEMO_SESSION_ID, goal: GITHUB_PAGES_DEMO_GOAL, artifactCount: 1 },
+            ...examples.map(e => ({ sessionId: e.sessionId, goal: e.goal, artifactCount: 1 })),
           ];
           setSessions(sessionList);
           // 演示态详情按合并后的条目 key（session:<id>）索引，跟真实态口径一致。
@@ -1953,11 +2026,18 @@ export function AppsWorkbench() {
   // 只多不少就冻结已露出的序（masonry-append.appendStableItems）。
   const visible = appendStableItems(visibleOrderRef.current, visibleRaw, p => p.item.key);
   visibleOrderRef.current = visible.map(p => p.item.key);
+  // 计数跟筛选同一个判定（filterCards）：原来两处各写一份，「推演中」把工程卡也数进去，
+  // 2026-10-01 截图里 78 + 24 + 1 离 771 差 668。现在五个标签分完全部（老推演卡详情到齐之后）。
+  const countOf = (f: GalleryFilter) => filterCards(paired, f, "").length;
+  // 网页工程 / 文件只出现在「我的应用」（会话卡只在这一架合进来）；推演中 / 已闭环 / 待补充三架都有。
+  const showWorkChips = tab === "mine";
   const counts = {
     all: paired.length,
-    runnable: paired.filter(p => p.detail?.status === "runnable").length,
-    blocked: paired.filter(p => p.detail && p.detail.blocked && p.detail.status !== "runnable").length,
-    draft: paired.filter(p => p.detail && p.detail.status !== "runnable" && !p.detail.blocked).length,
+    web: countOf("web"),
+    office: countOf("office"),
+    runnable: countOf("runnable"),
+    blocked: countOf("blocked"),
+    draft: countOf("draft"),
   };
   // 示例库筛选：分类 chips + 共享搜索框（搜产品名/意图/分类）
   const q = query.trim().toLowerCase();
@@ -2024,9 +2104,11 @@ export function AppsWorkbench() {
     //     卡片互相压盖，**不报错**。
     //   两次都不报错，所以名字必须自带含义。
     const compact = cellW < 200;
-    const meta = detail?.runtimeKind === "project"
-      ? { label: "工程", cls: "text-stone-500", dot: "bg-stone-400" }
-      : detail ? STATUS_META[detail.status] : null;
+    const meta = item.workKind === "office"
+      ? { label: "文件", cls: "text-stone-500", dot: "bg-sky-400" }
+      : item.workKind === "web" || detail?.runtimeKind === "project"
+        ? { label: "网页工程", cls: "text-stone-500", dot: "bg-stone-400" }
+        : detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
       : undefined;
@@ -2076,6 +2158,8 @@ export function AppsWorkbench() {
           //
           // 图拉不到（记录刚被删、网络抖）→ SheetThumb 的 onError 回落到同一张
           // 空态，不会出现空白卡。
+          // 新流程的产出：文件画第一页，网页工程贴验收 / 预览截图（跟会话里结果卡同一份来源）。
+          if (item.workKind && item.projectId) return <WorkThumb item={item} />;
           if (shouldUseSheetThumb(item)) {
             return (
               <SheetThumb
@@ -2098,7 +2182,8 @@ export function AppsWorkbench() {
           return <EmptyThumb />;
         })()}
         metrics={
-          detail ? (
+          // 页面 / 角色 / AI 数是老 HTML 推演的五系统指标；PPT、Excel、网页工程没有这套数，画「页面 0」是在编（2026-10-01）。
+          detail && !item.workKind ? (
             <>
               <span className="inline-flex items-center gap-1" title="页面数">
                 <FileText size={11} className="opacity-60" />
@@ -2459,6 +2544,24 @@ export function AppsWorkbench() {
           active={filter === "all"}
           onClick={() => setFilter("all")}
         />
+        {showWorkChips && (
+          <>
+            <StatChip
+              icon={<Globe size={13} className="text-stone-500" />}
+              label="网页工程"
+              count={counts.web}
+              active={filter === "web"}
+              onClick={() => setFilter("web")}
+            />
+            <StatChip
+              icon={<FileText size={13} className="text-sky-500" />}
+              label="文件"
+              count={counts.office}
+              active={filter === "office"}
+              onClick={() => setFilter("office")}
+            />
+          </>
+        )}
         <StatChip
           icon={<Hourglass size={13} className="text-amber-500" />}
           label="推演中"
