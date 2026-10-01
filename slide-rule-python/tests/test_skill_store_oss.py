@@ -189,28 +189,22 @@ def test_catalog_index_carries_seed_category(catalog):
     catalog.ensure_seed()
     by_slug = {pkg["slug"]: pkg["category"] for pkg in catalog.catalog_for_owner("u1")}
     assert by_slug["sliderule"] == "规格"
-    assert by_slug["webapp-testing"] == "测试"
-    assert by_slug["mcp-builder"] == "开发工具"
     assert by_slug["frontend-design"] == "界面设计"
-    assert by_slug["web-artifacts-builder"] == "开发工具"
-    assert by_slug["algorithmic-art"] == "界面设计"
-    assert by_slug["brand-guidelines"] == "界面设计"
     assert by_slug["theme-factory"] == "界面设计"
-    assert by_slug["canvas-design"] == "内容创作"
+    assert by_slug["ui-ux-pro-max"] == "界面设计"
     assert by_slug["doc-coauthoring"] == "内容创作"
+    assert by_slug["humanizer-zh"] == "内容创作"
+    assert by_slug["copywriting"] == "内容创作"
     assert by_slug["internal-comms"] == "办公"
     assert by_slug["office-skills"] == "办公"
     assert by_slug["pptx-slide-specification"] == "办公"
-    assert by_slug["study"] == "办公"
     assert by_slug["data-storytelling"] == "办公"
     assert by_slug["kpi-dashboard-design"] == "办公"
+    assert by_slug["financial-analyst"] == "办公"
+    assert by_slug["data-visualization-discipline"] == "办公"
     assert by_slug["accessibility"] == "测试"
-    assert by_slug["web-quality-audit"] == "测试"
     assert by_slug["systematic-debugging"] == "开发工具"
     assert by_slug["verification-before-completion"] == "测试"
-    assert by_slug["performance"] == "测试"
-    assert by_slug["requesting-code-review"] == "开发工具"
-    assert by_slug["react-state-management"] == "开发工具"
     assert by_slug["avoid-ai-writing"] == "内容创作"
     assert set(by_slug.values()) <= (_ALLOWED_CATEGORIES | {"其他"})
 
@@ -232,12 +226,15 @@ def test_github_seed_zips_unpack_without_required_keys():
 
 
 def test_seed_index_is_about_one_hundred_and_denies_orchestrators():
-    """货架种子约 100 份。调度咒 / 要 key 的包写进索引必须红。"""
+    """调度咒 / 要 key 的包写进索引必须红。
+
+    ⚠ 2026-10-01 技能审查：从 105 份收到 23 份（只留 Work 编排用得上的），下架的写在 seeds/retired.json。
+    """
     seeds = load_github_seeds()
     deny = load_seed_deny()
     slugs = {meta["slug"] for meta in seeds}
     sources = {meta["slug"]: meta["source_url"] for meta in seeds}
-    assert 95 <= len(seeds) <= 105
+    assert 20 <= len(seeds) <= 30
     assert seeds == _GITHUB_SEEDS
     assert deny == _SEED_DENY
     assert slugs.isdisjoint(deny)
@@ -249,14 +246,11 @@ def test_seed_index_is_about_one_hundred_and_denies_orchestrators():
     assert "test-driven-development" not in slugs
     assert "before-you-build" not in slugs
     assert "accessibility" in slugs
-    assert "performance" in slugs
-    assert "requesting-code-review" in slugs
-    assert "react-state-management" in slugs
     assert "office-skills" in slugs
     assert "pptx-slide-specification" in slugs
-    assert "study" in slugs
+    assert "humanizer-zh" in slugs and "ui-ux-pro-max" in slugs
     assert sources["office-skills"].startswith("https://github.com/lamvu211/office-skills")
-    assert sources["study"].startswith("https://github.com/SugarMGP/study.skill")
+    assert sources["humanizer-zh"].startswith("https://github.com/op7418/Humanizer-zh")
     assert slugs.isdisjoint({"docx", "pptx", "xlsx", "pdf"})
     for banned in (
         "anthropics/skills/tree/main/skills/docx",
@@ -267,7 +261,7 @@ def test_seed_index_is_about_one_hundred_and_denies_orchestrators():
         assert all(banned not in url for url in sources.values())
     assert "addyosmani" in sources["accessibility"]
     assert "obra/superpowers" in sources["systematic-debugging"]
-    assert "wshobson/agents" in sources["react-state-management"]
+    assert "wshobson/agents" in sources["data-storytelling"]
     assert "anthropics/skills" not in sources["accessibility"]
     for meta in seeds:
         assert meta["category"] in _ALLOWED_CATEGORIES
@@ -298,19 +292,21 @@ def test_office_root_packs_keep_scripts_drop_viewer():
     office = unpack_skill_zip((seeds / "office-skills.zip").read_bytes())
     assert "SKILL.md" in office or any(path.lower() == "skill.md" for path in office)
     assert any(path.replace("\\", "/").startswith("scripts/") for path in office)
-    study = unpack_skill_zip((seeds / "study.zip").read_bytes())
-    assert any(path.lower() == "skill.md" for path in study)
-    assert all(
-        "viewer/" not in path.replace("\\", "/") and "/dev/" not in path.replace("\\", "/")
-        for path in study
-    )
+    # 仓根 SKILL.md 的另一份（第 2026-10-01 进架的中文去 AI 腔）：README / 自测不进沙盒
+    humanizer = unpack_skill_zip((seeds / "humanizer-zh.zip").read_bytes())
+    assert any(path.lower() == "skill.md" for path in humanizer)
+    assert not any(path.startswith(("tests/", "README")) for path in humanizer)
+    # 索引的 path 钉死仓内目录（同仓 .gemini/ 下有只剩 SKILL.md 的副本）
+    names = ["r-main/.gemini/skills/financial-analyst/SKILL.md", "r-main/finance/skills/financial-analyst/SKILL.md"]
+    assert mod._find_skill_md(names, "financial-analyst") == names[0]
+    assert mod._find_skill_md(names, "financial-analyst", "finance/skills/financial-analyst") == names[1]
 
 
 def test_ensure_seed_skips_shelved_packages(catalog, monkeypatch):
     """已在架上的同版本不许再 unpack / blob_put。变异：去掉 version 判断必红。"""
     first = catalog.ensure_seed()
-    assert "mcp-builder" in first
-    assert any(pkg["slug"] == "mcp-builder" for pkg in catalog.list_packages())
+    assert "office-skills" in first
+    assert any(pkg["slug"] == "office-skills" for pkg in catalog.list_packages())
     catalog._seed_settled = False
     puts: list[str] = []
     unpacks: list[int] = []

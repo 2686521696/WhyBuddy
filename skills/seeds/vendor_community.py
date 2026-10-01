@@ -11,7 +11,9 @@ archive 不是 anthropics/skills 的条目。
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 import tempfile
 import time
 import zipfile
@@ -64,7 +66,17 @@ ROOT_KEEP_DIRS = frozenset(
 ROOT_SKIP_DIRS = frozenset({"dev", "viewer", "assets", "integrations", ".git"})
 
 
-def _find_skill_md(names: list[str], slug: str) -> str:
+def _find_skill_md(names: list[str], slug: str, path: str = "") -> str:
+    # ⚠ 2026-10-01：alirezarezvani/claude-skills 同一份 financial-analyst 有 finance/skills/、.gemini/skills/、
+    #   .codex/skills/ 三处，按 /skills/<slug>/ 找会拿到 zip 里先出现的那份（.gemini 的只有 SKILL.md、没有脚本）。
+    #   索引可以用 path 钉死仓内目录。
+    if path:
+        wanted = path.strip("/").lower() + "/skill.md"
+        for name in names:
+            rel = name.replace("\\", "/").split("/", 1)[-1].lower()
+            if rel == wanted:
+                return name
+        return ""
     needle = f"/skills/{slug}/skill.md"
     for name in names:
         lower = name.lower()
@@ -89,9 +101,10 @@ def _keep_root_rel(rel: str) -> bool:
     return parts[0].lower() in ROOT_KEEP_DIRS
 
 
-def _pack(archive: zipfile.ZipFile, slug: str, license_blob: bytes) -> None:
+def _pack(archive: zipfile.ZipFile, slug: str, license_blob: bytes,
+          path: str = "", exclude: tuple[str, ...] = ()) -> None:
     names = archive.namelist()
-    skill_md = _find_skill_md(names, slug)
+    skill_md = _find_skill_md(names, slug, path)
     if not skill_md:
         raise SystemExit(f"missing_skill_md:{slug}")
     prefix = skill_md[: -len("SKILL.md")]
@@ -105,6 +118,12 @@ def _pack(archive: zipfile.ZipFile, slug: str, license_blob: bytes) -> None:
             rel = name[len(prefix) :]
             if root and not _keep_root_rel(rel):
                 continue
+            # ⚠ 2026-10-01：在克隆目录里试跑过脚本，__pycache__/*.pyc 跟着进了 ui-ux-pro-max.zip。编译缓存一律不进包。
+            if "__pycache__" in rel.split("/") or rel.endswith(".pyc"):
+                continue
+            # 索引里的 exclude：商店单文件上限 512KB（skill_package_format），超的数据文件和上游自测不进包
+            if any(rel == item or rel.startswith(item.rstrip("/") + "/") for item in exclude):
+                continue
             packed = f"{slug}/{rel}"
             out.writestr(packed, archive.read(name))
             wrote += 1
@@ -117,7 +136,36 @@ def _pack(archive: zipfile.ZipFile, slug: str, license_blob: bytes) -> None:
     print(dest.name, dest.stat().st_size)
 
 
-def main() -> None:
+def _checkout_archive(directory: Path) -> zipfile.ZipFile:
+    """本地 git 克隆当成 GitHub zip 用（顶层多一层「仓名-main/」，跟 codeload 的形状一样）。
+
+    ⚠ 2026-10-01：codeload.github.com 在受限出口下 403，git clone 通。"""
+    buf = io.BytesIO()
+    top = directory.name + "-main"
+    with zipfile.ZipFile(buf, "w") as out:
+        for file in sorted(directory.rglob("*")):
+            if file.is_file() and ".git" not in file.relative_to(directory).parts:
+                out.write(file, f"{top}/{file.relative_to(directory).as_posix()}")
+    buf.seek(0)
+    return zipfile.ZipFile(buf)
+
+
+def _repo_of(url: str) -> str:
+    # https://codeload.github.com/<owner>/<repo>/zip/refs/heads/main → owner/repo
+    parts = url.split("codeload.github.com/", 1)[-1].split("/")
+    return "/".join(parts[:2])
+
+
+def main(argv: list[str] | None = None) -> None:
+    """``--checkout owner/repo=/path/to/clone`` 可给多次：那个仓不下载，用本地克隆打。"""
+    args = list(sys.argv[1:] if argv is None else argv)
+    checkouts: dict[str, Path] = {}
+    while args:
+        flag = args.pop(0)
+        if flag != "--checkout" or not args or "=" not in args[0]:
+            raise SystemExit("usage: vendor_community.py [--checkout owner/repo=/path] ...")
+        repo, where = args.pop(0).split("=", 1)
+        checkouts[repo.strip()] = Path(where).expanduser().resolve()
     cache: dict[str, zipfile.ZipFile] = {}
     licenses: dict[str, bytes] = {}
     for item in _packages():
@@ -129,9 +177,11 @@ def main() -> None:
             print(f"{slug}.zip skip")
             continue
         if url not in cache:
-            cache[url] = _archive(url)
+            local = checkouts.get(_repo_of(url))
+            cache[url] = _checkout_archive(local) if local else _archive(url)
             licenses[url] = _license_bytes(cache[url])
-        _pack(cache[url], slug, licenses[url])
+        _pack(cache[url], slug, licenses[url], str(item.get("path") or ""),
+              tuple(str(x) for x in item.get("exclude") or ()))
 
 
 if __name__ == "__main__":

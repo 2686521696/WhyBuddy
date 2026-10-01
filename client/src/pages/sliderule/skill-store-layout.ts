@@ -8,30 +8,35 @@
 
 export const SKILL_FAMILY_FALLBACK = "其他";
 
+/**
+ * ⚠ 2026-10-01 技能审查：跟 skills/seeds/index.json 同一份清单（下架的见 seeds/retired.json）。
+ *   这里只是接口没带 category 时的兜底；两边对不上时以接口为准。
+ */
 export const SKILL_FAMILY_BY_SLUG: Record<string, string> = {
   sliderule: "规格",
-  "webapp-testing": "测试",
-  "mcp-builder": "开发工具",
-  "web-artifacts-builder": "开发工具",
-  "frontend-design": "界面设计",
-  "algorithmic-art": "界面设计",
-  "brand-guidelines": "界面设计",
-  "theme-factory": "界面设计",
-  "canvas-design": "内容创作",
-  "doc-coauthoring": "内容创作",
   "internal-comms": "办公",
   "office-skills": "办公",
   "pptx-slide-specification": "办公",
   "pptx-deck-context": "办公",
   "pptx-quality-gates": "办公",
-  "file-conversion": "办公",
-  study: "办公",
   "kpi-dashboard-design": "办公",
   "data-storytelling": "办公",
+  "financial-analyst": "办公",
+  "data-visualization-discipline": "办公",
+  "doc-coauthoring": "内容创作",
+  "avoid-ai-writing": "内容创作",
+  "postmortem-writing": "内容创作",
+  "humanizer-zh": "内容创作",
+  copywriting: "内容创作",
+  "frontend-design": "界面设计",
+  "theme-factory": "界面设计",
+  "responsive-design": "界面设计",
+  "interaction-design": "界面设计",
+  "visual-design-foundations": "界面设计",
+  "ui-ux-pro-max": "界面设计",
   accessibility: "测试",
-  "web-quality-audit": "测试",
-  "systematic-debugging": "开发工具",
   "verification-before-completion": "测试",
+  "systematic-debugging": "开发工具",
 };
 
 export const SKILL_FAMILY_ORDER = [

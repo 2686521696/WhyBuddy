@@ -55,6 +55,7 @@ _SLIDERULE_SEED = {
 # 民间只进手艺包。调度咒 / 目录墙写在 seeds/deny.json，测试钉着。
 _SEED_INDEX_PATH = _REPO_SKILLS / "seeds" / "index.json"
 _SEED_DENY_PATH = _REPO_SKILLS / "seeds" / "deny.json"
+_SEED_RETIRED_PATH = _REPO_SKILLS / "seeds" / "retired.json"
 _ALLOWED_CATEGORIES = frozenset(
     {"规格", "办公", "开发工具", "界面设计", "内容创作", "效率提升", "测试"}
 )
@@ -99,8 +100,29 @@ def load_seed_deny() -> frozenset[str]:
     return frozenset(str(item).strip() for item in raw if str(item).strip())
 
 
+def load_seed_retired() -> dict[str, str]:
+    """下架名单 {slug: 为什么}。
+
+    ⚠ 2026-10-01 技能审查（用户：「只保留符合编排流程的 skills」）：105 份种子里 83 份是 wshobson 的工程手艺包
+      （Rust 异步、Saga、Nx、PCI 合规……），Work 编排的交付物是 Office 文件、单页网页和文字，这些装了只是给模型
+      多一行目录、多一个走偏的方向；webapp-testing 在沙盒里注定跑不起来（Chromium 缺系统库），file-conversion
+      把用户文件发给第三方网站。从 index.json 删掉只管新库——线上库里那些包行、用户已装的记录还在，
+      installed_skill_infos 照样把它们列给模型。所以名单要在读库这一层挡。
+    """
+    raw = _load_json(_SEED_RETIRED_PATH)
+    rows = raw.get("retired") if isinstance(raw, dict) else None
+    if not isinstance(rows, dict):
+        raise ValueError("skill_seed_retired_invalid")
+    return {str(slug).strip(): str(why) for slug, why in rows.items() if str(slug).strip()}
+
+
 _GITHUB_SEEDS = load_github_seeds()
 _SEED_DENY = load_seed_deny()
+_SEED_RETIRED = load_seed_retired()
+
+
+def is_retired_skill(slug: str) -> bool:
+    return str(slug or "").strip() in _SEED_RETIRED
 _SEED_CATEGORY = {
     _SLIDERULE_SEED["slug"]: _SLIDERULE_SEED["category"],
     **{meta["slug"]: meta["category"] for meta in _GITHUB_SEEDS},
@@ -251,20 +273,23 @@ class SkillCatalogStore:
             f"select * from {PACKAGE_TABLE} where id = {self._x.ph(1)}",
             [str(skill_id or "")],
         )
-        return self._package_row(rows[0]) if rows else None
+        pkg = self._package_row(rows[0]) if rows else None
+        return None if pkg is None or is_retired_skill(pkg["slug"]) else pkg
 
     def get_package_by_slug(self, slug: str) -> dict[str, Any] | None:
         rows = self._x.query(
             f"select * from {PACKAGE_TABLE} where slug = {self._x.ph(1)}",
             [str(slug or "")],
         )
-        return self._package_row(rows[0]) if rows else None
+        pkg = self._package_row(rows[0]) if rows else None
+        return None if pkg is None or is_retired_skill(pkg["slug"]) else pkg
 
     def list_packages(self) -> list[dict[str, Any]]:
         rows = self._x.query(
             f"select * from {PACKAGE_TABLE} order by slug", []
         )
-        return [self._package_row(r) for r in rows]
+        packages = [self._package_row(r) for r in rows]
+        return [pkg for pkg in packages if not is_retired_skill(pkg["slug"])]
 
     def install(self, *, owner_id: str, skill_id: str) -> dict[str, Any]:
         owner = str(owner_id or "").strip()
@@ -314,6 +339,8 @@ class SkillCatalogStore:
         out = []
         for row in rows:
             item = self._package_row(row)
+            if is_retired_skill(item["slug"]):
+                continue   # 下架前装过的：不再列给用户、也不再交给模型（load_seed_retired 头注）
             item["installed"] = True
             item["installedAt"] = str(row.get("installed_at") or "")
             out.append(item)

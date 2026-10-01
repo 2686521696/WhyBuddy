@@ -132,9 +132,24 @@ def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
         f'<skill name="{_xml_escape(skill.name)}" '
         f'description="{_xml_escape(skill.description)}" '
         f'path="{_xml_escape(skill.path)}"{extra}>\n'
-        f"{lead}{skill.body}\n"
+        f"{lead}{_resolve_dir_placeholders(skill.body, skill.name, base)}\n"
         f"</skill>"
     )
+
+
+def _resolve_dir_placeholders(body: str, name: str, base: str) -> str:
+    """正文里指「这份技能目录」的占位换成沙盒里的真目录。
+
+    ⚠ 2026-10-01 引入 ui-ux-pro-max：正文让模型跑
+      `python "${CLAUDE_PLUGIN_ROOT}/.claude/skills/ui-ux-pro-max/scripts/search.py"`——那是 Claude Code
+      插件宿主展开的变量，沙盒里没有，原样照跑是 `/.claude/skills/…: No such file`。上面那句
+      「Base directory」管的是 scripts/… 这种相对路径，管不到占位。宿主替它展开，跟 Claude Code 一样。
+    """
+    if not base or "${" not in body:
+        return body
+    for marker in (f"${{CLAUDE_PLUGIN_ROOT}}/.claude/skills/{name}/", "${CLAUDE_SKILL_DIR}/", "${SKILL_DIR}/"):
+        body = body.replace(marker, base)
+    return body
 
 
 def invoke_skill(skills: Sequence[SkillInfo], name: str, args: str | None = None) -> dict:

@@ -19,7 +19,9 @@ from services.skill_catalog_store import parse_skill_md
 from services.skill_hydrate import sandbox_relpath
 from services.skill_package_format import skill_md_text, unpack_skill_zip
 
-ZIP = Path(__file__).resolve().parents[2] / "skills" / "seeds" / "webapp-testing.zip"
+# ⚠ 2026-10-01 webapp-testing 从种子下架（沙盒里 Chromium 起不来，见 skills/seeds/retired.json）。这里钉的是
+#   「技能文件怎么读、目录怎么说」的通用行为，第 80/82 轮那份包原样留作夹具。
+ZIP = Path(__file__).parent / "fixtures" / "round80_webapp_testing_skill.zip"
 
 
 def _webapp_testing():

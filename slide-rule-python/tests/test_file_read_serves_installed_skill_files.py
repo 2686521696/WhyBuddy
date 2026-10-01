@@ -19,7 +19,9 @@ from services import skill_catalog_store
 from services.skill_package_format import unpack_skill_zip
 from test_project_tools import create, execute, setup  # noqa: F401  （夹具）
 
-ZIP = Path(__file__).resolve().parents[2] / "skills" / "seeds" / "webapp-testing.zip"
+# ⚠ 2026-10-01 webapp-testing 从种子下架（沙盒里 Chromium 起不来，见 skills/seeds/retired.json）。这里钉的是
+#   「技能文件怎么读、目录怎么说」的通用行为，第 80/82 轮那份包原样留作夹具。
+ZIP = Path(__file__).parent / "fixtures" / "round80_webapp_testing_skill.zip"
 ROUND82_PATHS = (".sliderule/skills/webapp-testing/examples/element_discovery.py",
                  ".sliderule/skills/webapp-testing/examples/console_logging.py")
 
@@ -68,7 +70,7 @@ def test_a_skill_that_is_not_installed_is_not_served(setup, monkeypatch):
 #   file_read `.sliderule/skills/office-skills/standards/structure/docx-structure.md`。清单按字母序截 30 条，
 #   被 scripts/office/schemas/ 的 .xsd 占满，standards/ 排第 72，它要的那个目录一个也没露出来。
 #   技能包是仓库里 office-skills.zip 原样。把 _skill_files_near 换回 sorted(package)[:30]，这条变红。
-OFFICE_ZIP = ZIP.with_name("office-skills.zip")
+OFFICE_ZIP = Path(__file__).resolve().parents[2] / "skills" / "seeds" / "office-skills.zip"
 ROUND116_PATH = ".sliderule/skills/office-skills/standards/structure/docx-structure.md"
 
 
