@@ -276,9 +276,40 @@ def office_facts(data: Any, path: Any) -> dict[str, Any] | None:
                     facts["formulasWrong"] = len(wrong)
                     if wrong:
                         facts["formulasWrongSamples"] = wrong[:3]
+            stray = _literal_newlines(archive, names)
+            facts["literalNewlines"] = len(stray)
+            if stray:
+                facts["literalNewlinesSamples"] = stray[:3]
             return facts
     except Exception:
         return None
+
+
+#: 文字节点：xlsx 共享串 / 行内串 <t>，docx <w:t>，pptx <a:t>。
+_TEXT_NODE = re.compile(rb"<(?:t|w:t|a:t)(?:\s[^>]*)?>([^<]*)</(?:t|w:t|a:t)>")
+_TEXT_PARTS = re.compile(r"^(?:xl/sharedStrings\.xml|xl/worksheets/sheet\d+\.xml|word/document\.xml|ppt/slides/slide\d+\.xml)$")
+#: 反斜杠 + n，后面不是字母（C:\new folder 那种路径不算）。
+_LITERAL_NEWLINE = re.compile(r"\\n(?![A-Za-z])")
+
+
+def _literal_newlines(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """文字里出现字面的「\\n」：想换行，却把转义符原样写进了文件。返回每段的一小截（换行符前那几个字）。
+
+    ⚠ 2026-10-01 隔离真机第 179 轮（市场部预算执行 Excel，追问「再加一页给领导看的结论」）：「领导结论」页的管理建议是
+      「1. 重点复盘……等原因。\\n2. 对超预算月份……\\n3. ……」——预览里就是反斜杠加 n 夹在句子中间。模型收尾说
+      「领导结论页已确认存在」，它回读核的是页在不在，没看字。三种格式都会：python-docx 的 add_run、
+      python-pptx 的 text_frame.text 一样会被写成字面。
+    """
+    found: list[str] = []
+    for name in names:
+        if not _TEXT_PARTS.match(name):
+            continue
+        for raw in _TEXT_NODE.findall(archive.read(name)):
+            text = raw.decode("utf-8", "replace")
+            hit = _LITERAL_NEWLINE.search(text)
+            if hit:
+                found.append(text[max(0, hit.start() - 12):hit.start()].strip() + "\\n")
+    return found
 
 
 _P_NS = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
@@ -797,6 +828,14 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         note += (f"，有 {doubled} 段列表带着自动项目符号 / 编号、正文又手写了「1.」「•」这类记号"
                  "（用户在右侧预览和 Word 里看到的是「• 1.」两个记号。交付前去掉正文里手写的那个，"
                  "或者把这几段改成不带自动符号的普通段落）")
+    stray = int(facts.get("literalNewlines") or 0)
+    if stray:
+        # 第 179 轮，见 _literal_newlines 头注。
+        samples = "；".join(str(item) for item in (facts.get("literalNewlinesSamples") or [])[:3])
+        shown = f"（比如「{samples}」）" if samples else ""
+        note += (f"，有 {stray} 段文字里是字面的反斜杠加 n{shown}——想换行却把转义符原样写进去了，"
+                 "用户在右侧预览里看到的就是「\\n」夹在句子中间。交付前改掉：Python 里写真正的换行（\"\\n\" 而不是 "
+                 "\"\\\\n\" 或 r\"\\n\"），Excel 单元格再开 wrap_text；Word 一条一段 add_paragraph；PPT 一条一个段落")
     return f"{path}：" + "，".join(parts) + note
 
 
