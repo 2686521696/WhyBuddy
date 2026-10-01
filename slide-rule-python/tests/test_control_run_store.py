@@ -579,3 +579,21 @@ def test_heartbeat_is_not_a_payload_cas():
     assert "_producer_update" not in body
     assert "set lease_expires_at=" in body
     assert "payload=$" not in body
+
+
+def test_a_large_skill_body_is_stored_whole_and_other_tool_results_stay_bounded(store):
+    """⚠ 2026-10-01 第 178 轮：data-visualization-discipline 的回执 88KB，超了 64KB 整轮 interrupted。
+    事件按控制回路分发 skill 时的原样拼（resolve_invoked_skill → classify → control_tool_result/tool=skill），
+    正文用仓库里那份种子原样。"""
+    from services.skill_catalog_store import classify_skill_catalog_result, local_seed_skill_info, resolve_invoked_skill
+    info = local_seed_skill_info("data-visualization-discipline")
+    result = classify_skill_catalog_result(resolve_invoked_skill([info], "data-visualization-discipline"), None)
+    event = {"type": "control_tool_result", "tool": "skill", **result}
+    assert len(json.dumps(event, ensure_ascii=False).encode()) > 64 * 1024        # 真机那份确实超了日志上限
+    run = claim(store)
+    saved = store.append_event(run["runId"], "worker-1", 1, event)
+    assert saved["skill_message"] == event["skill_message"]                      # 一个字没截
+    # 反向：别的工具回执照旧受 64KB 约束（不是把上限整个放开）
+    with pytest.raises(ValueError, match="control_run_size_limit"):
+        store.append_event(run["runId"], "worker-1", 1,
+                           {"type": "control_tool_result", "tool": "file_read", "content": "x" * 90000})

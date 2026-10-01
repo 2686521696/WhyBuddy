@@ -600,9 +600,16 @@ class ControlRunStore:
             raise ValueError("control_event_required")
         # Legacy complete/factory_complete carry the full session, including
         # generated HTML. Bound them independently from ordinary log events.
-        event_limit = MAX_STATE_EVENT_BYTES if event.get("type") in {
+        # ⚠ 2026-10-01 隔离真机第 178 轮 sr-20261001054104-FK9B83SJYK（市场部预算执行 Excel）：模型一口气加载
+        #   office-skills、financial-analyst、data-visualization-discipline，第三份正文 3.6 万字（中文，88KB），
+        #   这条 skill 回执超了 64KB，append_event 抛 control_run_size_limit，整轮 interrupted——用户看到
+        #   「推演中断：控制面未返回结果」，一个文件都没出。名单里的 skill_result 是老 v5 驱动的事件，控制回路的
+        #   技能回执是 control_tool_result / tool=skill，从没进过这张名单；以前的技能正文都小于 64KB，没炸出来。
+        #   正文是模型下一步要读的东西（续跑时按 toolCallId 从事件里补回），不能截。上限仍有：单文件 512KB。
+        large = event.get("type") in {
             "complete", "factory_complete", "spec_page", "skill_result", "publish_closure"
-        } else MAX_EVENT_BYTES
+        } or (event.get("type") == "control_tool_result" and event.get("tool") == "skill")
+        event_limit = MAX_STATE_EVENT_BYTES if large else MAX_EVENT_BYTES
         frozen = json.loads(_json(event, event_limit))
         if type(generation) is not int or generation < 1:
             raise ControlRunConflict("control_lease_lost")
