@@ -155,3 +155,33 @@ def test_no_seed_ships_compiled_caches():
         with zipfile.ZipFile(zip_path) as archive:
             bad = [n for n in archive.namelist() if "__pycache__" in n or n.endswith(".pyc")]
         assert bad == [], (zip_path.name, bad[:3])
+
+
+# ── 三、存储不可写时新种子照样上架（第 176 轮）──────────────────────────────────
+
+
+def _forbidden(*_a, **_k):
+    """第 176 轮后端日志原样：seed upload stopped at humanizer-zh: HTTPError: HTTP Error 403: Forbidden"""
+    from urllib.error import HTTPError
+    raise HTTPError("http://minio/sliderule-skills/skills/humanizer-zh/1.0.0.zip", 403, "Forbidden", {}, None)
+
+
+def test_a_read_only_store_still_shelves_new_seeds_and_the_model_gets_them(catalog, monkeypatch):
+    monkeypatch.setattr("services.skill_catalog_store.blob_put", _forbidden)
+    catalog.ensure_seed()
+    shelf = {pkg["slug"] for pkg in catalog.list_packages()}
+    assert {meta["slug"] for meta in load_github_seeds()} <= shelf
+    catalog.install(owner_id="alice", skill_id="humanizer-zh")
+    infos = catalog.installed_skill_infos("alice")          # blob 取不到 → 种子兜底
+    assert [info.name for info in infos] == ["humanizer-zh"] and "Humanizer-zh" in infos[0].body
+    assert ".sliderule/skills/humanizer-zh/SKILL.md" in files_for_owner("alice", store=catalog)
+
+
+def test_a_writable_store_still_gets_the_bytes(catalog, monkeypatch):
+    """反向：能写的存储照旧把字节传上去，不因为有了兜底就不传。"""
+    puts: list[str] = []
+    from services import skill_catalog_store as mod
+    real = mod.blob_put
+    monkeypatch.setattr(mod, "blob_put", lambda key, data: puts.append(key) or real(key, data))
+    catalog.ensure_seed()
+    assert "skills/humanizer-zh/1.0.0.zip" in puts

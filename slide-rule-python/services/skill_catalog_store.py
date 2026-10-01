@@ -427,24 +427,44 @@ class SkillCatalogStore:
             path = _REPO_SKILLS / "seeds" / f"{meta['slug']}.zip"
             if path.is_file():
                 jobs.append((path, meta))
+        # ⚠ 2026-10-01 隔离真机第 176 轮：新进架的 5 份（humanizer-zh …）一份都没进模型的目录。后端日志
+        #   「seed upload stopped at humanizer-zh: HTTP Error 403」——只读凭据传不上去，上一版在这里 break，
+        #   连表里那一行都没写，用户装不上、模型看不见；而镜像里明明带着这份 zip，读的那一侧
+        #   （unpack_package / local_seed_skill_info）取不到 blob 本来就打开种子。
+        #   传不上去就不再传（别刷一百遍），但架上的行照写，字节由种子兜底。
+        upload = True
         for path, meta in jobs:
             have = existing.get(meta["slug"])
-            if have and have.get("version") == meta["version"] and _blob_present(have):
+            same = bool(have) and have.get("version") == meta["version"]
+            if same and (not upload or _blob_present(have)):
                 continue
             try:
-                seeded.append(self._seed_zip(path, meta))
-            except Exception as exc:  # noqa: BLE001 — 只读凭据 / 存储不可写：后面的也写不进去，别刷一百遍
-                print(f"[skills] seed upload stopped at {meta['slug']}: {type(exc).__name__}: {str(exc)[:160]}",
-                      flush=True)
-                break
+                seeded.append(self._seed_zip(path, meta, upload=upload))
+            except Exception as exc:  # noqa: BLE001
+                if not upload:
+                    print(f"[skills] seed shelving stopped at {meta['slug']}: {type(exc).__name__}: {str(exc)[:160]}",
+                          flush=True)
+                    break
+                print(f"[skills] seed upload stopped at {meta['slug']}: {type(exc).__name__}: {str(exc)[:160]}"
+                      f" — shelving the rest from the image", flush=True)
+                upload = False
+                if same:
+                    continue
+                try:
+                    seeded.append(self._seed_zip(path, meta, upload=False))
+                except Exception as exc2:  # noqa: BLE001 — 连表都写不进：后面的也一样
+                    print(f"[skills] seed shelving stopped at {meta['slug']}: {type(exc2).__name__}: {str(exc2)[:160]}",
+                          flush=True)
+                    break
         self._seed_settled = True
         return [item for item in seeded if item]
 
-    def _seed_zip(self, path: Path, meta: dict[str, str]) -> str:
+    def _seed_zip(self, path: Path, meta: dict[str, str], *, upload: bool = True) -> str:
         data = path.read_bytes()
         unpack_skill_zip(data)  # 拒绝没有 SKILL.md / zip-slip 的种子
         oss_key = f"skills/{meta['slug']}/{meta['version']}.zip"
-        digest = blob_put(oss_key, data)
+        # upload=False：存储不可写，只上架。sha256 照算——哪天那把 key 下真有字节，unpack_package 照样校验。
+        digest = blob_put(oss_key, data) if upload else hashlib.sha256(data).hexdigest()
         self.upsert_package(
             slug=meta["slug"],
             name=meta["name"],
