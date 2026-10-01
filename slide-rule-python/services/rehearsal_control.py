@@ -174,6 +174,7 @@ from services.deliverable_kind import (
     DELIVERABLE_KINDS,
     OFFICE_FILE,
     normalize_deliverable_kind,
+    office_e2b_template,
     orch_trace,
     plan_deliverable_kind,
 )
@@ -3972,6 +3973,16 @@ def _system_prompt(state: V5SessionState) -> str:
             "应用运行失败不是办公文件的预览。Vite 页面不是办公文件。"
             "办公文件不以 project_verify 为交付证据。"
         )
+        if office_e2b_template() is None:
+            # ⚠ 2026-10-01 隔离真机第 166 轮（智能手表发布会 PPT）：47 次工具调用里 17 次 shell_exec，
+            #   一部分在找 soffice 把幻灯片转成 PDF / 图片自查（exit 127）。隔离库 30 个运行里出现过
+            #   48 条 libreoffice / soffice / convert-to 命令——技能文档教它渲染后目检，这台沙盒做不到。
+            #   只陈述环境事实（同 SANDBOX_PACKAGES_FACT 口径），配了带 LibreOffice 的办公镜像就不说。
+            facts.append(
+                "这台办公沙盒里没有 LibreOffice（soffice），转 PDF、把页面渲染成图片做不了；"
+                "版面上的事实（页数、图表、图片、同色文字、目录、公式结果）宿主收回文件时会写在回执里，"
+                "内容可以用 python-pptx / python-docx / openpyxl 读回来核。"
+            )
     upload_fact = _session_upload_fact(
         getattr(state, "sessionId", ""), getattr(state, "ownerId", ""))
     if upload_fact:

@@ -507,3 +507,23 @@ def test_office_tree_reset_keeps_what_the_model_wrote(project_setup):
     for gone in ("package.json", "package-lock.json", "index.html",
                  "public/_whybuddy/editor.js"):
         assert gone not in files, gone
+
+
+def test_office_prompt_says_the_sandbox_cannot_render(monkeypatch):
+    """⚠ 2026-10-01 第 166 轮：模型一轮里反复找 soffice 把幻灯片渲成图片自查；隔离库 30 个运行出现过
+    48 条这类命令。没配带 LibreOffice 的办公镜像时，提示里陈述「做不了」；配了就不说（反向）。"""
+    def office_prompt():
+        return control._system_prompt(V5SessionState(
+            sessionId="office-render",
+            goal={"text": "做个PPT", "status": "clear"},
+            controlTranscript=[{"kind": "plan_written", "planId": "p1", "revision": 1,
+                                "planContent": PPT_PLAN, "deliverableKind": OFFICE_FILE}],
+        ))
+    monkeypatch.delenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", raising=False)
+    assert "没有 LibreOffice" in office_prompt()
+    monkeypatch.setenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", "whybuddy-office-v1")
+    assert "没有 LibreOffice" not in office_prompt()
+    monkeypatch.delenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", raising=False)
+    web = control._system_prompt(V5SessionState(sessionId="web-render",
+                                                goal={"text": "水果店收银台", "status": "clear"}))
+    assert "没有 LibreOffice" not in web          # 网页会话不说
