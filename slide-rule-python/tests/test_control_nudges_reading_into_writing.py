@@ -320,7 +320,7 @@ def test_接在真链路上_不是摆着好看():
         pathlib.Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
     )
     assert "readonly_streak.observe(step_is_read_only(calls))" in src
-    assert "if can_write:\n                    readonly_streak.observe(" in src.replace("\r", "")
+    assert "if can_write and (not step_is_bookkeeping(calls)):\n                    readonly_streak.observe(" in src
     assert "readonly_streak.take_nudge()" in src
     # ⚠ **跨回合**：必须从 state 读出来、写回去。只落 checkpoint 的话，
     #   新的用户消息会让它从零开始——那正是第一版真机一次没响的原因。
@@ -428,3 +428,50 @@ def test_跨回合_两侧模型都要有这个字段():
     #   2026-09-14 变异时当场逮到。
     assert re.search(r"^\s*controlReadOnly\s*:", py, re.M), "Python 侧字段没了"
     assert re.search(r"^\s*controlReadOnly\??\s*:", ts, re.M), "TS 侧字段没了"
+
+
+def _calls(*specs):
+    """一发里并行几件工具（真机常态：加载两份技能 + 勾待办一起来）。"""
+    from sliderule_llm.control_client import ControlLlmResult
+    return ControlLlmResult(content="", tool_calls=[
+        {"id": f"c{len(specs)}-{i}-{name}", "name": name, "arguments": args} for i, (name, args) in enumerate(specs)],
+        usage={"total_tokens": 12}, finish_reason="tool_calls", model="ctrl-test", latency_ms=1)
+
+
+def test_反向_记账轮不算只读_安排完正要动手不许被捅(harness, bounded_rounds, monkeypatch):
+    """⚠ 2026-10-02 隔离真机第 183 轮（事故复盘 Word，追问「第三部分改成表格」）：加载技能+勾待办、读一轮、
+    再勾待办——被捅「连着 4 轮只在读」，真读的只有 1 轮。这里按那个节奏交替（手上有写工具），
+    真读 3 轮、记账 3 轮：不许响。把 step_is_bookkeeping 那个条件去掉，本条红。"""
+    from services import rehearsal_control as control
+    from services.skill_catalog_store import local_seed_skill_info
+
+    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [local_seed_skill_info("office-skills")])
+    sid = new_sid("readonly-bookkeeping")
+    seed_approved_session(sid, goal={"text": "请假系统", "status": "clear"},
+                          modelVersions=[{"id": "v1", "model": {"pages": []}}])
+    todo = ("todo_write", {"todos": [{"id": "fix", "content": "改第三部分", "status": "in_progress"}]})
+    script = iter([
+        _calls(("skill", {"name": "office-skills"}), todo),
+        _calls(("search_evidence", {"query": "第三部分现在怎么写的"})),
+        _calls(todo),
+        _calls(("search_evidence", {"query": "表格四列"})),
+        _calls(todo),
+        _calls(("search_evidence", {"query": "负责人"})),
+        _calls(todo),
+    ])
+    shots = _snapshots(harness, lambda messages, **kw: next(script, llm_tool("idle", {}, call_id="end")))
+    harness.post(six_fields(sid, "把第三部分改成表格"))
+    assert len(shots) >= 7
+    assert not any("一次写入都没有" in str(m.get("content") or "") for snap in shots for m in snap)
+
+
+def test_反向_光记账的轮也不清零():
+    """记账轮不加、也不清零：读了 3 轮、勾一下待办、再读 1 轮，照样到 4。"""
+    from services.rehearsal_control import step_is_bookkeeping, step_is_read_only
+    streak = ReadOnlyStreak()
+    for calls in ([{"name": "project_read"}],) * 3 + ([{"name": "todo_write"}],) + ([{"name": "project_read"}],):
+        if not step_is_bookkeeping(calls):
+            streak.observe(step_is_read_only(calls))
+    assert streak.rounds == 4
+    assert step_is_bookkeeping([{"name": "skill"}, {"name": "todo_write"}])
+    assert not step_is_bookkeeping([{"name": "skill"}, {"name": "project_read"}])  # 夹着真读就算读

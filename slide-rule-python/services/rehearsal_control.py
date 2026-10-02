@@ -1275,6 +1275,21 @@ def step_is_read_only(calls: List[Dict[str, Any]]) -> bool:
     return bool(calls) and not any(tool_writes((c or {}).get("name")) for c in calls)
 
 
+#: 记账类工具：不读源码、不改东西，是在安排自己（加载说明书、勾待办、跟用户说一声、记一笔）。
+BOOKKEEPING_TOOLS = frozenset({"skill", "todo_write", "message_notify_user", "remember"})
+
+
+def step_is_bookkeeping(calls: List[Dict[str, Any]]) -> bool:
+    """这一轮只有记账类工具。只读连胜那道闸里它**不算读也不算写**：不加、不清零。
+
+    ⚠ 2026-10-02 隔离真机第 183 轮 sr-20261002042304-7451W4YMC3（事故复盘 Word，追问「第三部分改成表格」）：
+      追问第 3 轮被捅「你已经连着 4 轮只在读」——那 4 轮是：上一回合收尾勾待办、加载两份技能+勾待办、
+      读脚本和 README、再勾一次待办。真读源码只有 1 轮，模型刚说完「接下来只把这四段替换掉」，正要动手。
+      这道闸要抓的是「一直在读、永远不落地」（第 99 轮 12 发全是读），不是「安排完了正要动手」。
+    """
+    return bool(calls) and all(str((c or {}).get("name") or "") in BOOKKEEPING_TOOLS for c in calls)
+
+
 def tool_requires_permission(name: Any) -> bool:
     """这个工具要不要显式批准。没声明的一律不需要。"""
     return tool_writes(name) or str(name or "").strip() in TOOL_PERMISSION
@@ -5531,7 +5546,7 @@ async def _control_llm_loop(
                 # ⚠ 2026-10-02 第 181 轮：只数「能写却没写」的轮。规划阶段没有写工具，那几轮（加载技能、问卷、写计划）
                 #   原来照样 +1，而这道游标跨回合——规划攒到 5，执行回合开头加载两轮技能就到 7 又被捅一次；
                 #   规划里多问一次问卷，执行回合第一发就撞上 12 被掐。没得写的轮不算读也不算写：不加、不清零。
-                if can_write:
+                if can_write and not step_is_bookkeeping(calls):
                     readonly_streak.observe(step_is_read_only(calls))
                 # ⚠ 立刻写回 state：这道闸跨回合，只落 checkpoint 的话，
                 #   下一个回合（新的用户消息）会从零开始——那正是第一版
