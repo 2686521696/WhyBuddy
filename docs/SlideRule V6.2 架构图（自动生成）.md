@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **358** 个，模块 **358** 个
-- 内部依赖边 **1203** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1113** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **360** 个，模块 **360** 个
+- 内部依赖边 **1208** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1117** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,7 +37,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 157 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 159 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 74 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>157 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>159 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>74 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|163| util
   flow -->|139| core
-  flow -->|170| util
+  flow -->|172| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>274 个模块<br/>业务"]
+  services["services<br/>276 个模块<br/>业务"]
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -85,7 +85,7 @@ flowchart TB
   routes -->|10| config
   routes -->|9| middlewares
   routes -->|6| models
-  routes -->|167 · 其中 77 条边来自函数体 import| services
+  routes -->|170 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -144,7 +144,7 @@ flowchart LR
 flowchart LR
   a2a["a2a<br/>4"]
   agent_loop["agent_loop<br/>15"]
-  app_store["app_store<br/>5"]
+  app_store["app_store<br/>6"]
   audit["audit<br/>3"]
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
@@ -160,7 +160,7 @@ flowchart LR
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>41"]
   permission["permission<br/>8"]
-  persist["persist<br/>11"]
+  persist["persist<br/>12"]
   platform["platform<br/>44"]
   run_control["run_control<br/>4"]
   runtime["runtime<br/>11"]
@@ -214,7 +214,7 @@ flowchart LR
   entrypoint -->|2| workspace
   evidence -->|14| llm_gateway
   evidence -->|9| platform
-  http_routes -->|26| app_store
+  http_routes -->|28| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
@@ -226,7 +226,7 @@ flowchart LR
   http_routes -->|37| llm_gateway
   http_routes -->|24| model_core
   http_routes -->|3| observability
-  http_routes -->|19| persist
+  http_routes -->|20| persist
   http_routes -->|30| platform
   http_routes -->|4| runtime
   http_routes -->|10| spec_first
@@ -257,7 +257,7 @@ flowchart LR
   persist -->|41| platform
   run_control -->|1| platform
   runtime -->|2| identity
-  runtime -->|11| persist
+  runtime -->|12| persist
   runtime -->|12| platform
   runtime -->|9| workspace
   spec_first -->|3| app_store

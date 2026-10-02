@@ -314,7 +314,14 @@ export interface AppCardDetail {
    *  HTML 应用面（同推演舞台一路），不再拿区块渲染器凑合出光板表格。 */
   specPages: SpecPagesDetail | null;
   /** 网页工程发布到市场的那一版（model_json.projectSnapshot）。预览画发布时那张截图，不当五系统模型渲染。 */
-  publishedSnapshot?: { projectId: string; revision: string } | null;
+  publishedSnapshot?: {
+    projectId: string;
+    revision: string;
+    /** 验收那一份构建留下了，能在线打开（后端 project_site_store）。 */
+    onlineOpen: boolean;
+    /** 不能在线打开的原因：needs_server（要后端的任务应用）/ build_not_kept（构建没收回来）。 */
+    siteUnavailable: string | null;
+  } | null;
 }
 
 /**
@@ -407,14 +414,21 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
  */
 export function deriveDetailFromAppRecord(modelJson: unknown, pagesJson?: unknown): AppCardDetail {
   // 发布的网页工程：model_json 里只有工程指针 + 名字，不是五系统模型（2026-10-01 发布通道）。
-  const snap = (modelJson as { projectSnapshot?: { projectId?: unknown; revision?: unknown } } | null)?.projectSnapshot;
+  const snap = (modelJson as { projectSnapshot?: {
+    projectId?: unknown; revision?: unknown; site?: { outputHash?: unknown } | null; siteUnavailable?: unknown;
+  } } | null)?.projectSnapshot;
   if (snap && typeof snap.projectId === "string" && typeof snap.revision === "string") {
     return {
       ...buildDetailFromModel(null, { evidenceCount: 0, blocked: false }),
       status: "runnable",
       roles: null,
       aiCaps: null,
-      publishedSnapshot: { projectId: snap.projectId, revision: snap.revision },
+      publishedSnapshot: {
+        projectId: snap.projectId,
+        revision: snap.revision,
+        onlineOpen: typeof snap.site?.outputHash === "string",
+        siteUnavailable: typeof snap.siteUnavailable === "string" ? snap.siteUnavailable : null,
+      },
     };
   }
   // 空对象 {} 不算可运行模型——truthy 判定会让 LiveAppThumb 挂载空模型
@@ -1001,16 +1015,92 @@ function SpecPagesPreview({
 }
 
 /** The actual modal body shares the project renderer with Studio. */
+/** 发布的网页工程在线打开的地址（后端 routes/sliderule_full.published_site_file）。结尾斜杠不能少。 */
+export function publishedSiteUrl(appId: string): string {
+  return `/api/sliderule/apps/${encodeURIComponent(appId)}/site/`;
+}
+
+const SITE_STORAGE_PREFIX = "wb-site:";
+const SITE_STORAGE_MAX = 2 * 1024 * 1024;
+
+/** 页面发来的存储快照合不合规：只收字符串到字符串的扁平对象，封顶 2MB。 */
+export function acceptSiteStorage(data: unknown): Record<string, string> | null {
+  const msg = data as { type?: unknown; data?: unknown } | null;
+  if (!msg || msg.type !== "wb-site-storage" || !msg.data || typeof msg.data !== "object" || Array.isArray(msg.data)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(msg.data as Record<string, unknown>)) {
+    if (typeof v !== "string") return null;
+    out[k] = v;
+  }
+  return JSON.stringify(out).length <= SITE_STORAGE_MAX ? out : null;
+}
+
+/**
+ * 在线打开的那一框。页面是沙盒里的不透明来源（后端 published_site.py 头注），自己存不了 localStorage：
+ * 初值经 iframe 的 name 递进去，改动经 postMessage 递出来，存在看的人自己浏览器里、按应用分开。
+ * 只认这一框发来的消息（event.source），别的窗口发同样形状的消息不算。
+ */
+function PublishedSiteFrame({ appId, title }: { appId: string; title: string }) {
+  const frame = React.useRef<HTMLIFrameElement>(null);
+  const key = SITE_STORAGE_PREFIX + appId;
+  const initial = React.useMemo(() => {
+    try {
+      return "wbstore:" + (window.localStorage.getItem(key) || "{}");
+    } catch {
+      return "wbstore:{}";
+    }
+  }, [key]);
+  React.useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      const data = acceptSiteStorage(event.data);
+      if (!data) return;
+      try {
+        window.localStorage.setItem(key, JSON.stringify(data));
+      } catch {
+        // 存不下就只在这一次打开里有效，不打断页面
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [key]);
+  return (
+    <iframe
+      ref={frame}
+      name={initial}
+      title={title || "在线打开"}
+      src={publishedSiteUrl(appId)}
+      // 跟响应头的 CSP sandbox 同一组（不给 allow-same-origin）：两道都在，哪道被代理丢了另一道还管着
+      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+      className="min-h-0 w-full flex-1 border-0 bg-white"
+      data-testid="published-site-frame"
+    />
+  );
+}
+
 export function AppArtifactPreview({ detail, loading = false, previewKey, appTitle }: {
   detail: AppCardDetail | null | undefined;
   loading?: boolean;
   previewKey: string;
   appTitle: string;
 }) {
+  if (detail?.publishedSnapshot?.onlineOpen) return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="app-preview-published-live">
+      <p className="flex shrink-0 items-center gap-3 px-4 py-2 text-xs text-stone-500">
+        <span>在线运行的是作者发布的这一版。你在里面录的数据只存在你自己的浏览器里；想改代码，复刻到自己的工作台。</span>
+        <a className="ml-auto shrink-0 text-[#5b6cff] hover:underline" href={publishedSiteUrl(previewKey)}
+          target="_blank" rel="noopener noreferrer">新标签页打开</a>
+      </p>
+      <PublishedSiteFrame appId={previewKey} title={appTitle} />
+    </div>
+  );
   if (detail?.publishedSnapshot) return (
     <div className="flex h-full min-h-0 flex-col" data-testid="app-preview-published">
       <p className="shrink-0 px-4 py-2 text-xs text-stone-500">
-        发布的是这一版的截图和源码。复刻后在你自己的工作台里运行和修改，作者录入的数据不会带过来。
+        {detail.publishedSnapshot.siteUnavailable === "needs_server"
+          ? "这个应用要后端服务，不能直接在线打开；复刻到自己的工作台就能运行。"
+          : "这一版没有可托管的构建，不能直接在线打开；复刻到自己的工作台就能运行。"}
+        作者录入的数据不会带过来。
       </p>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <img src={appPreviewUrl(previewKey)} alt={appTitle} className="mx-auto max-w-full rounded-lg shadow" />
@@ -2730,7 +2820,9 @@ export function AppsWorkbench() {
                   "应用预览"}
               </span>
               <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-                {details[previewModal.key]?.runtimeKind === "project" ? "工程预览" : "只读预览"}
+                {details[previewModal.key]?.publishedSnapshot?.onlineOpen
+                  ? "在线运行"
+                  : details[previewModal.key]?.runtimeKind === "project" ? "工程预览" : "只读预览"}
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 {details[previewModal.key]?.runtimeKind === "project" ? null : canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&

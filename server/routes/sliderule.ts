@@ -1222,6 +1222,17 @@ router.delete("/sessions/:sessionId/screenshot", async (req: Request, res: Respo
 // 返回 HTML/404——一键部署的主推演流直接断。把未被上面显式路由接住的
 // /api/sliderule/* 一律流式转发 Python：SSE 逐块透传不缓冲，Node 不碰
 // 业务语义（与 index.ts 退役方向一致，thin proxy only）。
+/** 透传给浏览器的安全 / 缓存响应头（见上面 catch-all 里的说明）。 */
+export const PASSTHROUGH_RESPONSE_HEADERS = [
+  "content-security-policy",
+  "access-control-allow-origin",
+  "cross-origin-resource-policy",
+  "x-content-type-options",
+  "referrer-policy",
+  "cache-control",
+  "location",
+] as const;
+
 router.use(async (req: Request, res: Response) => {
   // 生产守卫契约：测试专用助手路径（__clear/__reload 等 __ 前缀段）
   // 不注册也不转发，保持 404（见 sliderule-runtime.test.ts 生产守卫用例）
@@ -1254,6 +1265,13 @@ router.use(async (req: Request, res: Response) => {
     res.status(upstream.status);
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("content-type", contentType);
+    // ⚠ 2026-10-02 发布的网页工程在线打开（/apps/:id/site/*，slide-rule-python/services/published_site.py 头注）：
+    //   别人发布的 JS 跑在我们的域名下，隔离全靠 Python 给的 CSP sandbox 响应头。这里原来只转 content-type
+    //   和 set-cookie——生产（Docker 走 Node）里那条头被静静丢掉，直接打开这个地址就是在我们域名上执行别人的脚本。
+    for (const name of PASSTHROUGH_RESPONSE_HEADERS) {
+      const value = upstream.headers.get(name);
+      if (value) res.setHeader(name, value);
+    }
     // 登录/登出要靠 Set-Cookie 把 httpOnly 凭据种到浏览器上。不回传的话
     // 登录接口会"成功但没登上"——这类问题很难查，因为响应体是 200。
     // getSetCookie() 保留多条（Node 18.14+ / undici）；退化时用单值兜底。

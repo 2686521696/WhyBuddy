@@ -8,13 +8,16 @@ Only the separately controlled browser produces behavioral assertions.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime, timezone
 
 from models.project_runtime import VerificationBuildEvidence
 from services.project_application_runtime import checkpoint_application_data
+from services.project_site_store import ProjectSiteStore
 from services.workspace_provider import PROJECT_REVISION_FILE, WorkspaceProviderError
 
+logger = logging.getLogger(__name__)
 KEY = "verificationBuild"
 PROCESS_KEYS = ("verification_install", "verification_compile", "verification_server")
 
@@ -91,6 +94,18 @@ def _evidence(task, child, values):
     return proof
 
 
+def _keep_site_build(task, child, revision, output_hash):
+    """把这一份构建的字节留下，发布后在线打开用（project_site_store 头注）。增强项：失败只记日志。"""
+    collect = getattr(task.provider, "collect_build_output", None)
+    if not callable(collect):
+        return
+    try:
+        files = collect(task.handle, revision=revision)
+        ProjectSiteStore(task.store).put(child.projectId, revision=revision, output_hash=output_hash, files=files)
+    except Exception:  # noqa: BLE001 — 在线打开是增强，不许拖垮验收
+        logger.warning("site build not kept project=%s", child.projectId, exc_info=True)
+
+
 def build_and_start(task, child, record, *, expected_files, check):
     revision = task.store.get_revision(child.projectId, child.expectedRevision, owner_id=task.owner_id)
     lockfile = next((item.sha256 for item in revision.manifest.files if item.path == "package-lock.json"), None)
@@ -126,6 +141,8 @@ def build_and_start(task, child, record, *, expected_files, check):
     task.provider.sync_files(task.handle, expected_files=expected_files, files=expected_files)
     output = task.provider.inspect_build_output(task.handle, revision=record.revision)
     evidence.update(outputHash=output.output_hash, outputFileCount=output.file_count, outputBytes=output.size_bytes)
+    if evidence["serverKind"] == "static-dist":
+        _keep_site_build(task, child, record.revision, output.output_hash)
     check()
     pid = _dispatch(task, child, "verification_server", lambda: task.provider.start_verification_server(
         task.handle, verification_id=child.operationId, suite_version=child.input["suiteVersion"], port=task.runtime.port), "starting")

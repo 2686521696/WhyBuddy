@@ -15,6 +15,7 @@ from services.project_acceptance import TASK_SUITE_VERSION, acceptance_profile, 
 from services.project_authority import approved_reference
 from services.project_export import source_archive
 from services.project_manifest import canonical_json, content_hash
+from services.project_site_store import ProjectSiteStore
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound
 from services.project_verification_gate import (ENVIRONMENT_BLOCK_CODES, validate_build_evidence,
@@ -123,8 +124,18 @@ class ProjectDeliveryService:
             except Exception:  # noqa: BLE001 — 封面是增强项
                 screenshot = None
         title = str((authority.goal or {}).get("text") or "").strip() or "网页应用"
+        # 在线打开：验收那一份构建留下了才有（project_site_store 头注）。任务模板要 Node 后端，静态托管跑不起来。
+        build = snapshot.verification.build
+        site, site_reason = None, None
+        if build is None or build.serverKind != "static-dist":
+            site_reason = "needs_server"
+        elif ProjectSiteStore(self.store).has(project.projectId, build.outputHash):
+            site = {"outputHash": build.outputHash}
+        else:
+            site_reason = "build_not_kept"
         return {"projectId": project.projectId, "sessionId": project.sessionId, "revision": revision.revision,
-                "templateVersion": revision.templateVersion, "title": title[:2000], "screenshot": screenshot}
+                "templateVersion": revision.templateVersion, "title": title[:2000], "screenshot": screenshot,
+                "site": site, "siteUnavailable": site_reason}
 
     def prepare(self, project_id, *, expected_revision, verification_id, idempotency_key):
         project, authority, revision, snapshot, reasons = self._evidence(project_id, verification_id)

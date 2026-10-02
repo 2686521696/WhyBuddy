@@ -31,7 +31,7 @@ from services.session_uploads import WORKSPACE_ROOT, sanitize_filename
 from services.project_manifest import build_manifest
 from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import (
-    ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES,
+    ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES, MAX_SITE_COLLECT_BYTES,
     STATIC_BUILD_SERVER_SCRIPT,
 )
 from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, SANDBOX_GONE, WorkspaceHandle, WorkspaceProviderError
@@ -638,6 +638,8 @@ class E2BWorkspaceProvider:
                 limit = (MAX_APPLICATION_DATA_BYTES + 2) // 3 * 4 + 100
             elif action == "collect-office":
                 limit = (MAX_OFFICE_COLLECT_BYTES + 2) // 3 * 4 + 4096
+            elif action == "collect-build":
+                limit = (MAX_SITE_COLLECT_BYTES + 2) // 3 * 4 + 2000 * 300
             else:
                 limit = 4096
             if reply.exit_code != 0 or not isinstance(reply.stdout, str) or len(reply.stdout.encode()) > limit:
@@ -682,6 +684,24 @@ class E2BWorkspaceProvider:
         else:
             raise ValueError("verification_suite_unsupported")
         return self.start_process(handle, command, timeout_seconds=900)
+
+    def collect_build_output(self, handle, *, revision):
+        """验收构建出来的 dist 字节（发布到市场、在线打开用）。失败抛 provider 错，由调用方 fail-open。"""
+        value = self._artifact_io(handle, "collect-build", revision=revision)
+        rows = value.get("files")
+        if not isinstance(rows, list) or not rows:
+            raise WorkspaceProviderError("project_build_collect_invalid")
+        out = {}
+        for row in rows:
+            path = str((row or {}).get("path") or "")
+            raw = (row or {}).get("data")
+            if not path or not isinstance(raw, str):
+                raise WorkspaceProviderError("project_build_collect_invalid")
+            try:
+                out[path] = base64.b64decode(raw, validate=True)
+            except (ValueError, TypeError):
+                raise WorkspaceProviderError("project_build_collect_invalid") from None
+        return out
 
     def collect_office_files(self, handle):
         """沙箱里的办公文件字节。失败抛 provider 错，由 worker fail-open。"""

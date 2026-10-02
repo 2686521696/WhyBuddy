@@ -145,6 +145,9 @@ modules = [
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
   "services.deliverable_surface",
   # 批准计划上的交付物类别。只吃计划字典，不读会话、不读工程库 → 叶子。
+  # 发布的网页工程在线打开：构建产物存取、托管时的路径改写与存储垫片（2026-10-02），都只靠标准库
+  "services.project_site_store",
+  "services.published_site",
   "services.deliverable_kind",
   # 用户上传的原件：只洗净文件名、拼工作区路径。不读库、不碰沙盒 → 叶子。
   "services.session_uploads",
@@ -519,6 +522,7 @@ modules = [
   "services.app_preview",
   "services.app_screenshot",
   "services.app_store",
+  "services.published_site",
   "services.component_preset_store",
   "services.thumb_image",
 ]
@@ -832,6 +836,7 @@ modules = [
   "services.project_source_operations",
   "services.project_delivery",
   "services.project_verification_store",
+  "services.project_site_store",
   "services.session_blob_store",
 ]
 

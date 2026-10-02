@@ -195,8 +195,25 @@ describe("POST /api/sliderule/respond", () => {
   });
 
   // Task 57: prove ai-topology deprecated stub was removed (no longer serves backend API path)
+  // ⚠ 2026-10-02：原来直接断言 404，而 Node 不认的路径会经兜底代理去 Python——本机没起 Python
+  //   时拿到的是代理的 502，这条就一直红着，分不清是「桩复活了」还是「上游不在」。
+  //   现在给一个对什么都答 404 的假上游：Node 自己不接（没有桩）时，看到的就是上游那个 404。
   it("ai-topology stub removed (404, no Node ownership of unused endpoint)", async () => {
-    const res = await fetch(`${base}/ai-topology`, { method: "GET" });
-    expect(res.status).toBe(404);
+    const seen: string[] = [];
+    const upstream = createServer((req, res) => {
+      seen.push(req.url || "");
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end('{"detail":"Not Found"}');
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, resolve));
+    const addr = upstream.address();
+    vi.stubEnv("PYTHON_SLIDE_RULE_BASE_URL", `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}`);
+    try {
+      const res = await fetch(`${base}/ai-topology`, { method: "GET" });
+      expect(res.status).toBe(404);
+      expect(seen).toEqual(["/api/sliderule/ai-topology"]);
+    } finally {
+      await new Promise<void>((r) => upstream.close(() => r()));
+    }
   });
 });

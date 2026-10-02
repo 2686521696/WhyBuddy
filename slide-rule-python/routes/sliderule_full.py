@@ -20,7 +20,7 @@ import uuid
 
 from anyio import CancelScope
 from fastapi import APIRouter, HTTPException, Header, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
@@ -28,7 +28,9 @@ from middlewares.current_user import CurrentUserOptional
 # 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
 # gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
 from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+from services.project_site_store import ProjectSiteStore
 from services.project_source_operations import fork_published_project
+from services.published_site import render, resolve_path, site_headers, site_prefix
 from services.gate_health import (
     ledger_since as _gate_since,
     record_verdict as _gate_record,
@@ -36,7 +38,7 @@ from services.gate_health import (
     summary_line as _gate_summary,
 )
 from services.page_edit_guard import edit_losses, losses_message
-from services import app_access, run_registry
+from services import app_access, app_store, run_registry
 from services.model_version_restore import restore_model_version_locked
 from services.scope_authority import plan_execution_authorized, preferred_device_for_run, approved_plan_instruction, latest_control_plan
 from services.rehearsal_control import stamp_control_plan_kind
@@ -3502,6 +3504,38 @@ async def delete_component_preset(
     store = await asyncio.to_thread(get_preset_store)
     await asyncio.to_thread(store.delete, preset_id)
     return {"ok": True}
+
+
+@router.get("/apps/{app_id}/site")
+async def published_site_root(app_id: str):
+    # 没有结尾斜杠的话页面里的相对路径会落到 /apps/ 下面
+    return RedirectResponse(url=site_prefix(app_id), status_code=307)
+
+
+@router.get("/apps/{app_id}/site/{path:path}")
+async def published_site_file(app_id: str, path: str, viewer: CurrentUserOptional):
+    """发布的网页工程在线打开（services/published_site.py 头注：沙盒、存储垫片、路径改写）。
+
+    看得见这张卡才给（公开卡任何人都看得见）。iframe 里的请求是不透明来源、不带登录态，所以实际只有公开的卡能打开——
+    作者设回私有，在线打开也就关了。字节只来自验收那一份构建（project_site_store），读回来再核一遍 hash。
+    """
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("view", record, viewer)
+    snapshot = (record.get("model_json") or {}).get("projectSnapshot") if isinstance(record.get("model_json"), dict) else None
+    site = (snapshot or {}).get("site") if isinstance(snapshot, dict) else None
+    if not isinstance(site, dict) or not site.get("outputHash"):
+        raise HTTPException(404, "online open unavailable")
+    files = await asyncio.to_thread(
+        lambda: ProjectSiteStore(get_project_store()).files(str(snapshot["projectId"]), str(site["outputHash"])))
+    if not files:
+        raise HTTPException(404, "online open unavailable")
+    name = resolve_path(files, path)
+    if name is None:
+        raise HTTPException(404, "not found")
+    body, media = render(files, name, site_prefix(app_id))
+    return Response(content=body, headers=site_headers(media))
 
 
 @router.post("/apps/{app_id}/fork")

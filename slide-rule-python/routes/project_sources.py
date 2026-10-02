@@ -211,9 +211,11 @@ def _publication_view(project_id: str, current_revision: str | None) -> dict:
     record = app_store.get_backend().find_by_dedup_key(published_project_key(project_id))
     snapshot = ((record or {}).get("model_json") or {}).get("projectSnapshot") or {}
     if not record or not snapshot:
-        return {"published": False, "appId": None, "revision": None, "visibility": None, "stale": False}
+        return {"published": False, "appId": None, "revision": None, "visibility": None, "stale": False,
+                "onlineOpen": False, "siteUnavailable": None}
     return {"published": record.get("visibility") == "public", "appId": record["id"],
             "revision": snapshot.get("revision"), "visibility": record.get("visibility"),
+            "onlineOpen": bool(snapshot.get("site")), "siteUnavailable": snapshot.get("siteUnavailable"),
             # 作者发布之后又改了：市场里还是发布的那一版，结果卡要照实说「已发布的是旧版」
             "stale": bool(current_revision) and snapshot.get("revision") != current_revision}
 
@@ -241,7 +243,8 @@ def publish_project(project_id: str, request: Request, viewer: CurrentUser):
             raise
         model = {
             "projectSnapshot": {"projectId": pub["projectId"], "revision": pub["revision"],
-                                "templateVersion": pub["templateVersion"], "sessionId": pub["sessionId"]},
+                                "templateVersion": pub["templateVersion"], "sessionId": pub["sessionId"],
+                                "site": pub["site"], "siteUnavailable": pub["siteUnavailable"]},
             "appbundle": {"appIdentity": {"productName": pub["title"][:120]}, "preferredDevice": "desktop"},
         }
         app_id = app_store.save_app(model, goal=pub["title"], session_id=pub["sessionId"], gate_passed=True,

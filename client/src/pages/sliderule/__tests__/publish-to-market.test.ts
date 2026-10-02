@@ -58,7 +58,8 @@ describe("市场里发布的网页工程卡", () => {
       projectSnapshot: { projectId: "prj-cafe", revision: "prv-1", templateVersion: "whybuddy-react-vite-1" },
       appbundle: { appIdentity: { productName: "社区咖啡店" }, preferredDevice: "desktop" },
     });
-    expect(detail.publishedSnapshot).toEqual({ projectId: "prj-cafe", revision: "prv-1" });
+    // 在线打开之前发布的卡快照里没有 site：只能看截图，不假装能跑（published-site-frame.test.tsx）
+    expect(detail.publishedSnapshot).toEqual({ projectId: "prj-cafe", revision: "prv-1", onlineOpen: false, siteUnavailable: null });
     expect(detail.model).toBeNull();
     expect(detail.status).toBe("runnable");
   });

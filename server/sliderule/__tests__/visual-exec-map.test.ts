@@ -9,7 +9,10 @@ import type { V5SessionState } from "../../../shared/blueprint/v5-reasoning-stat
 
 // vi.mock must precede dynamic import of routes/sliderule (which pulls python-delegation)
 // so that delegation in python mode can be stubbed for the bypass proof test without network.
-vi.mock("../python-delegation.js", () => ({
+// ⚠ 2026-10-02：工厂是全量替换，漏了产线后加的 viewerHeadersFrom 就 502（见
+//   server/routes/__tests__/sliderule.execute-capability.test.ts 的 2026-09-13 注释）。保留真实导出、只桩两个。
+vi.mock("../python-delegation.js", async importOriginal => ({
+  ...(await importOriginal<typeof import("../python-delegation.js")>()),
   callPythonSlideRule: vi.fn(),
   resolvePythonSlideRuleRuntimeConfig: vi.fn(() => ({
     baseUrl: "http://localhost:9700",

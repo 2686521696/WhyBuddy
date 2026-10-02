@@ -8,6 +8,8 @@ or a bounded SQLite snapshot, never arbitrary build output.
 
 MAX_APPLICATION_DATA_BYTES = 8 * 1024 * 1024
 MAX_OFFICE_COLLECT_BYTES = 16 * 1024 * 1024
+#: 发布到应用市场、在线打开的那份构建产物（dist）的上限（project_site_store 头注）。
+MAX_SITE_COLLECT_BYTES = 16 * 1024 * 1024
 ARTIFACT_IO_SCRIPT = r'''
 import base64, hashlib, json, os, re, stat, sys, uuid
 job = json.load(sys.stdin)
@@ -145,6 +147,34 @@ elif action in ("read-data", "write-data"):
             finally: os.close(folder)
         if data is not None and not data.startswith(b"SQLite format 3\x00"): raise ValueError("application_data_invalid")
         print(json.dumps({"data": base64.b64encode(data).decode() if data is not None else None}))
+elif action == "collect-build":
+    # Same traversal and markers as "output", returning the bytes so the host can keep exactly the
+    # verified build for the published site. Bounded; the host re-hashes and compares with the evidence.
+    dist = directory(root + "/dist")
+    files, total = [], 0
+    def visit(fd, prefix="", depth=0):
+        global total
+        bounded_visit(depth)
+        for name in sorted(os.listdir(fd)):
+            bounded_visit(depth)
+            path = prefix + name
+            mode = os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
+            if stat.S_ISDIR(mode):
+                child = os.open(name, flags, dir_fd=fd)
+                try: visit(child, path + "/", depth + 1)
+                finally: os.close(child)
+            elif stat.S_ISREG(mode):
+                if len(files) >= 2000: raise ValueError("build_file_limit")
+                data = regular(fd, name, 16777216 - total)
+                total += len(data)
+                files.append({"path": path, "data": base64.b64encode(data).decode()})
+            else: raise ValueError("build_file_not_regular")
+    try:
+        marker = json.loads(regular(dist, "__whybuddy_revision.json", 4096))
+        if marker.get("revision") != job["revision"]: raise ValueError("build_revision_mismatch")
+        visit(dist)
+    finally: os.close(dist)
+    print(json.dumps({"files": files}))
 elif action == "collect-office":
     # .sliderule: installed skills written at sandbox creation (skill_hydrate). A skill may ship
     # template .pptx/.docx files; collecting them would present them as this turn's deliverable.

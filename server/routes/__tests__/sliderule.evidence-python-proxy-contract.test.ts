@@ -11,7 +11,11 @@ import * as llmClient from '../../core/llm-client.js';
 import * as poolJsonLlm from '../../sliderule/pool-json-llm.js';
 import { withStubbedLlmKey } from './helpers/with-stubbed-llm-key.js';
 
-vi.mock('../../sliderule/python-delegation.js', () => ({
+// ⚠ 2026-10-02：工厂是全量替换，漏一个导出调用点就拿到 undefined——2026-09-13 execute-capability
+//   那份补了 viewerHeadersFrom，这份没跟上，报的是「python V5 delegation failed」502。
+//   改成保留真实导出、只替换要桩的两个：产线再加导出也不会让这份静默过期。
+vi.mock('../../sliderule/python-delegation.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../sliderule/python-delegation.js')>()),
   callPythonSlideRule: vi.fn(),
   resolvePythonSlideRuleRuntimeConfig: vi.fn(() => ({
     baseUrl: 'http://localhost:9700',
