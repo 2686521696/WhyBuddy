@@ -177,7 +177,7 @@ import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { Spin } from "antd";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 import { Response } from "@/components/ai/response";
-import { SessionStory } from "./sliderule/SessionStory";
+import { SessionStory, SpeechMarkdown } from "./sliderule/SessionStory";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -296,17 +296,13 @@ function ModelSpeechBlocks({ turn }: { turn: UiTurn }) {
   if (speech.length === 0) return null;
   return (
     <div
-      className="min-w-0 space-y-2 text-[14px] leading-[1.7] text-[#171717]"
+      className="min-w-0 space-y-2 text-[14px] leading-[1.7] text-[#171717] [overflow-wrap:anywhere]"
       data-testid="sliderule-model-speech"
       data-speech-count={speech.length}
     >
+      {/* 按 markdown 画，跟工程轮的收尾同一个画法（SpeechMarkdown 头注，第 186 轮）。 */}
       {speech.map(item => (
-        <p
-          key={item.id}
-          className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]"
-        >
-          {item.text}
-        </p>
+        <SpeechMarkdown key={item.id} text={item.text} />
       ))}
     </div>
   );

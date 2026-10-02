@@ -180,6 +180,23 @@ const CLOSING_MARKDOWN: Components = {
     ),
 };
 
+/**
+ * 模型对用户说的话按 markdown 画（收尾、以及没有工程的纯回答轮）。
+ *
+ * ⚠ 2026-10-02 隔离真机第 186 轮 sr-20261002070245-3CVZ2CH0XG（「给读书会想 5 个名字」）：没有工程的回答轮
+ *   不走 SessionStory，走 SlideRule 的 ModelSpeechBlocks，那里按纯文本 <p> 画——左栏原样露出「1. **阅见**」。
+ *   工程轮的收尾早就按 markdown 画了（上面 CLOSING_MARKDOWN），两条路画同一种话，一条画对一条画错（§四）。
+ */
+export function SpeechMarkdown({ text }: { text: string }) {
+  return (
+    <div className="min-w-0 space-y-2 [overflow-wrap:anywhere] [&_a]:text-[#2f6bff] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={CLOSING_MARKDOWN}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export function SessionStory({
   turn,
   streaming,

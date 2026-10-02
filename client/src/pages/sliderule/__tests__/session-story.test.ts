@@ -399,7 +399,11 @@ describe("开口长 token 必须折（2026-09-19 坦克横向滚动条）", () =
       slide.indexOf("function TurnPhaseTimeline")
     );
     expect(blocks).toMatch(/\[overflow-wrap:anywhere\]/);
-    expect(blocks).toMatch(/whitespace-pre-wrap/);
+    // 2026-10-02 起纯回答轮按 markdown 画（SpeechMarkdown，第 186 轮）：换行交给 markdown，
+    //   折长 token 靠外层和 SpeechMarkdown 自己那层的 overflow-wrap:anywhere。
+    expect(blocks).toMatch(/<SpeechMarkdown /);
+    const md = story.slice(story.indexOf("export function SpeechMarkdown"), story.indexOf("export function SessionStory"));
+    expect(md).toMatch(/\[overflow-wrap:anywhere\]/);
     expect(blocks).not.toMatch(/<p className="whitespace-pre-wrap">/);
 
     const surface = slide.slice(slide.indexOf("export function ClaudeChatSurface"));
