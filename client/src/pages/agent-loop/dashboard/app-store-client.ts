@@ -18,6 +18,11 @@
 /** 列表摘要——对应 Python `_summary`（去掉 model_json 大载荷）。 */
 export interface AppStoreSummary {
   id: string;
+  /**
+   * 网页工程发布到市场的卡：`project:<projectId>`（后端 routes/project_sources.PUBLISHED_PROJECT_PREFIX）。
+   * 列表摘要本来就带这一列，前端据此认出「这张卡是网页工程」，不另加列。
+   */
+  dedup_key?: string | null;
   root_id: string;
   parent_id: string | null;
   version: number;
@@ -209,7 +214,8 @@ export async function listVersions(rootId: string): Promise<AppStoreSummary[]> {
  * 成功返回新 app id，失败返回 null。
  */
 export interface ForkResult {
-  id: string;
+  /** 新应用记录的 id。网页工程的复刻不另起记录（复刻的是会话 + 工程），这时为空。 */
+  id?: string;
   /** 2026-07-27：后端 fork 时同步创建的绑定会话——副本点开即可运行/继续迭代 */
   sessionId?: string;
 }
@@ -222,9 +228,12 @@ export async function forkApp(id: string, name?: string): Promise<ForkResult | n
       body: JSON.stringify(name && name.trim() ? { name: name.trim() } : {}),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { id?: string; sessionId?: string };
-    if (typeof data?.id !== "string") return null;
-    return { id: data.id, sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined };
+    const data = (await res.json()) as { id?: string | null; sessionId?: string };
+    const newId = typeof data?.id === "string" ? data.id : undefined;
+    const sessionId = typeof data?.sessionId === "string" ? data.sessionId : undefined;
+    // 网页工程复刻只回会话（routes/sliderule_full.fork_generated_app 的 projectSnapshot 那一支）
+    if (!newId && !sessionId) return null;
+    return { id: newId, sessionId };
   } catch {
     return null;
   }
@@ -427,3 +436,9 @@ export async function aiEditBlock(
   }
 }
 
+/** 网页工程发布到市场的那张卡 → 它的工程 id；不是就 null。 */
+export const PUBLISHED_PROJECT_PREFIX = "project:";
+export function publishedProjectId(summary: Pick<AppStoreSummary, "dedup_key"> | null | undefined): string | null {
+  const key = String(summary?.dedup_key || "");
+  return key.startsWith(PUBLISHED_PROJECT_PREFIX) ? key.slice(PUBLISHED_PROJECT_PREFIX.length) || null : null;
+}

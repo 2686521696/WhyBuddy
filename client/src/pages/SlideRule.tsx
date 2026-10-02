@@ -593,6 +593,8 @@ const ImSurfaceContext = React.createContext<{
   quietHint: string | null;
   /** 工程档已落库的源码版本；结果卡靠它判断「这一轮真的产出了东西」。 */
   projectRevision?: string | null;
+  /** 网页工程的 id：结果卡「发布」要它（只给 verdictTurnId 那一张）。 */
+  projectId?: string | null;
   /** 后续建议要读的那一小块（模型自己的待办）。整个 state 不进 context。 */
   sessionState?: {
     controlTodo?: Array<{ id?: string; status?: string; content?: string }>;
@@ -628,6 +630,7 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: "",
   quietHint: null,
   projectRevision: null,
+  projectId: null,
   sessionState: null,
   thumbnailUrl: null,
   officeThumbnail: null,
@@ -813,6 +816,7 @@ function ImAssistantMessage() {
         turn.id === ctx.verdictTurnId ? deliveryVerdict?.blockedReasons : undefined
       }
       interrupted={Boolean(ctx.stoppedTurnId) && turn.id === ctx.stoppedTurnId}
+      publishProjectId={turn.id === ctx.verdictTurnId ? ctx.projectId : null}
       onOpen={() => {
         window.dispatchEvent(
           new CustomEvent("sliderule:open-deliverable")
@@ -1178,6 +1182,7 @@ export function ClaudeChatSurface({
       thinkingText,
       quietHint: quietHintText,
       projectRevision,
+      projectId: runtimeKind === "project" && !isOfficeFileDeliverable(deliverableKind) ? projectId ?? null : null,
       sessionState: controlTodo ? { controlTodo } : null,
       thumbnailUrl: verifiedThumbnail,
       officeThumbnail,
@@ -1201,6 +1206,7 @@ export function ClaudeChatSurface({
       thinkingText,
       quietHintText,
       projectRevision,
+      projectId,
       controlTodo,
       verifiedThumbnail,
       isRunning,

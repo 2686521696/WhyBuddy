@@ -21,7 +21,7 @@ from services.session_uploads import (
     upload_media_type,
     workspace_path,
 )
-from services import persistence
+from services import app_store, persistence
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
@@ -196,6 +196,63 @@ def prepare_release(project_id: str, body: PrepareReleaseRequest, request: Reque
             expected_revision=body.expectedRevision, verification_id=body.verificationId,
             idempotency_key=body.idempotencyKey)
         return {"release": release}
+
+
+#: 应用市场里一个工程只占一张卡：再发一次就是把这张卡换到新的那一版（app_store.save_app 的 dedup 幂等更新）。
+#: 前端靠这个前缀认出「这张卡是网页工程」（列表摘要里本来就带 dedup_key，不用加列）。
+PUBLISHED_PROJECT_PREFIX = "project:"
+
+
+def published_project_key(project_id: str) -> str:
+    return PUBLISHED_PROJECT_PREFIX + project_id
+
+
+def _publication_view(project_id: str, current_revision: str | None) -> dict:
+    record = app_store.get_backend().find_by_dedup_key(published_project_key(project_id))
+    snapshot = ((record or {}).get("model_json") or {}).get("projectSnapshot") or {}
+    if not record or not snapshot:
+        return {"published": False, "appId": None, "revision": None, "visibility": None, "stale": False}
+    return {"published": record.get("visibility") == "public", "appId": record["id"],
+            "revision": snapshot.get("revision"), "visibility": record.get("visibility"),
+            # 作者发布之后又改了：市场里还是发布的那一版，结果卡要照实说「已发布的是旧版」
+            "stale": bool(current_revision) and snapshot.get("revision") != current_revision}
+
+
+@router.get("/projects/{project_id}/publication")
+def get_publication(project_id: str, request: Request, response: Response, viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _service(request, viewer) as service:
+        project, _ = service.authority(project_id)
+        return _publication_view(project_id, project.currentRevision)
+
+
+@router.post("/projects/{project_id}/publish", status_code=201)
+def publish_project(project_id: str, request: Request, viewer: CurrentUser):
+    """把通过交付验收的这一版发布到应用市场（ProjectDeliveryService.publication 头注）。
+
+    发布出去的是：一张验收截图 + 这一版源码（市场里的人可以复刻）。不含应用数据、不含计划批准。
+    """
+    with _service(request, viewer, write=True) as service:
+        try:
+            pub = ProjectDeliveryService(service.store, service.owner_id).publication(project_id)
+        except ProjectConflict as exc:
+            if str(exc).startswith("project_publish_requires_delivery"):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
+        model = {
+            "projectSnapshot": {"projectId": pub["projectId"], "revision": pub["revision"],
+                                "templateVersion": pub["templateVersion"], "sessionId": pub["sessionId"]},
+            "appbundle": {"appIdentity": {"productName": pub["title"][:120]}, "preferredDevice": "desktop"},
+        }
+        app_id = app_store.save_app(model, goal=pub["title"], session_id=pub["sessionId"], gate_passed=True,
+                                    dedup_key=published_project_key(project_id), owner_id=service.owner_id,
+                                    visibility="public")
+        # 幂等更新沿用旧记录的可见性（save_app 头注）：作者之前设成私有、现在又点发布，就是要重新公开。
+        if (app_store.get_app(app_id) or {}).get("visibility") != "public":
+            app_store.patch_app(app_id, visibility="public")
+        has_preview = bool(pub["screenshot"]) and app_store.save_app_shot(app_id, pub["screenshot"])
+        view = _publication_view(project_id, pub["revision"])
+        return {**view, "hasPreview": has_preview}
 
 
 @router.get("/projects/{project_id}/releases/{release_id}/download")

@@ -18,13 +18,58 @@ from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session, sync_session_project
 from services.deliverable_kind import (
-    idle_office_exec_allows_source_write, operation_left_on_lease, plan_deliverable_kind,
+    WEB_APP, idle_office_exec_allows_source_write, operation_left_on_lease, plan_deliverable_kind,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.revision_turns import label_revisions
 from services.scope_authority import latest_control_plan
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
+
+
+def _claim_fork_session(owner_id, session_id, fork, *, source_project_id, source_revision, goal_text, kind,
+                        office_files=()):
+    """复刻出来的那条会话。Claim is server-only and insert-only: it neither copies the prior plan
+    approval nor lets a retry overwrite a newer conversation in the fork."""
+    candidate = V5SessionState(sessionId=session_id, ownerId=owner_id,
+        # 标题前加「复刻：」：源会话和复刻会话同名，侧栏里两条一模一样分不清（2026-09-30 第 144 轮复刻）
+        goal={"text": "复刻：" + goal_text},
+        runtimeKind="project", projectId=fork.projectId, projectRevision=fork.currentRevision,
+        controlTranscript=[{"kind": "project_forked", "sourceProjectId": source_project_id,
+            "sourceRevision": source_revision, "deliverableKind": kind,
+            "officeFiles": sorted(office_files)}], lastTurnId="fork-1")
+    claimed = persistence.claim_session_record(candidate)
+    if not claimed.get("ok") or not isinstance(claimed.get("state"), V5SessionState):
+        raise ProjectStoreUnavailable("project_fork_session_unavailable")
+    actual = claimed["state"]
+    if actual.ownerId != owner_id or actual.projectId != fork.projectId:
+        raise ProjectConflict("project_fork_session_conflict")
+
+
+def fork_published_project(store, *, source_owner_id, project_id, revision, owner_id, goal_text, idempotency_key):
+    """从应用市场复刻别人发布的网页工程：只拷**发布时钉住的那一版源码**，归到复刻的人名下。
+
+    ⚠ 2026-10-01 发布通道（ProjectDeliveryService.publication 头注）：市场里点「复刻」原来只认老 HTML 推演的
+      model_json；网页工程的源码在作者的工程库里，按 owner 隔离，别人读不到。这里由宿主用**作者身份**读、
+      只读应用记录里钉住的那一个 revision（调用方先过 app_access 的 fork 判定：公开、已登录）——复刻的人
+      选不了版本，拿不到作者之后改的、没发布的东西。
+      **不拷应用数据**（作者自己录进去的记录在 wb_project_app_data_*，是作者的私有数据），也不拷计划批准：
+      复刻出来的工程要复刻的人自己批计划才能再改。
+    """
+    saved = store.get_revision(project_id, revision, owner_id=source_owner_id)
+    if saved.revision != revision:
+        raise ProjectNotFound("project_revision_not_found")
+    files = store.read_files(project_id, saved.revision, owner_id=source_owner_id)
+    identity = canonical_json([owner_id, "published", project_id, saved.revision, idempotency_key])
+    session_id = "project-fork-" + content_hash(identity)[:32]
+    fork = store.create_project(session_id, owner_id=owner_id, files=files,
+        template_version=saved.templateVersion, plan_ref="fork:requires-new-approval",
+        spec_revision=saved.specRevision, source_project_id=project_id, source_revision=saved.revision)
+    if fork.sourceProjectId != project_id or fork.sourceRevision != saved.revision:
+        raise ProjectConflict("project_idempotency_conflict")
+    _claim_fork_session(owner_id, session_id, fork, source_project_id=project_id,
+        source_revision=saved.revision, goal_text=goal_text or "网页应用", kind=WEB_APP)
+    return {"projectId": fork.projectId, "sessionId": fork.sessionId, "revision": fork.currentRevision}
 
 
 class ProjectSourceOperations:
@@ -206,20 +251,8 @@ class ProjectSourceOperations:
                 copied.append(path)
         except Exception:  # noqa: BLE001 — 成品拷不过去不拖垮复刻：脚本在，重跑能再出（§七 增强类）
             copied = []
-        # Claim is server-only and insert-only. It neither copies the prior plan
-        # approval nor lets a retry overwrite a newer conversation in the fork.
-        candidate = V5SessionState(sessionId=session_id, ownerId=self.owner_id,
-            # 标题前加「复刻：」：源会话和复刻会话同名，侧栏里两条一模一样分不清（2026-09-30 第 144 轮复刻）
-            goal={"text": "复刻：" + str(state.goal.get("text") or "Project fork")},
-            runtimeKind="project", projectId=fork.projectId, projectRevision=fork.currentRevision,
-            controlTranscript=[{"kind": "project_forked", "sourceProjectId": source.projectId,
-                "sourceRevision": saved.revision, "deliverableKind": kind,
-                "officeFiles": sorted(copied)}], lastTurnId="fork-1")
-        claimed = persistence.claim_session_record(candidate)
-        if not claimed.get("ok") or not isinstance(claimed.get("state"), V5SessionState):
-            raise ProjectStoreUnavailable("project_fork_session_unavailable")
-        actual = claimed["state"]
-        if actual.ownerId != self.owner_id or actual.projectId != fork.projectId:
-            raise ProjectConflict("project_fork_session_conflict")
+        _claim_fork_session(self.owner_id, session_id, fork, source_project_id=source.projectId,
+            source_revision=saved.revision, goal_text=str(state.goal.get("text") or "Project fork"),
+            kind=kind, office_files=copied)
         return {"projectId": fork.projectId, "sessionId": fork.sessionId,
             "revision": fork.currentRevision}

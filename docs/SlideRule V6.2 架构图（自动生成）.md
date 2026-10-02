@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **358** 个，模块 **358** 个
-- 内部依赖边 **1200** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1111** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1203** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1113** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -54,7 +54,7 @@ flowchart TB
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|163| util
   flow -->|139| core
-  flow -->|169| util
+  flow -->|170| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -85,7 +85,7 @@ flowchart TB
   routes -->|10| config
   routes -->|9| middlewares
   routes -->|6| models
-  routes -->|165 · 其中 77 条边来自函数体 import| services
+  routes -->|167 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -214,7 +214,7 @@ flowchart LR
   entrypoint -->|2| workspace
   evidence -->|14| llm_gateway
   evidence -->|9| platform
-  http_routes -->|25| app_store
+  http_routes -->|26| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
@@ -226,7 +226,7 @@ flowchart LR
   http_routes -->|37| llm_gateway
   http_routes -->|24| model_core
   http_routes -->|3| observability
-  http_routes -->|18| persist
+  http_routes -->|19| persist
   http_routes -->|30| platform
   http_routes -->|4| runtime
   http_routes -->|10| spec_first
@@ -254,7 +254,7 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|40| platform
+  persist -->|41| platform
   run_control -->|1| platform
   runtime -->|2| identity
   runtime -->|11| persist

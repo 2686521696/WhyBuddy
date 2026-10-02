@@ -93,6 +93,7 @@ import {
   getGeneratedAppForSession,
   patchApp,
   appPreviewUrl,
+  publishedProjectId,
   type AppStoreSummary,
   type AppShelf,
 } from "./app-store-client";
@@ -312,6 +313,8 @@ export interface AppCardDetail {
   /** 2026-08-14：spec-first 整页 HTML。非 null 时缩略图与只读预览一律走
    *  HTML 应用面（同推演舞台一路），不再拿区块渲染器凑合出光板表格。 */
   specPages: SpecPagesDetail | null;
+  /** 网页工程发布到市场的那一版（model_json.projectSnapshot）。预览画发布时那张截图，不当五系统模型渲染。 */
+  publishedSnapshot?: { projectId: string; revision: string } | null;
 }
 
 /**
@@ -403,6 +406,17 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
  * 不 blocked），得到的指标/身份/活渲染模型跟会话卡完全同源。
  */
 export function deriveDetailFromAppRecord(modelJson: unknown, pagesJson?: unknown): AppCardDetail {
+  // 发布的网页工程：model_json 里只有工程指针 + 名字，不是五系统模型（2026-10-01 发布通道）。
+  const snap = (modelJson as { projectSnapshot?: { projectId?: unknown; revision?: unknown } } | null)?.projectSnapshot;
+  if (snap && typeof snap.projectId === "string" && typeof snap.revision === "string") {
+    return {
+      ...buildDetailFromModel(null, { evidenceCount: 0, blocked: false }),
+      status: "runnable",
+      roles: null,
+      aiCaps: null,
+      publishedSnapshot: { projectId: snap.projectId, revision: snap.revision },
+    };
+  }
   // 空对象 {} 不算可运行模型——truthy 判定会让 LiveAppThumb 挂载空模型
   // 渲染（2026-07-27 审查修复 #14）。
   const model =
@@ -526,6 +540,7 @@ export function mergeGalleryItems(
   sessions: SessionListItem[]
 ): GalleryItem[] {
   const appItems: GalleryItem[] = apps.map(a => ({
+    ...(publishedProjectId(a) ? { workKind: "web" as const, projectId: publishedProjectId(a)! } : {}),
     key: `app:${a.id}`,
     source: "app",
     goal: a.goal || a.product_name || "",
@@ -992,6 +1007,16 @@ export function AppArtifactPreview({ detail, loading = false, previewKey, appTit
   previewKey: string;
   appTitle: string;
 }) {
+  if (detail?.publishedSnapshot) return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="app-preview-published">
+      <p className="shrink-0 px-4 py-2 text-xs text-stone-500">
+        发布的是这一版的截图和源码。复刻后在你自己的工作台里运行和修改，作者录入的数据不会带过来。
+      </p>
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <img src={appPreviewUrl(previewKey)} alt={appTitle} className="mx-auto max-w-full rounded-lg shadow" />
+      </div>
+    </div>
+  );
   if (detail?.runtimeKind === "project") return (
     <div className="flex h-full min-h-0 flex-col">
       <p className="shrink-0 px-4 py-2 text-xs text-stone-500">
@@ -2029,8 +2054,6 @@ export function AppsWorkbench() {
   // 计数跟筛选同一个判定（filterCards）：原来两处各写一份，「推演中」把工程卡也数进去，
   // 2026-10-01 截图里 78 + 24 + 1 离 771 差 668。现在五个标签分完全部（老推演卡详情到齐之后）。
   const countOf = (f: GalleryFilter) => filterCards(paired, f, "").length;
-  // 网页工程 / 文件只出现在「我的应用」（会话卡只在这一架合进来）；推演中 / 已闭环 / 待补充三架都有。
-  const showWorkChips = tab === "mine";
   const counts = {
     all: paired.length,
     web: countOf("web"),
@@ -2039,6 +2062,8 @@ export function AppsWorkbench() {
     blocked: countOf("blocked"),
     draft: countOf("draft"),
   };
+  // 网页工程 / 文件：「我的应用」一直有（会话卡只在这一架合进来）；市场 / 官方有发布的网页工程时才出。
+  const showWorkChips = tab === "mine" || counts.web > 0;
   // 示例库筛选：分类 chips + 共享搜索框（搜产品名/意图/分类）
   const q = query.trim().toLowerCase();
   const visibleExamples = examples.filter(e => {
@@ -2159,7 +2184,9 @@ export function AppsWorkbench() {
           // 图拉不到（记录刚被删、网络抖）→ SheetThumb 的 onError 回落到同一张
           // 空态，不会出现空白卡。
           // 新流程的产出：文件画第一页，网页工程贴验收 / 预览截图（跟会话里结果卡同一份来源）。
-          if (item.workKind && item.projectId) return <WorkThumb item={item} />;
+          // 发布到市场的网页工程走下面 SheetThumb（发布时那张验收截图，谁都看得到）；
+          // WorkThumb 读的是作者自己的工程接口，只给作者自己的会话卡用。
+          if (item.source === "session" && item.workKind && item.projectId) return <WorkThumb item={item} />;
           if (shouldUseSheetThumb(item)) {
             return (
               <SheetThumb
@@ -2553,13 +2580,13 @@ export function AppsWorkbench() {
               active={filter === "web"}
               onClick={() => setFilter("web")}
             />
-            <StatChip
+            {(tab === "mine" || counts.office > 0) && <StatChip
               icon={<FileText size={13} className="text-sky-500" />}
               label="文件"
               count={counts.office}
               active={filter === "office"}
               onClick={() => setFilter("office")}
-            />
+            />}
           </>
         )}
         <StatChip
@@ -2707,7 +2734,7 @@ export function AppsWorkbench() {
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 {details[previewModal.key]?.runtimeKind === "project" ? null : canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
-                previewModal.source === "app" ? (
+                previewModal.source === "app" && !details[previewModal.key]?.publishedSnapshot ? (
                   <button
                     data-testid="app-reopen"
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-40"

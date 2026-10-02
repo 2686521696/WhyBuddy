@@ -1194,7 +1194,8 @@ describe("我的应用：新流程的产出按类别进、空会话不进（2026
   it("接在链路上：卡片封面走 WorkThumb，计数用的是同一个 filterCards", () => {
     // 剥掉注释再匹配（CLAUDE.md §二：同一个词在注释里也有，变异后照样绿）
     const src = sourceWithoutComments(readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8"));
-    expect(src).toMatch(/if \(item\.workKind && item\.projectId\) return <WorkThumb item=\{item\} \/>;/);
+    // 只给作者自己的会话卡；发布到市场的工程卡走 SheetThumb（发布时那张截图，别人也看得到）
+    expect(src).toMatch(/if \(item\.source === "session" && item\.workKind && item\.projectId\) return <WorkThumb item=\{item\} \/>;/);
     expect(src).toContain('const countOf = (f: GalleryFilter) => filterCards(paired, f, "").length;');
     expect(src).not.toMatch(/runnable: paired\.filter\(/);
     expect(src).toContain("sessionHasWork(s)");

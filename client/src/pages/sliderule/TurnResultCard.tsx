@@ -36,6 +36,7 @@ import { dispatchInspectAction } from "./project-computer-view";
 import type { UiTurn } from "./types";
 import { isOfficeFileDeliverable } from "./deliverable-kind";
 import { OfficeThumbnail } from "./project-runtime/OfficeThumbnail";
+import { publishButtonState, publishProject, useProjectPublication } from "./project-runtime/publication-client";
 
 function Star({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -61,6 +62,51 @@ function openPreview(turnId: string, onOpen?: () => void) {
   onOpen?.();
 }
 
+/**
+ * 结果卡上的「发布」。⚠ 2026-10-01 之前恒为 disabled「发布通道尚未接通」（publication-client.ts 头注）。
+ * 只有「工程此刻」那一轮拿得到 projectId；更早的卡照旧画一个点不动的按钮，说清楚为什么。
+ */
+function PublishButton({ projectId, delivered, onPublished }: {
+  projectId: string | null;
+  delivered?: boolean | null;
+  onPublished: (badge: string | null) => void;
+}) {
+  const [view, setView] = useProjectPublication(projectId);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const state = projectId ? publishButtonState(delivered, view) : { label: "发布", enabled: false, title: "到最新那一轮的卡片上发布" };
+  React.useEffect(() => {
+    onPublished(view?.published ? (view.stale ? "已发布旧版" : "已发布") : null);
+  }, [view, onPublished]);
+  const publish = async () => {
+    if (!projectId || busy) return;
+    if (!window.confirm("发布到应用市场？\n别人能看到这一版的截图，并能复刻这一版源码；你录入的应用数据不会带过去。")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await publishProject(projectId, new AbortController().signal);
+      setView(next);
+    } catch {
+      setError("发布没成功：这一版可能还没通过交付验收，或服务暂时不可用");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      disabled={!state.enabled || busy}
+      title={error ?? state.title}
+      onClick={() => void publish()}
+      data-testid="turn-result-publish"
+      data-state={view?.published ? (view.stale ? "stale" : "published") : "unpublished"}
+      className="inline-flex h-7 shrink-0 items-center rounded-[8px] bg-[#171717] px-2.5 text-[12px] text-white disabled:opacity-35"
+    >
+      {busy ? "发布中…" : state.label}
+    </button>
+  );
+}
+
 function workedShort(worked: string | null): string | null {
   return worked ? worked.replace(/^工作了\s+/, "") : null;
 }
@@ -80,6 +126,7 @@ export function TurnResultCard({
   delivered,
   deliveryBlockedReasons,
   interrupted = false,
+  publishProjectId,
   onOpen,
   onRetry,
 }: {
@@ -100,6 +147,8 @@ export function TurnResultCard({
   deliveryBlockedReasons?: readonly string[] | null;
   /** 这一轮被错误打断（会话停在 error），只给最新一轮。 */
   interrupted?: boolean;
+  /** 能发布的那个网页工程，只给「工程此刻」出自的那一轮（跟 delivered 同一轮）。 */
+  publishProjectId?: string | null;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
@@ -118,6 +167,7 @@ export function TurnResultCard({
     interrupted,
   });
   const [rating, setRating] = React.useState(0);
+  const [publishedBadge, setPublishedBadge] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
 
   if (!model) return null;
@@ -149,7 +199,7 @@ export function TurnResultCard({
             {model.title}
           </h2>
           <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-[#9a9a9a]">
-            <span data-testid="turn-result-badge">{model.badge}</span>
+            <span data-testid="turn-result-badge">{publishedBadge ?? model.badge}</span>
             {duration ? (
               <>
                 <span aria-hidden>·</span>
@@ -160,15 +210,7 @@ export function TurnResultCard({
             ) : null}
           </span>
           {model.canPublish ? (
-            <button
-              type="button"
-              disabled
-              title="发布通道尚未接通"
-              data-testid="turn-result-publish"
-              className="inline-flex h-7 shrink-0 items-center rounded-[8px] bg-[#171717] px-2.5 text-[12px] text-white disabled:opacity-35"
-            >
-              发布
-            </button>
+            <PublishButton projectId={publishProjectId ?? null} delivered={delivered} onPublished={setPublishedBadge} />
           ) : null}
         </header>
 

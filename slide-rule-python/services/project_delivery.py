@@ -20,7 +20,8 @@ from services.project_store import ProjectConflict, ProjectNotFound
 from services.project_verification_gate import (ENVIRONMENT_BLOCK_CODES, validate_build_evidence,
     validate_verification_result)
 from services.project_verification_store import ProjectVerificationStore
-from services.scope_authority import plan_execution_authorized
+from services.deliverable_kind import OFFICE_FILE, plan_deliverable_kind
+from services.scope_authority import latest_control_plan, plan_execution_authorized
 
 
 class ProjectDeliveryService:
@@ -99,6 +100,31 @@ class ProjectDeliveryService:
             "profile": acceptance_profile(extras, self._profile(revision)[1]), "blockedReasons": reasons,
             "verificationId": snapshot.verification.verificationId if snapshot else None,
             "releases": releases, "deployment": {"status": "not_configured", "publicUrl": None}}
+
+    def publication(self, project_id):
+        """发布到应用市场要的东西：钉住的那一版、标题、验收截图。没通过当前版本的交付验收就不许发（fail-closed）。
+
+        ⚠ 2026-10-01 用户审查应用市场：新流程做出来的网页工程从来上不了架——结果卡上的「发布」一直是
+          disabled「发布通道尚未接通」，市场里只有老 HTML 推演的 24 个。发布的是**这一版**：别人在市场里看到的
+          截图、复刻拿到的源码都钉在通过验收的这个 revision 上，作者之后再改不会悄悄换掉已发布的东西。
+          办公文件不是应用（用户定的口径：应用 / 文件分标签），不走这里。
+        截图是增强：取不到照发，卡片没封面而已（§七）；验收没过是缺证据，不许发（§七 fail-closed）。
+        """
+        project, authority, revision, snapshot, reasons = self._evidence(project_id)
+        if plan_deliverable_kind(latest_control_plan(authority)) == OFFICE_FILE:
+            raise ValueError("project_publish_office_file_is_not_an_app")
+        if reasons:
+            raise ProjectConflict("project_publish_requires_delivery:" + ",".join(reasons))
+        screenshot = None
+        for ref in snapshot.verification.artifactRefs[:1]:
+            try:
+                screenshot = self.records.read_artifact(snapshot.verification.verificationId, ref.artifactId,
+                                                        owner_id=self.owner_id)
+            except Exception:  # noqa: BLE001 — 封面是增强项
+                screenshot = None
+        title = str((authority.goal or {}).get("text") or "").strip() or "网页应用"
+        return {"projectId": project.projectId, "sessionId": project.sessionId, "revision": revision.revision,
+                "templateVersion": revision.templateVersion, "title": title[:2000], "screenshot": screenshot}
 
     def prepare(self, project_id, *, expected_revision, verification_id, idempotency_key):
         project, authority, revision, snapshot, reasons = self._evidence(project_id, verification_id)

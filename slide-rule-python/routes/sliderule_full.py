@@ -28,6 +28,7 @@ from middlewares.current_user import CurrentUserOptional
 # 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
 # gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
 from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
+from services.project_source_operations import fork_published_project
 from services.gate_health import (
     ledger_since as _gate_since,
     record_verdict as _gate_record,
@@ -60,7 +61,7 @@ from services.control_run_service import (
     overlay_live_control_phase,
     public_control_run,
 )
-from services.project_store import get_project_store
+from services.project_store import ProjectNotFound, get_project_store
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
 from sliderule_llm.evidence import execute_evidence_runtime
@@ -3539,6 +3540,23 @@ async def fork_generated_app(
             new_name = body["name"].strip()
     except Exception:
         pass  # 无 body / 非 JSON → 不改名
+
+    # 网页工程发布到市场的卡（routes/project_sources.publish_project）：复刻的是那一版源码，不是 model_json。
+    # 复刻出来的是复刻者自己的会话 + 工程（我的应用 → 网页工程），不另起一条应用记录。
+    snapshot = (source.get("model_json") or {}).get("projectSnapshot") if isinstance(source.get("model_json"), dict) else None
+    if isinstance(snapshot, dict) and snapshot.get("projectId") and snapshot.get("revision"):
+        def _fork_project() -> dict:
+            return fork_published_project(
+                get_project_store(), source_owner_id=str(source.get("owner_id") or ""),
+                project_id=str(snapshot["projectId"]), revision=str(snapshot["revision"]),
+                owner_id=str(viewer.id), goal_text=new_name or str(source.get("goal") or ""),
+                idempotency_key=f"market:{app_id}")
+
+        try:
+            forked = await asyncio.to_thread(_fork_project)
+        except ProjectNotFound:
+            raise HTTPException(404, "源应用的工程已经不在了，复刻不了")
+        return {"id": None, "sessionId": forked["sessionId"], "projectId": forked["projectId"]}
 
     # 2026-07-27 修复（workbench 审查 #1）：fork 出的卡此前是死卡——副本
     # 有意不继承源会话（防"点开副本进了源会话"），但也没有补上"为副本建
