@@ -888,7 +888,7 @@ HISTORY_MAX_CHARS = 12_000
 HISTORY_SPEECH_MAX_CHARS = 3_000
 
 
-def _conversation_history(state: V5SessionState) -> List[Dict[str, Any]]:
+def _conversation_history(state: V5SessionState, *, include_current: bool = False) -> List[Dict[str, Any]]:
     """这一句用户话之前的几轮对话：用户说的、模型对用户说的。工具调用和回执不带（工程在磁盘上，读得回来）。
 
     ⚠ 2026-10-02 隔离真机第 187 轮 sr-20261002073509-V62QMVEWQF：先让它给读书会想 5 个名字，追问
@@ -896,13 +896,18 @@ def _conversation_history(state: V5SessionState) -> List[Dict[str, Any]]:
       system + 这一句，系统提示里只有话题、问卷回答和计划，自己上一轮说过什么一个字都没有
       （第二发 in=8485 token，比第一发还少）。工程会话里源码在磁盘上还能读回来，纯对话会话就是每句从零开始。
     最近的优先；超了就丢更早的整轮，不拆半轮。角色严格交替（有的模型不认连着两条 user）。
+
+    include_current：连这件事自己那一轮（用户这次的请求 + 规划里对用户说的话）也带上——批准计划后的执行回合用。
+    ⚠ 2026-10-02 隔离真机第 189 轮 sr-20261002075426-3ZR56PDBW3：先在对话里列了一周入职安排（30 项），
+      追问「把上面这个安排做成正式 Word」→ 计划写着「保留原安排中的全部事项」→ 批准后执行回合只有
+      system + 「用户已批准……」，对话一个字没有。做出来的文档 30 项里只对上 1 项，收尾还说「沿用已确认的安排」。
     """
     rows = [row for row in (getattr(state, "controlTranscript", None) or []) if isinstance(row, dict)]
     last_turn = max((i for i, row in enumerate(rows) if row.get("kind") == "turn"), default=None)
     if last_turn is None:
         return []
     rounds: List[List[str]] = []
-    for row in rows[:last_turn]:
+    for row in (rows if include_current else rows[:last_turn]):
         kind = str(row.get("kind") or "")
         text = str(row.get("text") or "").strip()
         if not text:
@@ -914,7 +919,8 @@ def _conversation_history(state: V5SessionState) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     total = 0
     for said, answered in reversed(rounds[-HISTORY_TURNS:]):
-        answered = answered[-HISTORY_SPEECH_MAX_CHARS:] if answered else "（这一轮没有回复）"
+        answered = answered[-HISTORY_SPEECH_MAX_CHARS:] if answered else (
+            "（已写好计划，等用户批准）" if include_current else "（这一轮没有回复）")
         if total + len(said) + len(answered) > HISTORY_MAX_CHARS:
             break
         total += len(said) + len(answered)
@@ -3319,6 +3325,8 @@ def _messages_after_need_answer(
     prior = _user_turn_before_need(state, user_text) or "你好"
     return [
         {"role": "system", "content": _system_prompt(state)},
+        # 这件事之前的对话（_conversation_history 头注）
+        *_conversation_history(state),
         {"role": "user", "content": prior},
         # 提问前读过的技能还算数（答问卷不是新任务，见 _carried_skill_messages 头注）
         *_carried_skill_messages(state),
@@ -5796,7 +5804,10 @@ async def _run_control_turn_body(
         )
         async with aclosing(_control_llm_loop(
             state,
-            [{"role": "system", "content": _system_prompt(state)}, {"role": "user", "content": user_text},
+            [{"role": "system", "content": _system_prompt(state)},
+             # 之前的对话 + 这件事自己的请求（_conversation_history 头注，第 189 轮）
+             *_conversation_history(state, include_current=True),
+             {"role": "user", "content": user_text},
              *_carried_skill_messages(state)],
             user_text=user_text, installed_skills=installed_skills,
             active_connectors=active_connectors, preferred_device=preferred_device,

@@ -102,7 +102,7 @@ def test_the_execution_turn_starts_with_the_planning_skills_already_loaded(harne
     body = carried["data-visualization-discipline"]["skill_message"]
     assert body.startswith('<skill name="data-visualization-discipline"')
     assert local_seed_skill_info("data-visualization-discipline").body[:200] in body  # 真正文，不是一句「已加载」
-    note = next(m["content"] for m in seen[0] if m["role"] == "user")
+    note = next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
     assert "已经在上面加载好了" in note and "不要再调 skill 重开" in note
     assert "执行中要用就先 skill 加载" not in note                      # 都带了，就不再让它重开
 

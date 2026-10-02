@@ -100,7 +100,8 @@ def test_the_execution_turn_is_told_which_skills_planning_opened(harness):
 
     harness.llm_impl = impl
     harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
-    first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
+    # 2026-10-02 起前面带着对话历史（_conversation_history），批准那句不再是第一条 user
+    first_user = next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
     assert first_user.startswith("用户已批准已保存的计划，请按该版本执行。")
     assert "data-storytelling" in first_user and "kpi-dashboard-design" in first_user
     # 2026-10-02 起正文由宿主带进执行轮（test_continuation_turn_carries_opened_skills），这句话说的是「已经加载好了」
@@ -117,7 +118,8 @@ def test_nothing_opened_means_the_execution_message_is_unchanged(harness):
     seen = []
     harness.llm_impl = lambda messages, **kw: (seen.append(copy.deepcopy(messages)), llm_text("好的。"))[1]
     harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
-    first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
+    # 2026-10-02 起前面带着对话历史（_conversation_history），批准那句不再是第一条 user
+    first_user = next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
     assert first_user == "用户已批准已保存的计划，请按该版本执行。"
     assert load_session(sid).controlTranscript
 
@@ -167,7 +169,8 @@ def test_the_execution_turn_also_names_the_installed_skills_nobody_opened(harnes
     seen = []
     harness.llm_impl = lambda messages, **kw: (seen.append(copy.deepcopy(messages)), llm_text("好的。"))[1]
     harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
-    first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
+    # 2026-10-02 起前面带着对话历史（_conversation_history），批准那句不再是第一条 user
+    first_user = next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
     assert "规划时打开过的这些技能已经在上面加载好了：office-skills" in first_user
     others = first_user.split("其他已装、这次还没打开的技能：", 1)[1].split("（", 1)[0]
     assert set(others.split("、")) == {"kpi-dashboard-design", "data-storytelling"}
