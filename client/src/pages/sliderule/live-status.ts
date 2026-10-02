@@ -73,7 +73,14 @@ export function liveStatusText({
   if (liveActionLabel && !liveActionSettled) return liveActionLabel;
   // 最后一步没有可显示的字，也是空闲：第 21 轮 todo_write 的摘要作为 model_speech
   // 挂在末尾，第二版只认「最后一步是收尾的动作 chip」，状态行退回「正在推演...」。
-  if (runtimeKind === "project" && (isSettledAction(latestStep) || !latestStepText)) {
+  //
+  // ⚠ 2026-10-02 第四版。用户截图（采购审批应用，规划阶段答完问卷）：重新加载完技能之后干等 10 分 32 秒，
+  //   状态行一直是「◌ 已加载技能」——像卡在加载技能上，其实是模型那一发在网关上没回来。
+  //   规划阶段还没有工程（runtimeKind 不是 project），上面那条判断进不来，退回了最后一步的过去式。
+  //   liveActionSettled 只由控制面工具回执标（useSlideRuleSession 的 onControlToolResult）——
+  //   工具结束了、没有新工具在跑，下一步就是模型在想，有没有工程都一样。
+  //   HTML 推演的阶段不带这个标，照旧（下面那条反向判据钉着）。
+  if (liveActionSettled || (runtimeKind === "project" && (isSettledAction(latestStep) || !latestStepText))) {
     const doing = (todo || [])
       .find(t => t.status === "in_progress")
       ?.content?.trim();

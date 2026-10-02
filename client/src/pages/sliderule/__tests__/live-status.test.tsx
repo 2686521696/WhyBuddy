@@ -80,6 +80,22 @@ describe("liveStatusText", () => {
   });
 });
 
+describe("规划阶段（还没有工程）也一样", () => {
+  it("用户截图：答完问卷重新加载完技能后干等，状态行说在想下一步，不说「已加载技能」", () => {
+    // 2026-10-02 采购审批应用：已等待 10 分 32 秒，状态行一直是「已加载技能」。规划阶段 runtimeKind 不是 project。
+    expect(liveStatusText({ latestStepText: "加载技能 interaction-design", fallback: "正在推演...",
+      liveActionLabel: "已加载技能", liveActionSettled: true,
+      latestStep: chip("加载技能 interaction-design", "completed") }))
+      .toBe(THINKING_NEXT);
+  });
+
+  it("反向：规划阶段工具还在跑时说它", () => {
+    expect(liveStatusText({ latestStepText: "", fallback: "正在推演...", liveActionLabel: "正在加载技能",
+      latestStep: chip("正在加载技能", "acting") }))
+      .toBe("正在加载技能");
+  });
+});
+
 describe("接在页面上", () => {
   const render = (steps: TurnStep[]) => {
     const turn = streaming(steps);
