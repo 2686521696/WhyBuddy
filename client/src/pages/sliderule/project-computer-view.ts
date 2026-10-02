@@ -305,6 +305,49 @@ export function shouldAutoWakePreview(input: {
   return Boolean(input.lastTool && PREVIEW_ACTION_TOOLS.has(input.lastTool));
 }
 
+/**
+ * 这一轮刚在眼前跑完、控制面这一轮起过 / 验过应用：把预览叫醒一次。
+ *
+ * ⚠ 2026-10-02 用户截图：左栏「独立验收通过」、结果卡已有缩略图，右侧却是
+ *   「预览已暂停，点击以唤醒」。`shouldAutoWakePreview` 只跟**还在跑**的那件
+ *   预览工具（`live`）；验收是在另一只浏览器里做的，这一轮跑完时右侧没有票、
+ *   live 已经落成 false——人刚看着它做完，还得自己点一下才看得到成品。
+ *
+ * 跟「刷新旧会话不许拉沙箱」不冲突：`finishedWhileWatching` 只在本页亲眼看见
+ * 这一轮从跑着变成跑完时为真，打开一个早就跑完的会话永远是 false。
+ * 这一轮没碰过预览工具（只答了一句话、只写了计划）也不醒——沙箱是钱。
+ *
+ * ⚠ 不看当前档位，只看人有没有**自己钉**到别的档。第 184 轮队尾是 project_status，
+ *   跑完 resolveComputerView 落在终端档；要求 view==="preview" 这条就永远不成立
+ *   （第一版就这么写的，判据第一条红）。票换到以后 previewReady 会把档切回预览。
+ */
+export function shouldWakeAfterFinish(input: {
+  finishedWhileWatching: boolean;
+  turnUsedPreview: boolean;
+  hasProject: boolean;
+  userPinned: ComputerView | null;
+  hasTicket: boolean;
+  opening: boolean;
+  starting: boolean;
+  deliverableKind?: string | null;
+}): boolean {
+  if (isOfficeFileDeliverable(input.deliverableKind)) return false;
+  return (
+    input.finishedWhileWatching &&
+    input.turnUsedPreview &&
+    input.hasProject &&
+    (input.userPinned === null || input.userPinned === "preview") &&
+    !input.hasTicket &&
+    !input.opening &&
+    !input.starting
+  );
+}
+
+/** 这一轮的动作里有没有控制面挑的预览工具。 */
+export function turnUsedPreviewTool(tools: Array<string | null | undefined>): boolean {
+  return tools.some(tool => Boolean(tool && PREVIEW_ACTION_TOOLS.has(tool)));
+}
+
 const SOURCE_WRITE_TOOLS = new Set([
   "file_write",
   "file_str_replace",

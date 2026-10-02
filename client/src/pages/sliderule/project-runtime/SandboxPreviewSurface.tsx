@@ -61,6 +61,8 @@ import {
   resolveComputerView,
   shouldAutoOpenPreview,
   shouldAutoWakePreview,
+  shouldWakeAfterFinish,
+  turnUsedPreviewTool,
   type ComputerView,
 } from "../project-computer-view";
 import { sandboxCommandLine } from "../sandbox-session-transcript";
@@ -1036,6 +1038,56 @@ export function SandboxPreviewSurface({
     computerNow.live,
     lastTool,
     runtimeReady,
+    deliverableKind,
+    preview.wake,
+  ]);
+  // 本页亲眼看着这一轮跑完（不是打开一个早跑完的会话）：跑完叫醒一次。见 shouldWakeAfterFinish。
+  // 记住是哪个会话在跑——跑着的时候切到另一个会话，不算「那边刚跑完」。
+  const runningFor = useRef<string | null>(null);
+  const [finishedWhileWatching, setFinishedWhileWatching] = useState(false);
+  const watchKey = `${sessionId ?? ""}:${projectId ?? ""}`;
+  useEffect(() => {
+    if (isRunning) {
+      runningFor.current = watchKey;
+      setFinishedWhileWatching(false);
+      return;
+    }
+    if (runningFor.current === null) return;
+    const same = runningFor.current === watchKey;
+    runningFor.current = null;
+    setFinishedWhileWatching(same);
+  }, [isRunning, watchKey]);
+  const lastTurn = turns?.at(-1);
+  const turnUsedPreview = useMemo(
+    () => (lastTurn ? turnUsedPreviewTool(deriveProjectActivity([lastTurn]).map(row => row.tool)) : false),
+    [lastTurn]
+  );
+  useEffect(() => {
+    if (
+      !shouldWakeAfterFinish({
+        finishedWhileWatching,
+        turnUsedPreview,
+        hasProject: Boolean(projectId),
+        userPinned,
+        hasTicket: Boolean(preview.entryUrl),
+        opening: preview.opening,
+        starting: preview.starting,
+        deliverableKind,
+      })
+    ) {
+      return;
+    }
+    // 一次性：叫过就收回。之后票过期、人自己停掉，都不再自己拉起来。
+    setFinishedWhileWatching(false);
+    void preview.wake();
+  }, [
+    finishedWhileWatching,
+    turnUsedPreview,
+    projectId,
+    userPinned,
+    preview.entryUrl,
+    preview.opening,
+    preview.starting,
     deliverableKind,
     preview.wake,
   ]);
