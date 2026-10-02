@@ -118,6 +118,7 @@ from services.control_context_compact import (
     compact_messages,
     estimate_message_tokens,
     microcompact_messages,
+    skills_in_context,
 )
 from services.model_memory import (
     recall as recall_memory,
@@ -165,6 +166,7 @@ from services.closed_tools import (
 )
 from services.control_skills import (
     SkillInfo,
+    build_skill_message,
     mentioned_skill_playbooks,
     mentioned_skill_slugs,
     normalize_skill_name,
@@ -438,6 +440,10 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
 # 缺省空串 → resolve_tool_scope 给 READ → 没进过分发就直调工厂会被拦。
 _ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
 _PROJECT_TOOLS: ContextVar[Any] = ContextVar("sliderule_project_tools", default=None)
+# 这一发请求的上下文里正文真在的技能（control_context_compact.skills_in_context）。_control_llm_loop
+# 每轮压缩之后、问模型之前重算；分发里新加载成功的当场补进去（同一轮并行两发同名）。
+# None = 不在 loop 里（直调分发），退回 transcript 口径。
+_SKILLS_IN_CONTEXT: ContextVar[Optional[set]] = ContextVar("sliderule_skills_in_context", default=None)
 
 
 def _plan_runs_in_sandbox(state) -> bool:
@@ -827,6 +833,55 @@ def _unopened_installed_skills(state: V5SessionState) -> list:
             if getattr(info, "enabled", True) and info.name not in opened]
 
 
+#: 宿主带进续跑回合的那几发 skill 调用的 id 前缀。断点续跑时靠它从 messages 里认回来。
+CARRIED_SKILL_CALL_PREFIX = "carried-skill-"
+
+
+def _carried_skill_infos(state: V5SessionState) -> list:
+    """这段任务（从用户上一句话起，答问卷、批准计划都不算断开）里打开过、正文还在会话缓存里的技能。"""
+    opened = _skills_opened_since_user_turn(state)
+    return [info for info in _skill_infos_from_cache(state) if info.name in opened]
+
+
+def _carried_skill_messages(state: V5SessionState) -> List[Dict[str, Any]]:
+    """续跑回合开场：把这段任务里已经打开的技能，作为已经发生过的 skill 调用和回执放进上下文。
+
+    ⚠ 2026-10-02 隔离真机第 181 轮 sr-20261001074130-DJAR0Z8FYN（门店月度复盘 PPT）：同一件事分三回合——
+      规划时开了 6 份技能 → 答完问卷那一回合又一份份重开 6 份 → 批准计划后的执行回合再开 7 份，
+      一件事 20 次 skill()。模型一轮并行点名（一发请求），宿主逐个分发约 3.5 秒一份、一轮二十来秒，
+      正文整份再进一次上下文；data-visualization-discipline 一份回执就是 165KB 的事件。原因：续跑回合的 messages 只有
+      system + 一句话，规划里读过的正文不在上下文里；上一版（_planning_skills_note）只是告诉模型
+      「要用就先 skill 加载」，模型就老老实实全部重开。
+      这跟 Claude Code 把调用过的技能在压缩后重新挂回上下文是同一个做法：宿主替它带着，
+      不靠模型自己想起来——第 97 轮就是没想起来、执行轮一份没用上。
+    只带「这段任务里开过的」：新的一句用户话是新任务，开不开、开哪几份交给 Agent。
+    缓存封顶（_SKILL_CACHE_MAX / _SKILL_CACHE_MAX_CHARS）挤掉的那几份不带，_planning_skills_note 照旧点名。
+    """
+    infos = _carried_skill_infos(state)
+    if not infos:
+        return []
+    calls = [
+        {
+            "id": f"{CARRIED_SKILL_CALL_PREFIX}{index}-{info.name}",
+            "type": "function",
+            "function": {"name": "skill", "arguments": json.dumps({"name": info.name}, ensure_ascii=False)},
+        }
+        for index, info in enumerate(infos)
+    ]
+    out: List[Dict[str, Any]] = [{"role": "assistant", "content": "", "tool_calls": calls}]
+    for call, info in zip(calls, infos):
+        out.append({
+            "role": "tool",
+            "tool_call_id": call["id"],
+            "content": bound_tool_result(
+                {"tool": "skill", "ok": True, "skill": info.name, "carried": True,
+                 "skill_message": build_skill_message(info)},
+                "skill",
+            ),
+        })
+    return out
+
+
 def _planning_skills_note(state: V5SessionState) -> str:
     """批准后执行是一段新上下文：规划时打开过的技能正文不在里面，说清是哪几份。
 
@@ -837,8 +892,17 @@ def _planning_skills_note(state: V5SessionState) -> str:
     opened = [str(name) for name in (latest_control_plan(state).get("openedSkills") or []) if str(name).strip()]
     if not opened:
         return ""
-    note = ("规划时打开过这些技能：" + "、".join(opened)
-            + "。这一轮是新的上下文，它们的正文不在这里；执行中要用就先 skill 加载。")
+    # 正文在缓存里的那几份已经由宿主带进这一回合（_carried_skill_messages），别再让模型重开。
+    carried = {info.name for info in _carried_skill_infos(state)}
+    present = [name for name in opened if name in carried]
+    missing = [name for name in opened if name not in carried]
+    note = ""
+    if present:
+        note += ("规划时打开过的这些技能已经在上面加载好了：" + "、".join(present)
+                 + "。直接按它们做，不要再调 skill 重开。")
+    if missing:
+        note += ("规划时还打开过：" + "、".join(missing)
+                 + "。它们的正文不在这一轮的上下文里，执行中要用就先 skill 加载。")
     # ⚠ 2026-09-30 隔离真机第 145/146 轮（@frontend-design 网页）：规划时只开了点名那一份，执行轮这句话就只提它，
     #   其他 14 份已装的整个执行期一次没碰；同类网页不点名时（139/141/142）规划开 3～4 份、执行照用。
     #   write_plan 回执里那张清单模型看了，但那一刻它只想着交计划。执行开工时再摆一次名字（描述在 skill 工具里）。
@@ -1329,7 +1393,11 @@ def _skill_infos_from_cache(state: V5SessionState) -> list:
 #:   降级梯子先削 version_pages / 页面 / replay / capabilityRuns——
 #:   **先扔证据，留这份缓存**。缓存是增强类，证据是闭环类（§7），
 #:   顺序反了。现在只留「真的 skill() 打开过」的那几份，并封顶。
-_SKILL_CACHE_MAX = 6
+#:
+#: ⚠ 2026-10-02 隔离真机第 181 轮（门店月度复盘 PPT）：一件事开了 8 份，正文合计 6 万字没到字数上限，
+#:   份数上限 6 先把 data-storytelling、pptx-deck-context 挤掉了——这份缓存现在是续跑回合带技能的来源
+#:   （_carried_skill_messages），挤掉的那几份执行轮就得重开。真正管落库体积的是字数上限，份数放到 12。
+_SKILL_CACHE_MAX = 12
 _SKILL_CACHE_MAX_CHARS = 80_000
 
 
@@ -3197,6 +3265,8 @@ def _messages_after_need_answer(
     return [
         {"role": "system", "content": _system_prompt(state)},
         {"role": "user", "content": prior},
+        # 提问前读过的技能还算数（答问卷不是新任务，见 _carried_skill_messages 头注）
+        *_carried_skill_messages(state),
         {
             "role": "assistant",
             "content": "",
@@ -4947,6 +5017,8 @@ async def _control_llm_loop(
     tools=None：用本轮清单（list_control_tools）。假设卡等确认时本函数
     不会被叫到——见 `_complete_waiting_for_assumptions`。
     """
+    # 进门先按手上的 messages 算一遍（断点续跑恢复的 messages、宿主带进来的技能都在里面），每轮压缩后再算。
+    _SKILLS_IN_CONTEXT.set(skills_in_context(messages))
 
     async def _maybe_over_cap(*, include_context: bool = False) -> Optional[Dict[str, Any]]:
         """到顶了就返回结构化的停止信息，没到顶返回 None。
@@ -5115,6 +5187,8 @@ async def _control_llm_loop(
                     async for event in _settle_runtime_cap(state, reason, capped):
                         yield event
                     return
+            # 压缩可能刚折掉技能正文：「已加载」以这一刻真在的为准（skills_in_context 头注）
+            _SKILLS_IN_CONTEXT.set(skills_in_context(messages))
 
             # ── 原地打转：先判断状态，再花钱问模型 ────────────────────────
             # 抄 grok 主循环的**顺序**，这一点比阈值本身重要：
@@ -5204,14 +5278,6 @@ async def _control_llm_loop(
             #
             # ⚠ 判在**采样之前**（抄 grok 主循环的顺序）：先问「是不是又要空转一轮」，
             #   再花钱。判在采样之后等于多付一发才停。
-            if not restoring_calls and readonly_streak.take_nudge():
-                print(
-                    f"[control] readonly_nudge rounds={readonly_streak.rounds} "
-                    f"round={_round}",
-                    flush=True,
-                )
-                _push_system_reminder(messages, readonly_streak.nudge_text())
-
             offered = list_control_tools(state) if tools is None else list(tools)
             # ⚠ **只在模型手上真有写工具时才掐。** 点火前那一档的目录里
             #   （message_ask_user / search_evidence / write_plan / recall …）
@@ -5223,6 +5289,18 @@ async def _control_llm_loop(
                 tool_writes(((item.get("function") or {}).get("name")))
                 for item in offered if isinstance(item, dict)
             )
+            # 提醒也只在手上有写工具时发——跟下面的掐同一个条件。
+            #
+            # ⚠ 2026-10-02 隔离真机第 181 轮 sr-20261001074130-DJAR0Z8FYN（门店月度复盘 PPT）：规划阶段手上只有
+            #   ask / write_plan / skill，提醒照发「现在就用 file_write 写进去」——那件工具这一轮根本没摆出来，
+            #   规划阶段也不许写。原来提醒在算 can_write 之前，掐有条件、捅没有。
+            if not restoring_calls and can_write and readonly_streak.take_nudge():
+                print(
+                    f"[control] readonly_nudge rounds={readonly_streak.rounds} "
+                    f"round={_round}",
+                    flush=True,
+                )
+                _push_system_reminder(messages, readonly_streak.nudge_text())
             if not restoring_calls and can_write and readonly_streak.should_hard_stop():
                 used = readonly_streak.rounds
                 print(
@@ -5450,7 +5528,11 @@ async def _control_llm_loop(
                 # ⚠ 用 `step_is_read_only` 而**不是**上面那个紧档判断：
                 #   工程工具没进 TOOL_SCOPE、缺省 READ，拿紧档判断当「没写」
                 #   会把 project_patch 也算成读（见 tool_writes 头注那次回归）。
-                readonly_streak.observe(step_is_read_only(calls))
+                # ⚠ 2026-10-02 第 181 轮：只数「能写却没写」的轮。规划阶段没有写工具，那几轮（加载技能、问卷、写计划）
+                #   原来照样 +1，而这道游标跨回合——规划攒到 5，执行回合开头加载两轮技能就到 7 又被捅一次；
+                #   规划里多问一次问卷，执行回合第一发就撞上 12 被掐。没得写的轮不算读也不算写：不加、不清零。
+                if can_write:
+                    readonly_streak.observe(step_is_read_only(calls))
                 # ⚠ 立刻写回 state：这道闸跨回合，只落 checkpoint 的话，
                 #   下一个回合（新的用户消息）会从零开始——那正是第一版
                 #   一次都没响的原因。`_apersist(state)` 在 checkpoint() 里。
@@ -5659,7 +5741,8 @@ async def _run_control_turn_body(
         )
         async with aclosing(_control_llm_loop(
             state,
-            [{"role": "system", "content": _system_prompt(state)}, {"role": "user", "content": user_text}],
+            [{"role": "system", "content": _system_prompt(state)}, {"role": "user", "content": user_text},
+             *_carried_skill_messages(state)],
             user_text=user_text, installed_skills=installed_skills,
             active_connectors=active_connectors, preferred_device=preferred_device,
             design_system_id=design_system_id, original_goal=_goal_text(state),
@@ -6571,7 +6654,9 @@ async def _dispatch_tool(
         summary = project_tool_summary("skill", args)
         yield tool_start_event("skill", summary=summary or "")
         # 先看上一发成功结果，再认这一发 start——正在飞的不算已加载。
-        if slug and slug in _skills_loaded_this_turn(state):
+        in_context = _SKILLS_IN_CONTEXT.get()
+        loaded = in_context if in_context is not None else _skills_loaded_this_turn(state)
+        if slug and slug in loaded:
             yield {
                 "type": "control_tool_result",
                 "tool": "skill",
@@ -6579,8 +6664,8 @@ async def _dispatch_tool(
                 "skill": slug,
                 "alreadyLoaded": True,
                 "skill_message": (
-                    f"「{slug}」本回合已经加载过。不要再调 skill，"
-                    "按未完成待办继续。"
+                    f"「{slug}」的正文已经在上面的上下文里。不要再调 skill，"
+                    "照着它和未完成待办继续。"
                 ),
             }
             return
@@ -6604,6 +6689,8 @@ async def _dispatch_tool(
             error=result.get("error"),
         )
         if result.get("ok") and result.get("skill"):
+            if in_context is not None:
+                in_context.add(str(result.get("skill")))
             hit = next((i for i in infos if getattr(i, "name", None) == result.get("skill")), None)
             if hit is None and seeded is not None and seeded.name == result.get("skill"):
                 hit = seeded

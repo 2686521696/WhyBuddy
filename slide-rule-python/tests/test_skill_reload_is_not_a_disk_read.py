@@ -461,7 +461,7 @@ def test_store_failure_is_not_swallowed_as_an_empty_catalog(monkeypatch):
 
 def test_reload_and_error_park_are_on_the_live_dispatch():
     body = _fn_body(strip_python(CONTROL_SRC), "_dispatch_tool")
-    assert "_skills_loaded_this_turn" in body
+    assert "_SKILLS_IN_CONTEXT" in body and "_skills_loaded_this_turn" in body
     assert "alreadyLoaded" in body
     assert "_skill_turn_catalog" in body
     assert "classify_skill_catalog_result" in body

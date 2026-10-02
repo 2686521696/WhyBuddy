@@ -51,6 +51,15 @@ _MICRO_KEEP_CHARS = 40_000
 _POINTER_TOOLS = frozenset({
     "file_read", "read_file", "project_read", "skill", "bash", "shell_exec",
 })
+#: microcompact 立刻折的那几样。**不含 skill**。
+#:
+#: ⚠ 2026-10-02 隔离真机第 181 轮 sr-20261001074130-DJAR0Z8FYN（门店月度复盘 PPT）：规划时按顺序开了 office-skills 12k、
+#:   pptx-deck-context 2.4k、pptx-slide-specification 2.7k、data-visualization-discipline 37.8k、data-storytelling 2.9k、
+#:   theme-factory 3.8k。最近 40k 字只装得下最后两份，前四份当场折成桩，桩上写「本回合已经加载过，不要再调 skill」，
+#:   分发那边也回「已加载」——模型手里没有那四份说明书，还被禁止再拿。技能是**这件事全程要照着做的指令**，
+#:   不是能随时 file_read 回来的磁盘文件；Claude Code 也是把调用过的技能留在上下文里、压缩后重新挂回。
+#:   技能只在窗口真快满时（compact_messages）才折，而且排在别的工具后面折；折了就说实话、允许再加载。
+_MICRO_TOOLS = _POINTER_TOOLS - {"skill"}
 
 
 def tool_result_stub(tool_name: str = "tool", path: str | None = None,
@@ -64,10 +73,13 @@ def tool_result_stub(tool_name: str = "tool", path: str | None = None,
     """
     name = str(tool_name or "tool")
     if name == "skill":
+        # 技能只在窗口压缩时才折（_MICRO_TOOLS 头注），折了正文就真不在了：说实话，允许再加载一次。
+        # 别写成 file_read/grep——技能不是源码树里的文件（09-21 那一单）。
         body: Dict[str, Any] = {
             "compacted": True,
             "tool": "skill",
-            "hint": "技能正文本回合已经加载过。不要再调 skill。按未完成待办继续。",
+            "hint": "技能正文因为上下文窗口快满被折叠了。还要照着它做，就用 skill 再加载一次（它不是工程里的文件，别去工程里找）；"
+                    "用不上了就按未完成待办继续。",
         }
         if skill:
             body["skill"] = skill
@@ -103,6 +115,31 @@ def skill_name_from_tool_content(content: Any) -> str | None:
             if end > start:
                 return message[start:end]
     return None
+
+
+def skills_in_context(messages: Sequence[Any]) -> set:
+    """这一刻 messages 里**正文真在**的技能名。折成桩的、裁成预览的都不算。
+
+    skill 分发据此回「已加载」（rehearsal_control._SKILLS_IN_CONTEXT）。原来按 transcript 数「本回合开过」，
+    正文被折掉以后照样说已加载——第 181 轮模型手里没有说明书，还拿不回来。
+    """
+    names: set = set()
+    for row in messages or []:
+        if not isinstance(row, dict) or row.get("role") != "tool":
+            continue
+        # 回执后面可能贴着 <system-reminder>（_push_system_reminder 追加在最后一条 tool 上），只认开头那段 JSON。
+        try:
+            body, _end = json.JSONDecoder().raw_decode(str(row.get("content") or "").lstrip())
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(body, dict) or body.get("compacted") or body.get("alreadyLoaded"):
+            continue
+        message = str(body.get("skill_message") or "")
+        if message.startswith("<skill "):
+            name = skill_name_from_tool_content(body)
+            if name:
+                names.add(name)
+    return names
 
 
 def path_from_tool_content(content: Any) -> str | None:
@@ -172,7 +209,7 @@ def _notice(folded: int, tokens_after: int, max_tokens: int, tools: Sequence[str
         f"{COMPACT_NOTICE_PREFIX}窗口占用已压到 {tokens_after}/{max_tokens} token"
         f"（折叠 {folded} 条：{names}{extra}）。"
         "源码以工程里的为准，需要哪份就再读。"
-        "已加载的技能不要再调 skill。"
+        "被折叠的技能还要照着做就再 skill 加载一次，没被折叠的不用重开。"
         "按未完成待办继续，不要重做已完成的步骤。"
     )
     return {"role": "system", "content": text}
@@ -199,6 +236,9 @@ def compact_messages(
     out = [row for row in source if not is_compact_notice(row)]
     tool_indices = [i for i, row in enumerate(out) if row.get("role") == "tool"]
     protected = set(tool_indices[-_KEEP_TAIL_TOOLS:])
+    # 技能正文最后折：读过的文件、命令输出都能再取，技能是这件事全程的指令（_MICRO_TOOLS 头注）。
+    tool_indices = ([i for i in tool_indices if _tool_name(out, i) != "skill"]
+                    + [i for i in tool_indices if _tool_name(out, i) == "skill"])
     target = max(1, min(compact_at_tokens - 1, max_tokens // 2))
     folded_names: List[str] = []
 
@@ -247,7 +287,7 @@ def microcompact_messages(messages: Sequence[Any]) -> Tuple[List[Dict[str, Any]]
     before = estimate_message_tokens(source)
     bulky = [
         i for i, row in enumerate(source)
-        if row.get("role") == "tool" and _tool_name(source, i) in _POINTER_TOOLS
+        if row.get("role") == "tool" and _tool_name(source, i) in _MICRO_TOOLS
     ]
     protected: set[int] = set()
     kept_chars = 0

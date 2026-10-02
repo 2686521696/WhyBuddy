@@ -33,7 +33,9 @@ import copy
 
 import pytest
 
-from control_turn_support import ControlHarness, llm_tool, new_sid, seed_session, six_fields
+from control_turn_support import (
+    ControlHarness, llm_tool, new_sid, seed_approved_session, seed_session, six_fields,
+)
 from services.action_stationarity import (
     NUDGE_AFTER_READONLY_ROUNDS,
     NUDGE_AGAIN_AFTER_READONLY_ROUNDS,
@@ -176,9 +178,13 @@ def _snapshots(harness, impl):
 
 
 def test_活路径_连着只读时提醒真的进了下一发对话(harness, bounded_rounds):
-    """变异：把 `readonly_streak.take_nudge()` 那段删掉 → 本条红。"""
+    """变异：把 `readonly_streak.take_nudge()` 那段删掉 → 本条红。
+
+    ⚠ 2026-10-02：这条原来用没批准的会话（手上一件写工具都没有）证提醒会响——那正是第 181 轮的病：
+      规划阶段被催「用 file_write 写进去」。现在用批准过计划的会话：手上真有写工具、却一直只读，才该捅。"""
     sid = new_sid("readonly-nudge")
-    _confirmed(sid)
+    seed_approved_session(sid, goal={"text": "请假系统", "status": "clear"},
+                          modelVersions=[{"id": "v1", "model": {"pages": []}}])
     shots = _snapshots(
         harness,
         lambda messages, **kw: llm_tool(
@@ -236,6 +242,30 @@ def test_反向_点火前没有写工具_这道闸不许响(harness, bounded_rou
     assert len(harness.llm_calls) == bounded_rounds.max_rounds
 
 
+def test_反向_没有写工具的轮不捅也不记账(harness, bounded_rounds):
+    """⚠ 2026-10-02 隔离真机第 181 轮 sr-20261001074130-DJAR0Z8FYN（门店月度复盘 PPT）：规划阶段手上只有
+    ask / write_plan / skill，加载技能、问卷、写计划几轮下来被捅「现在就用 file_write 写进去」（那件工具根本没摆出来）；
+    这几轮还记进了跨回合的游标，执行回合开头加载两轮技能就到 7 又被捅一次，多问一次问卷执行第一发就撞上 12。
+    变异：提醒去掉 can_write 条件 → 第一个断言红；observe 去掉 can_write 条件 → 第二个断言红。"""
+    sid = new_sid("readonly-planning")
+    # 上一段执行里已经攒了 5 轮只读（真有写工具的那几轮），现在回到没有写工具的规划
+    seed_session(sid, goal={"text": "请假系统", "status": "clear"},
+                 modelVersions=[{"id": "v1", "model": {"pages": []}}],
+                 controlReadOnly={"rounds": 5, "nudgedAt": 0})
+    shots = _snapshots(
+        harness,
+        lambda messages, **kw: llm_tool(
+            "search_evidence", {"query": f"看一眼{len(harness.llm_calls)}"},
+            call_id=f"c{len(harness.llm_calls)}",
+        ),
+    )
+    harness.post(six_fields(sid, "帮我查查请假流程"))
+    assert len(shots) > NUDGE_AGAIN_AFTER_READONLY_ROUNDS  # 轮数够，原来两档都会响
+    assert not any("一次写入都没有" in str(m.get("content") or "") for snap in shots for m in snap)
+    from services.slide_rule_session import load_session
+    assert (load_session(sid).controlReadOnly or {}).get("rounds") == 5  # 不加、不清零
+
+
 def test_一写就清零_正常节奏攒不到硬停():
     """写过就重新计数。没有这一条，「读三轮 → 写一次 → 再读三轮」这种
     完全正常的节奏会被累加到 12 上，硬停就成了误伤。
@@ -290,6 +320,7 @@ def test_接在真链路上_不是摆着好看():
         pathlib.Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
     )
     assert "readonly_streak.observe(step_is_read_only(calls))" in src
+    assert "if can_write:\n                    readonly_streak.observe(" in src.replace("\r", "")
     assert "readonly_streak.take_nudge()" in src
     # ⚠ **跨回合**：必须从 state 读出来、写回去。只落 checkpoint 的话，
     #   新的用户消息会让它从零开始——那正是第一版真机一次没响的原因。

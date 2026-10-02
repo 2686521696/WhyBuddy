@@ -103,7 +103,8 @@ def test_the_execution_turn_is_told_which_skills_planning_opened(harness):
     first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
     assert first_user.startswith("用户已批准已保存的计划，请按该版本执行。")
     assert "data-storytelling" in first_user and "kpi-dashboard-design" in first_user
-    assert "skill 加载" in first_user
+    # 2026-10-02 起正文由宿主带进执行轮（test_continuation_turn_carries_opened_skills），这句话说的是「已经加载好了」
+    assert "已经在上面加载好了" in first_user
 
 
 def test_nothing_opened_means_the_execution_message_is_unchanged(harness):
@@ -167,6 +168,6 @@ def test_the_execution_turn_also_names_the_installed_skills_nobody_opened(harnes
     harness.llm_impl = lambda messages, **kw: (seen.append(copy.deepcopy(messages)), llm_text("好的。"))[1]
     harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
     first_user = next(m["content"] for m in seen[0] if m["role"] == "user")
-    assert "规划时打开过这些技能：office-skills" in first_user
+    assert "规划时打开过的这些技能已经在上面加载好了：office-skills" in first_user
     others = first_user.split("其他已装、这次还没打开的技能：", 1)[1].split("（", 1)[0]
     assert set(others.split("、")) == {"kpi-dashboard-design", "data-storytelling"}

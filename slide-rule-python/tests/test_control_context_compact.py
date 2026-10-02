@@ -136,46 +136,43 @@ def test_microcompact_snips_old_file_reads_without_waiting_for_window():
     assert stub["tool"] == "file_read"
 
 
-def test_microcompact_skill_stub_does_not_tell_model_to_file_read():
-    """真机 sr-20260921150545：skill 桩写 file_read/grep，模型第三遍加载技能。"""
+def test_skill_bodies_are_not_microcompacted_and_the_window_stub_tells_the_truth():
+    """真机 sr-20260921150545：skill 桩写 file_read/grep，模型第三遍加载技能。
+
+    ⚠ 2026-10-02 隔离真机第 181 轮：microcompact 把一回合里较早开的四份技能折成桩，桩上写「不要再调 skill」——
+      模型手里没有说明书，也不许拿回来。现在 microcompact 不折技能；窗口真快满时才折，而且排在别的工具之后，
+      折了的桩说实话（可以再加载），仍然不许写成 file_read/grep。
+    """
     from services.control_context_compact import skill_name_from_tool_content, tool_result_stub
 
     payload = json.dumps({
         "ok": True,
         "skill": "office-skills",
-        # 2026-09-28 第 99 轮起按字数留最近一段；正文要够大才会被折（本条测的是桩的措辞）。
         "skill_message": '<skill name="office-skills">HOW TO MAKE PPT WITH PYTHON-PPTX ' + ("X" * 15000) + "</skill>",
     }, ensure_ascii=False)
+    read = json.dumps({"path": "build_deck.py", "content": "Y" * 15000})
     messages = [
         {"role": "system", "content": "你是控制面。"},
         {"role": "user", "content": "做PPT"},
     ]
-    for index in range(4):
-        call_id = f"sk-{index}"
-        messages.append({
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{
-                "id": call_id,
-                "type": "function",
-                "function": {"name": "skill", "arguments": '{"name":"office-skills"}'},
-            }],
-        })
-        messages.append({"role": "tool", "tool_call_id": call_id, "content": payload})
+    for index, (tool, content) in enumerate([("skill", payload), ("file_read", read), ("file_read", read),
+                                             ("file_read", read), ("skill", payload), ("file_read", read)]):
+        call_id = f"c-{index}"
+        messages.append({"role": "assistant", "content": "", "tool_calls": [{
+            "id": call_id, "type": "function",
+            "function": {"name": tool, "arguments": '{"name":"office-skills"}' if tool == "skill" else "{}"}}]})
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": content})
     out, report = microcompact_messages(messages)
-    assert report.did_compact is True
-    stubs = [
-        json.loads(row["content"])
-        for row in out
-        if row.get("role") == "tool" and "compacted" in str(row.get("content"))
-    ]
-    assert stubs
-    for stub in stubs:
-        assert stub["tool"] == "skill"
-        assert stub["skill"] == "office-skills"
-        assert "file_read" not in stub["hint"]
-        assert "grep" not in stub["hint"]
-        assert "不要再调 skill" in stub["hint"]
-    assert skill_name_from_tool_content(payload) == "office-skills"
+    assert report.did_compact is True                                                        # 旧读取照折
+    assert [row["content"] for row in out if row.get("role") == "tool"].count(payload) == 2  # 技能一份没折
+
+    tokens = estimate_message_tokens(messages)
+    # 只需折一条就够：折的必须是读取，最早那份技能（排在它前面）原样留着——技能最后折
+    folded, report = compact_messages(messages, max_tokens=tokens * 2, compact_at_tokens=tokens - 1)
+    assert report.did_compact is True and report.folded_tools == ("file_read",)
+    assert [row["content"] for row in folded if row.get("role") == "tool"].count(payload) == 2
     skill_stub = json.loads(tool_result_stub("skill", skill="office-skills"))
-    assert "file_read" not in skill_stub["hint"]
+    assert skill_stub["skill"] == "office-skills"
+    assert "file_read" not in skill_stub["hint"] and "grep" not in skill_stub["hint"]
+    assert "再加载" in skill_stub["hint"] and "不要再调 skill" not in skill_stub["hint"]
+    assert skill_name_from_tool_content(payload) == "office-skills"

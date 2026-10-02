@@ -45,13 +45,23 @@ def test_the_round99_working_set_survives():
 
 
 def test_older_bulk_is_still_folded_right_away():
-    """反向：立刻折叠没丢——更早的技能正文照旧变桩，占用确实下降。"""
+    """反向：立刻折叠没丢——更早的源码读取照旧变桩，占用确实下降。
+
+    ⚠ 2026-10-02 起技能正文不再被立刻折（control_context_compact._MICRO_TOOLS 头注，第 181 轮）：
+      这条原来断言「折掉的全是技能」——那正是第 181 轮模型丢了说明书的原因。现在折的是旧读取，技能原样留着。"""
     messages = _round99()
+    for i in range(20, 26):  # 再往前多读几份大文件，才有旧读取可折
+        messages.insert(2, {"role": "tool", "tool_call_id": f"call-{i}",
+                            "content": json.dumps({"path": f"src/old{i}.ts", "content": "O" * 15000})})
+        messages.insert(2, {"role": "assistant", "content": "", "tool_calls": [{
+            "id": f"call-{i}", "type": "function", "function": {"name": "file_read", "arguments": "{}"}}]})
     out, report = microcompact_messages(messages)
     assert report.did_compact and report.tokens_after < estimate_message_tokens(messages)
     stubs = [json.loads(row["content"]) for row in out
              if row.get("role") == "tool" and '"compacted": true' in row["content"]]
-    assert {stub["tool"] for stub in stubs} == {"skill"}
+    assert stubs and {stub["tool"] for stub in stubs} == {"file_read"}
+    skills = [row["content"] for row in out if row.get("role") == "tool" and "<skill name=" in row["content"]]
+    assert len(skills) == 4                       # 四份技能正文一份没折
 
 
 def test_a_long_session_is_still_cut_to_a_small_tail():
