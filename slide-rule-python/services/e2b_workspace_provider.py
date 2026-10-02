@@ -15,6 +15,7 @@ Do not inject log lines into a dummy `cat` PTY and call it execution.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import math
 import os
@@ -29,6 +30,7 @@ from urllib.parse import urlsplit
 
 from services.session_uploads import WORKSPACE_ROOT, sanitize_filename
 from services.project_manifest import build_manifest
+from services.project_tool_contracts import SHELL_COMMAND_MAX_CHARS
 from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import (
     ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES, MAX_SITE_COLLECT_BYTES,
@@ -49,6 +51,8 @@ CONSOLE_TYPE_INTERVAL = 0.02
 #   等待被打字吃光，只好 shell_wait 再等。办公话题的核对命令动辄四五百字，一轮光
 #   打字就是几分钟。打字效果留着，写入次数封顶：短命令照旧一字一敲，长命令成段地敲。
 CONSOLE_TYPE_MAX_WRITES = 32
+#: 太长、不往 PTY 里敲的命令存在这里（_staged_command）。工作区外：不是工程源码，不会被收回成交付。
+CONSOLE_STAGE_ROOT = "/home/user/.whybuddy-cmd"
 #: 退出标记到了、PTY 也杀了之后，最多再等读循环几秒。后台孙进程握着 PTY 时读循环不会自己停
 #: （_console_finish_after 头注）。
 CONSOLE_ORPHAN_GRACE = 3.0
@@ -871,6 +875,19 @@ class E2BWorkspaceProvider:
         except Exception as exc:
             raise WorkspaceProviderError("e2b_start_failed", result=_result(exc)) from exc
 
+    def _staged_command(self, handle: WorkspaceHandle, command: str) -> str:
+        """超过敲键上限的命令先存成工作区外的临时脚本，PTY 只敲 `bash 那个文件`（SHELL_SCRIPT_MAX_CHARS 头注）。
+
+        存在 CONSOLE_STAGE_ROOT（不在工程目录里：不会被当成源码、不会被收回成交付、不进构建）。
+        文件名按内容哈希，同一条命令重跑写同一个文件。敲进去的那一行和原文跑法一样：
+        pty_line 本来就把多行包成 `bash -c`，这里换成 bash 读文件。
+        """
+        if len(command) <= SHELL_COMMAND_MAX_CHARS:
+            return command
+        name = f"cmd-{hashlib.sha256(command.encode('utf-8')).hexdigest()[:16]}.sh"
+        self._write_files_at_root(handle, {name: command}, CONSOLE_STAGE_ROOT)
+        return f"bash {CONSOLE_STAGE_ROOT}/{name}"
+
     def start_console(self, handle: WorkspaceHandle, command: str, *, timeout_seconds: int = 900) -> ProcessResult:
         """Open a real bash PTY and type `command`. Echo is the live typing.
 
@@ -882,7 +899,7 @@ class E2BWorkspaceProvider:
         if (not isinstance(command, str) or not command.strip()
                 or "\x00" in command or not 1 <= timeout_seconds <= 86_400):
             raise ValueError("invalid_workspace_command")
-        command = pty_line(command)
+        command = pty_line(self._staged_command(handle, command))
         try:
             from e2b.sandbox.commands.command_handle import PtySize
 

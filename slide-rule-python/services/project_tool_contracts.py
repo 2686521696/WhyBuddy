@@ -348,10 +348,18 @@ SANDBOX_FONTS_NOTE = (
 #:   6716 / 8556 字两条同形状 heredoc 都跑完、exit 0，打字加运行各 4.6 s。
 #:   取 8000，跟 file_read 一次的窗口同量级。
 SHELL_COMMAND_MAX_CHARS = 8000
+#: 一条命令**收**多长。超过 SHELL_COMMAND_MAX_CHARS 的不往 PTY 里敲：宿主先把原文存成沙盒里的临时脚本
+#: （工作区外，E2BWorkspaceProvider._staged_command），PTY 只敲 `bash 那个文件`，跑法一样。
+#: ⚠ 2026-10-02 隔离真机第 183 轮 sr-20261002042304-7451W4YMC3（事故复盘 Word）：模型把整份生成脚本写成一条
+#:   heredoc（3981 个输出 token，那一发 374 秒），超 8000 被 project_tool_arguments_invalid 打回，然后原样
+#:   改成 file_write 再写一遍——一轮白生成。第 131/151/155/174/175 轮同一个形状（描述里早就写着上限，模型照样写这么长）。
+#:   8000 量的是「敲进 PTY」这一层（见上），不是沙盒能跑多长；存文件再跑就没有这一层。64000 跟 file_write
+#:   单文件同量级，再长的照旧拒（参数错误回执带字段和上限）。
+SHELL_SCRIPT_MAX_CHARS = 64_000
 
 
 class ShellExecArguments(ToolArguments):
-    command: str = Field(min_length=1, max_length=SHELL_COMMAND_MAX_CHARS)
+    command: str = Field(min_length=1, max_length=SHELL_SCRIPT_MAX_CHARS)
     id: str | None = Field(default=None, min_length=1, max_length=240)
     exec_dir: str | None = Field(default=None, max_length=240)
     sudo: bool = False
@@ -490,7 +498,7 @@ class GithubReplaceArguments(ToolArguments):
 
 
 class GithubBashArguments(ToolArguments):
-    command: str = Field(min_length=1, max_length=SHELL_COMMAND_MAX_CHARS)
+    command: str = Field(min_length=1, max_length=SHELL_SCRIPT_MAX_CHARS)
     sudo: bool = False
     is_background: bool = False
     timeout: float | None = Field(default=None, ge=0, le=SHELL_EXEC_MAX_FOREGROUND_SECONDS)
@@ -533,7 +541,7 @@ def sandbox_shell_script(command: str) -> str:
     #   Field，这里还写死 2000——2000～8000 字的命令过了校验、在这里被 not_allowed 打回，回执
     #   没有一个字说是太长（第 82 轮：装 Playwright && 起服务 && 跑点击脚本，被拒后放弃）。
     #   当时的两条判据一条只校验 Field、一条直接往 PTY 里敲，都没走这个函数（本仓 §一之二）。
-    if not text or len(text) > SHELL_COMMAND_MAX_CHARS:
+    if not text or len(text) > SHELL_SCRIPT_MAX_CHARS:
         raise ValueError("project_shell_command_not_allowed")
     if "\x00" in text:
         raise ValueError("project_shell_command_not_allowed")
@@ -769,7 +777,7 @@ _DESCRIPTIONS = {
     "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once; if it occurs several times the call fails and says on which lines — add surrounding text so it matches once, or pass replace_all=true to change every occurrence (e.g. one colour used in many rules). Several different changes in the same file (renumbering chapters, renaming a function and its callers): send edits=[{old_str, new_str, replace_all?}, ...] instead of old_str/new_str — applied in order to the same file, each later edit sees the earlier ones, all-or-nothing, one revision. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
-    "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other command runs as grok-build bash in /home/user/workspace; multi-line commands and heredocs are fine. The command is at most {command_max} characters — for a longer script, file_write it first, then run it (python3 that file). An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. Project source files (what file_write/file_str_replace save) are re-written from the saved source before every command, so editing them inside the sandbox (python/sed) does not stick — change sources with file_str_replace/file_write. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. sudo is rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
+    "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other command runs as grok-build bash in /home/user/workspace; multi-line commands and heredocs are fine. A command up to {command_max} characters is typed into the terminal as is; a longer one (up to {script_max}) is saved to a temporary script outside the project and run with bash — same result. For a script you will rerun or edit, file_write it into the project first. An office workspace (no package.json) keeps that same sandbox for the next command, so packages you installed stay. Project source files (what file_write/file_str_replace save) are re-written from the saved source before every command, so editing them inside the sandbox (python/sed) does not stick — change sources with file_str_replace/file_write. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace come back on this receipt as officeFiles — that is the deliverable; do not base64 them into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. sudo is rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
     "shell_view": "Show the current screen of a project command: its status plus the last part of its output (the tail, like a terminal). A finished command returns the same receipt as shell_wait. To page through the output from the start, use project_logs. id is the operationId from shell_exec; omit it to read the latest operation.",
     "shell_wait": "Wait up to seconds (max 30) for a queued project command. It returns the moment the command finishes, so one generous wait beats several short polls. id is the operationId; omit it to wait on the latest operation.",
     "shell_write_to_process": "Type into the live bash PTY of a queued project command. id is the operationId from shell_exec. press_enter defaults true. The worker delivers bytes on the next poll; a finished operation is rejected.",
@@ -792,7 +800,7 @@ _DESCRIPTIONS = {
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero matches fail closed; several matches fail and say on which lines unless replace_all=true, which changes every occurrence. Same store as file_str_replace.",
-    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). Multi-line commands and heredocs are fine; the command is at most {command_max} characters — for a longer script, file_write it first, then python3 that file. An office workspace keeps the same sandbox across commands (installed packages stay). Project source files (what file_write/file_str_replace save) are re-written from the saved source before every command, so editing them inside the sandbox (python/sed) does not stick — change sources with file_str_replace/file_write. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace are listed on this receipt as officeFiles; that path is the deliverable — do not base64 the file into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. is_background=true returns running, not completion. sudo is rejected.",
+    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished plus a short excerpt; full stdout stays in operation logs (project_logs / shell_view). Multi-line commands and heredocs are fine; a command up to {command_max} characters is typed as is; a longer one (up to {script_max}) is saved to a temporary script outside the project and run with bash. For a script you will rerun or edit, file_write it into the project first. An office workspace keeps the same sandbox across commands (installed packages stay). Project source files (what file_write/file_str_replace save) are re-written from the saved source before every command, so editing them inside the sandbox (python/sed) does not stick — change sources with file_str_replace/file_write. {sandbox_fonts} .pptx/.docx/.xlsx written in the workspace are listed on this receipt as officeFiles; that path is the deliverable — do not base64 the file into logs or file_write. officeDownloads maps each file to the link to give the user; never give a sandbox path. is_background=true returns running, not completion. sudo is rejected.",
     "grep": "Search saved source with a regular expression across the tree. Optional path is a file or directory prefix; optional glob limits names. This is not shell execution.",
     "list_dir": "List saved source paths under path. path may be '.' for the whole tree.",
     "glob": "Find saved source paths whose name or relative path matches pattern. Optional path limits the directory prefix.",
@@ -822,6 +830,7 @@ def interpolate_description(description: str) -> str:
         .replace("{max_read_chars}", str(PROJECT_READ_MAX_CHARS))
         .replace("{fg_block_secs}", str(int(SHELL_EXEC_FOREGROUND_BLOCK_SECONDS)))
         .replace("{command_max}", str(SHELL_COMMAND_MAX_CHARS))
+        .replace("{script_max}", str(SHELL_SCRIPT_MAX_CHARS))
         .replace("{sandbox_fonts}", SANDBOX_FONTS_NOTE)
     )
 

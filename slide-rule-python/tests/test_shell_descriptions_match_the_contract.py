@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from services.project_tool_contracts import (
     SHELL_COMMAND_MAX_CHARS,
+    SHELL_SCRIPT_MAX_CHARS,
     GithubBashArguments,
     ShellExecArguments,
     classify_shell_command,
@@ -54,15 +55,17 @@ def test_neither_description_says_newlines_are_rejected():
 def test_both_descriptions_state_the_real_limit_and_the_way_around_it():
     for model in (ShellExecArguments, GithubBashArguments):
         limit = next(m.max_length for m in model.model_fields["command"].metadata if hasattr(m, "max_length"))
-        assert limit == SHELL_COMMAND_MAX_CHARS
+        assert limit == SHELL_SCRIPT_MAX_CHARS
     for name, text in _descriptions().items():
-        assert f"at most {SHELL_COMMAND_MAX_CHARS} characters" in text, name
+        # 2026-10-02 起超过敲键上限的命令存成临时脚本再跑：描述要说清两个数和这条出路
+        assert f"up to {SHELL_COMMAND_MAX_CHARS} characters" in text, name
+        assert f"up to {SHELL_SCRIPT_MAX_CHARS}" in text and "temporary script" in text, name
         assert "file_write" in text, name
 
 
 def test_the_limit_is_really_enforced():
     """反向：上限不是只写在描述里。"""
-    script = ROUND66_HEAD + "x = 1\n" * SHELL_COMMAND_MAX_CHARS + "PY"
+    script = ROUND66_HEAD + "x = 1\n" * SHELL_SCRIPT_MAX_CHARS + "PY"
     with pytest.raises(ValidationError):
         ShellExecArguments(command=script)
     ShellExecArguments(command=ROUND66_HEAD + "print(1)\nPY")
