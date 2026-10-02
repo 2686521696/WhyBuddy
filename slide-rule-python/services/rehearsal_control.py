@@ -882,6 +882,46 @@ def _carried_skill_messages(state: V5SessionState) -> List[Dict[str, Any]]:
     return out
 
 
+#: 新一句用户话带进来的之前几轮对话：最多几轮、合计多少字、每段模型的话留多少字（留结尾）。
+HISTORY_TURNS = 6
+HISTORY_MAX_CHARS = 12_000
+HISTORY_SPEECH_MAX_CHARS = 3_000
+
+
+def _conversation_history(state: V5SessionState) -> List[Dict[str, Any]]:
+    """这一句用户话之前的几轮对话：用户说的、模型对用户说的。工具调用和回执不带（工程在磁盘上，读得回来）。
+
+    ⚠ 2026-10-02 隔离真机第 187 轮 sr-20261002073509-V62QMVEWQF：先让它给读书会想 5 个名字，追问
+      「第 3 个不错，帮我配一句 15 字以内的口号」——它回「把第 3 个名字发我一下」。新回合的 messages 只有
+      system + 这一句，系统提示里只有话题、问卷回答和计划，自己上一轮说过什么一个字都没有
+      （第二发 in=8485 token，比第一发还少）。工程会话里源码在磁盘上还能读回来，纯对话会话就是每句从零开始。
+    最近的优先；超了就丢更早的整轮，不拆半轮。角色严格交替（有的模型不认连着两条 user）。
+    """
+    rows = [row for row in (getattr(state, "controlTranscript", None) or []) if isinstance(row, dict)]
+    last_turn = max((i for i, row in enumerate(rows) if row.get("kind") == "turn"), default=None)
+    if last_turn is None:
+        return []
+    rounds: List[List[str]] = []
+    for row in rows[:last_turn]:
+        kind = str(row.get("kind") or "")
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        if kind == "turn":
+            rounds.append([text, ""])
+        elif kind in {"control_text", "canned"} and rounds:
+            rounds[-1][1] = (rounds[-1][1] + "\n\n" + text).strip()
+    out: List[Dict[str, Any]] = []
+    total = 0
+    for said, answered in reversed(rounds[-HISTORY_TURNS:]):
+        answered = answered[-HISTORY_SPEECH_MAX_CHARS:] if answered else "（这一轮没有回复）"
+        if total + len(said) + len(answered) > HISTORY_MAX_CHARS:
+            break
+        total += len(said) + len(answered)
+        out[:0] = [{"role": "user", "content": said}, {"role": "assistant", "content": answered}]
+    return out
+
+
 def _planning_skills_note(state: V5SessionState) -> str:
     """批准后执行是一段新上下文：规划时打开过的技能正文不在里面，说清是哪几份。
 
@@ -6088,6 +6128,8 @@ async def _run_control_turn_body(
 
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": _system_prompt(state)},
+        # 之前几轮说过什么（_conversation_history 头注，第 187 轮「第 3 个」）
+        *_conversation_history(state),
         {"role": "user", "content": user_text or "你好"},
     ]
     async with aclosing(_control_llm_loop(
