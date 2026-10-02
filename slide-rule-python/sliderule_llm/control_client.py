@@ -224,6 +224,29 @@ def _termination_metadata(data: dict[str, Any]) -> tuple[str | None, dict[str, i
     return finish, usage or None
 
 
+def _log_call(result: Any, attempt: int) -> None:
+    """每发控制面请求一行：耗时、进出 token、思考 token、几个工具调用。
+
+    ⚠ 2026-10-02 隔离真机第 182 轮 sr-20261002033633-ZX54B3WJJJ（@postmortem-writing 事故复盘 Word）：规划一发 5 分钟、
+      下一发 10 分钟，同一网关一句话的请求 2～3 秒。日志里只有 POST 200，分不清是提示词太大、输出太长、
+      还是在网关排队——没法判断是不是我们自己塞多了。增强类：算不出来就少打几个字段，不许抛。
+    """
+    try:
+        usage = getattr(result, "usage", None) or {}
+        details = usage.get("completion_tokens_details") or {} if isinstance(usage, dict) else {}
+        print(
+            f"[control-llm] ms={getattr(result, 'latency_ms', '?')} attempt={attempt} "
+            f"in={usage.get('prompt_tokens', '?') if isinstance(usage, dict) else '?'} "
+            f"out={usage.get('completion_tokens', '?') if isinstance(usage, dict) else '?'} "
+            f"reasoning={details.get('reasoning_tokens', '?') if isinstance(details, dict) else '?'} "
+            f"calls={len(getattr(result, 'tool_calls', None) or [])} "
+            f"finish={getattr(result, 'finish_reason', None)}",
+            flush=True,
+        )
+    except Exception:  # noqa: BLE001 — 诊断行，不许拖垮采样
+        pass
+
+
 async def call_control_llm(
     messages: list[dict[str, Any]],
     *,
@@ -266,6 +289,7 @@ async def call_control_llm(
                 timeout_ms=timeout_ms,
             )
             note_success()
+            _log_call(result, attempt)
             return result
         except asyncio.CancelledError:
             raise
