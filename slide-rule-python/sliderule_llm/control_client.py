@@ -15,7 +15,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
@@ -224,6 +224,72 @@ def _termination_metadata(data: dict[str, Any]) -> tuple[str | None, dict[str, i
     return finish, usage or None
 
 
+#: 一发请求过了这么久还没回，就再补发一份同样的，先回的算数（_hedged 头注）。0 = 关。
+HEDGE_AFTER_SECONDS = 150.0
+
+
+def _hedge_after_seconds() -> float:
+    raw = os.environ.get("SLIDERULE_CONTROL_HEDGE_SECONDS")
+    try:
+        return max(0.0, float(raw)) if raw not in (None, "") else HEDGE_AFTER_SECONDS
+    except ValueError:
+        return HEDGE_AFTER_SECONDS
+
+
+async def _hedged(make: Callable[[], Awaitable[Any]]) -> Any:
+    """一发卡住就补发一份，先回的算数，另一份取消。
+
+    ⚠ 2026-10-02 隔离真机第 182 / 183 轮：同一网关、in 1 万 token、out 几十 token 的请求，一发 305 秒、一发 603 秒
+      （整 300 秒的倍数——像网关内部 300 秒超时后换上游重来），用户眼里就是整整 5～10 分钟没动静。
+      历史标定：第 150～182 轮从会话记录反推 1467 发，中位 14 秒、p95 55 秒、p99 135 秒；
+      超过 240 秒的 7 发全落在 300 / 600 秒两档。所以门槛放在 150 秒——正常请求几乎碰不到，
+      卡住的那发最多多等 150 秒就有第二条路。
+    ⚠ 上面那句「不对冲」说的是**每一发都带影子**；这里只在卡住时补一份，补发记进回合重试预算
+      （charge_retry），网关熔断时（retries_allowed 为假）不补。
+    ⚠ 取消必须穿透两份：外面停止 → finally 里两份都 cancel（test_control_llm_cancel_really_aborts 那条纪律）。
+    增强类（§7）：补发本身失败不影响第一份，第一份照样等到底。
+    """
+    after = _hedge_after_seconds()
+    first = asyncio.ensure_future(make())
+    tasks = [first]
+    try:
+        if after <= 0:
+            return await first
+        done, _ = await asyncio.wait({first}, timeout=after)
+        if done:
+            return first.result()
+        if not retries_allowed() or charge_retry() is not None:
+            return await first
+        print(f"[control-llm] hedge after={after:g}s：第一发还没回，补发一份", flush=True)
+        second = asyncio.ensure_future(make())
+        tasks.append(second)
+        pending = {first, second}
+        failure: BaseException | None = None
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                if task.cancelled():
+                    continue
+                error = task.exception()
+                if error is None:
+                    print(f"[control-llm] hedge winner={'second' if task is second else 'first'}", flush=True)
+                    return task.result()
+                failure = failure or error
+        if failure is not None:
+            raise failure
+        raise asyncio.CancelledError()
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        for task in tasks:
+            if not task.done():
+                try:
+                    await task
+                except BaseException:  # noqa: BLE001 — 只为等它真的停下（socket 掐断）
+                    pass
+
+
 def _log_call(result: Any, attempt: int) -> None:
     """每发控制面请求一行：耗时、进出 token、思考 token、几个工具调用。
 
@@ -280,14 +346,14 @@ async def call_control_llm(
                 transient=True,
             )
         try:
-            result = await _call_control_llm_once(
+            result = await _hedged(lambda: _call_control_llm_once(
                 messages,
                 tools=tools,
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 timeout_ms=timeout_ms,
-            )
+            ))
             note_success()
             _log_call(result, attempt)
             return result
