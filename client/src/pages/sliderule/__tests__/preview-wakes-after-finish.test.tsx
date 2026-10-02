@@ -10,12 +10,13 @@
  * 走真 SandboxPreviewSurface + 真 useProjectPreview，只把 HTTP 换桩，数 POST /preview/wake。
  * 变异（逐条实测过）：删掉 SandboxPreviewSurface 里叫醒那一句 → 第一、五条红；
  *   去掉 finishedWhileWatching 条件 → 全红；去掉 turnUsedPreview → 第三条红；
- *   去掉「人没钉别的档」→ 第四条红；叫过不收回（不 setFinishedWhileWatching(false)）→ 第一、五条红。
+ *   去掉「人没钉别的档」→ 第四条红；叫过不收回（不 setFinishedWhileWatching(false)）→ 第一、五条红；
+ *   跑完后那一小段不收旗（WAKE_AFTER_FINISH_WINDOW_MS 的 timer 不做事）→ 最后一条红。
  */
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
+import { SandboxPreviewSurface, WAKE_AFTER_FINISH_WINDOW_MS } from "../project-runtime/SandboxPreviewSurface";
 import { dispatchFollowComputer } from "../project-computer-view";
 import type { TurnStep, UiTurn } from "../types";
 
@@ -25,6 +26,8 @@ const ROUND184_TAIL = [
   "file_str_replace", "project_exec", "project_status", "browser_navigate",
   "browser_view", "project_verify", "project_status",
 ];
+// 第 192 轮跑着、正在 browser_navigate 那一刻的队尾（跑完以后又补了 browser_view / project_verify / project_status）
+const ROUND192_WHILE_NAVIGATING = ROUND184_TAIL.slice(0, ROUND184_TAIL.lastIndexOf("browser_navigate") + 1);
 const ANSWER_ONLY = ["project_read", "file_read"];
 
 function turnOf(tools: string[]): UiTurn {
@@ -54,6 +57,14 @@ function turnOf(tools: string[]): UiTurn {
   };
 }
 
+function liveTurnOf(tools: string[]): UiTurn {
+  // 最后一件还在跑（acting）：跟第 192 轮跑着时 browser_navigate 那一刻同形
+  const turn = turnOf(tools);
+  const last = turn.steps.at(-1) as unknown as { progressType: string };
+  last.progressType = "acting";
+  return { ...turn, status: "streaming" };
+}
+
 const calls: string[] = [];
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,6 +77,7 @@ afterEach(async () => {
   container?.remove();
   calls.length = 0;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const json = (body: unknown) =>
@@ -88,11 +100,26 @@ function render(turns: UiTurn[], isRunning: boolean) {
   });
 }
 
-async function mount(turns: UiTurn[], isRunning: boolean) {
+// 运行时起着、能换票：第 192 轮跑完那一刻的样子
+const READY = {
+  available: true,
+  operationId: "pop-1",
+  descriptor: { kind: "project", projectId: "p1", runtimeId: "rt1", revision: "rev1", status: "ready" },
+};
+const TICKET = {
+  operationId: "pop-1", projectId: "p1", runtimeId: "rt1", revision: "rev1",
+  entryUrl: "https://rt-pop-1.preview.example.test/",
+  ticketExpiresAt: "2099-01-01T00:00:00Z", accessExpiresAt: "2099-01-01T00:00:00Z",
+};
+let snapshot: unknown = STOPPED;
+
+async function mount(turns: UiTurn[], isRunning: boolean, first: unknown = STOPPED) {
+  snapshot = first;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push(`${init?.method ?? "GET"} ${url}`);
-    if (/\/preview$/.test(url)) return json(STOPPED);
+    if (/\/preview$/.test(url)) return json(snapshot);
+    if (url.endsWith("/preview-ticket")) return json(TICKET);
     return json({});
   }));
   container = document.createElement("div");
@@ -102,6 +129,8 @@ async function mount(turns: UiTurn[], isRunning: boolean) {
   await settle();
 }
 
+const tickets = () => calls.filter(c => c.startsWith("POST") && c.endsWith("/preview-ticket")).length;
+const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const wakes = () => calls.filter(c => c.startsWith("POST") && c.endsWith("/preview/wake")).length;
 
 describe("一轮在眼前跑完，预览自己醒一次", () => {
@@ -144,5 +173,34 @@ describe("一轮在眼前跑完，预览自己醒一次", () => {
     await render([...turns], false);
     await settle();
     expect(wakes()).toBe(1);
+  });
+
+  it("第 192 轮：跑完那一刻票还在、不用醒；紧接着票掉了（运行时停了）→ 醒一次", async () => {
+    vi.useFakeTimers();
+    await mount([liveTurnOf(ROUND192_WHILE_NAVIGATING)], true, READY);
+    expect(tickets()).toBe(1); // 跑着时 browser 家族那件工具已经换过票
+    // 刚挂上、快照还没回来时，跑着的那条规则会先叫一次——那是原有行为，这里只数跑完以后的
+    const before = wakes();
+    await render([turnOf(ROUND184_TAIL)], false);
+    await settle();
+    expect(wakes()).toBe(before);
+    snapshot = STOPPED;
+    await advance(5_000); // 下一次轮询把票刷掉
+    await settle();
+    expect(wakes()).toBe(before + 1);
+  });
+
+  it("反向：跑完后票一直在，过了这一小段才掉（比如一小时后过期），不再替人拉沙箱", async () => {
+    vi.useFakeTimers();
+    await mount([liveTurnOf(ROUND192_WHILE_NAVIGATING)], true, READY);
+    const before = wakes();
+    await render([turnOf(ROUND184_TAIL)], false);
+    await settle();
+    await advance(WAKE_AFTER_FINISH_WINDOW_MS + 1_000);
+    expect(tickets()).toBe(1); // 这一段里票一直在
+    snapshot = STOPPED;
+    await advance(5_000);
+    await settle();
+    expect(wakes()).toBe(before);
   });
 });

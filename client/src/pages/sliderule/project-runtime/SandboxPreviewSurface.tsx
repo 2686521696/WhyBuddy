@@ -564,6 +564,9 @@ function PreviewAddressBar({
 }
 
 /** 配置/通道类理由才写在空态第二行；未启动、未就绪跟 Manus 一样只说暂停。 */
+/** 跑完后多久内票掉了还替人叫醒。见 shouldWakeAfterFinish 那段 effect。 */
+export const WAKE_AFTER_FINISH_WINDOW_MS = 60_000;
+
 const PREVIEW_FACE_REASONS = new Set([
   "project_preview_not_configured",
   "project_preview_gateway_not_configured",
@@ -1057,6 +1060,17 @@ export function SandboxPreviewSurface({
     runningFor.current = null;
     setFinishedWhileWatching(same);
   }, [isRunning, watchKey]);
+  // ⚠ 2026-10-02 隔离真机第 192 轮：跑完那一刻票还在（不用醒），可这面旗一直举着——
+  //   一小时后票过期，它会替人把沙箱拉起来，「只在跑完时醒一次」就成了「随时醒」。
+  //   跑完后只留一小段：票在这段里掉了（验收换了版本、轮询刷掉）才醒，过了就收旗。
+  useEffect(() => {
+    if (!finishedWhileWatching) return;
+    const timer = window.setTimeout(
+      () => setFinishedWhileWatching(false),
+      WAKE_AFTER_FINISH_WINDOW_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [finishedWhileWatching]);
   const lastTurn = turns?.at(-1);
   const turnUsedPreview = useMemo(
     () => (lastTurn ? turnUsedPreviewTool(deriveProjectActivity([lastTurn]).map(row => row.tool)) : false),
