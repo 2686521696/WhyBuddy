@@ -72,6 +72,14 @@ def test_the_sessions_route_hands_the_fields_to_the_gallery(tmp_path, monkeypatc
     assert rows["sr-office-delivered"]["workKind"] == "office"
     assert rows["sr-office-delivered"]["officePath"] == "output/门店月度复盘.pptx"
     assert rows["sr-web"]["workKind"] == "web" and rows["sr-web"]["projectId"]
+    # ⚠ 2026-10-03：卡片拿这个 id 直接下载，不再逐张 GET /artifacts（测试库上 16 张排成 11～16 秒）。
+    #   反向：它真能取回这份文件的字节，不是随便一个 id。
+    artifact_id = rows["sr-office-delivered"]["officeArtifactId"]
+    listed = ProjectOfficeArtifactStore(store).list(delivered.projectId, owner_id="alice")
+    assert artifact_id == listed[0]["artifactId"]
+    _meta, data = ProjectOfficeArtifactStore(store).get_bytes(delivered.projectId, artifact_id, owner_id="alice")
+    assert data == DECK
+    assert "officeArtifactId" not in rows["sr-web"]
     store.close(); blobs._engine.dispose()
 
 

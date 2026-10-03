@@ -220,7 +220,7 @@ class ProjectStore:
         return Project.model_validate_json(self._project_row(project_id, owner_id)["payload"])
 
     def session_work_index(self, *, office_template: str) -> dict[str, dict[str, str]]:
-        """会话 → 它做出来的东西：{sessionId: {projectId, kind: office|web, officePath?, officeSha?}}。
+        """会话 → 它做出来的东西：{sessionId: {projectId, kind: office|web, officePath?, officeSha?, officeArtifactId?}}。
 
         ⚠ 2026-10-01 用户截图「我的应用」771 张卡：新流程（网页工程 / PPT / Word / Excel）做完从不写进应用库，
           画廊按「没进库 = 推演中的草稿」一律画成空封面 +「推演未闭环」——交付了的 PPT、跑起来的落地页都一样。
@@ -241,12 +241,15 @@ class ProjectStore:
             for row in self._q(f"select id from wb_project_revision where id in ({marks}) "
                                f"and payload like ${len(chunk) + 1}", [*chunk, f"%{office_template}%"]):
                 office_revisions.add(str(row["id"]))
-        latest: dict[str, tuple[str, str, str]] = {}
-        for row in self._q("select project_id, path, sha256, created_at from wb_project_office_artifact", []):
+        # ⚠ 2026-10-03 连用户测试库量「我的应用 → 文件」：每张卡先 GET /projects/{id}/artifacts 拿 artifactId
+        #   才能下载，16 张一起发、服务端几乎逐个处理，单个 1～2 秒排成 11～16 秒——封面一个都没开画。
+        #   id 本来就在这一行，顺手带给画廊，卡片直接下载。
+        latest: dict[str, tuple[str, str, str, str]] = {}
+        for row in self._q("select id, project_id, path, sha256, created_at from wb_project_office_artifact", []):
             key = str(row["project_id"])
             stamp = str(row.get("created_at") or "")
             if key not in latest or stamp >= latest[key][0]:
-                latest[key] = (stamp, str(row["path"]), str(row["sha256"]))
+                latest[key] = (stamp, str(row["path"]), str(row["sha256"]), str(row["id"]))
         out: dict[str, dict[str, str]] = {}
         for row in projects:
             pid, sid = str(row["id"]), str(row.get("session_id") or "")
@@ -256,7 +259,7 @@ class ProjectStore:
             entry = {"projectId": pid,
                      "kind": "office" if office or str(row.get("current_revision")) in office_revisions else "web"}
             if office:
-                entry["officePath"], entry["officeSha"] = office[1], office[2]
+                entry["officePath"], entry["officeSha"], entry["officeArtifactId"] = office[1], office[2], office[3]
             out[sid] = entry
         return out
 

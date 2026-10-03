@@ -18,7 +18,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkThumb } from "../AppsWorkbench";
-import { contentCrop } from "@/pages/sliderule/project-runtime/OfficeThumbnail";
+import { contentCrop, enqueueOfficeRender } from "@/pages/sliderule/project-runtime/OfficeThumbnail";
 
 const PAGE_RATIO = 1.294; // A4 竖版
 type Drawn = { src: HTMLCanvasElement; args: number[] };
@@ -104,7 +104,7 @@ async function settle() {
   for (let i = 0; i < 10; i += 1) await act(async () => { await Promise.resolve(); });
 }
 
-async function mountCover(path: string) {
+async function mountCover(path: string, artifactId?: string) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     fetched.push(url);
@@ -117,7 +117,7 @@ async function mountCover(path: string) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root!.render(<WorkThumb item={{ workKind: "office", projectId: "p1", officePath: path, officeSha: "s" }} />);
+    root!.render(<WorkThumb item={{ workKind: "office", projectId: "p1", officePath: path, officeSha: "s", officeArtifactId: artifactId }} />);
   });
   await settle();
   return container.querySelector<HTMLElement>('[data-testid="turn-result-office-thumb"]');
@@ -188,5 +188,26 @@ describe("「我的应用」Word 封面", () => {
     expect(rendered.at(-1)).toMatch(/^docx:0:\d+:onscreen$/);    // 整页直接画到卡上
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("画廊给了 artifactId：直接下载，不再 GET /artifacts 列清单", async () => {
+    // ⚠ 2026-10-03 连用户测试库量：16 张卡一起 GET /artifacts，服务端排成 11～16 秒，封面一个都没开画
+    const thumb = await mountCover(WORD, "art-1");
+    expect(thumb?.dataset.state).toBe("ok");
+    expect(fetched.filter(url => url.endsWith("/artifacts"))).toEqual([]);
+    expect(fetched.some(url => url.endsWith("/artifacts/art-1"))).toBe(true);
+  });
+
+  it("Word 在队里等着画的时候，文件已经在下载了（网络不跟着排队）", async () => {
+    // ⚠ 2026-10-03：原来「列清单 + 下载 + 画」整套进队，6 份 Word 的网络等待一份一份排，23～50 秒才依次出来
+    let release!: () => void;
+    const blocker = enqueueOfficeRender(() => new Promise<void>(r => { release = r; }), new AbortController().signal);
+    const thumb = await mountCover(WORD, "art-1");
+    expect(fetched.some(url => url.endsWith("/artifacts/art-1"))).toBe(true); // 队还堵着，字节已经取了
+    expect(thumb?.dataset.state).toBe("loading");
+    release();
+    await blocker;
+    await settle();
+    expect(thumb?.dataset.state).toBe("ok");
   });
 });

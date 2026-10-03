@@ -203,6 +203,7 @@ export function OfficeThumbnail({
   refreshKey = "",
   onDrawn,
   fit = "page",
+  artifactId,
 }: {
   projectId: string;
   path: string;
@@ -210,6 +211,8 @@ export function OfficeThumbnail({
   onDrawn?: (ok: boolean) => void;
   /** "content"：Word 只取第一页有字的那块铺满（卡片墙用，见 contentCrop）。结果卡照旧画整页。 */
   fit?: "page" | "content";
+  /** 已知这份文件的 artifactId（画廊从 GET /sessions 拿到）就直接下载，不再列清单找。 */
+  artifactId?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<"loading" | "ok" | "failed">("loading");
@@ -229,17 +232,27 @@ export function OfficeThumbnail({
     setState("loading");
     setCropError(null);
     const name = path.toLowerCase();
-    const draw = async () => {
-      const items = await listOfficeArtifacts(projectId, ac.signal);
-      const match = items.find(item => item.path === path);
-      if (!match) throw new Error("missing");
-      const res = await fetch(officeArtifactDownloadUrl(projectId, match.artifactId), {
+    // ⚠ 2026-10-03 连用户测试库量：下载原来写在 draw 里，Word 排队排的是「列清单 + 下载 + 画」整套——
+    //   网络等待也跟着一份一份排，6 份 Word 23～50 秒才依次出来。字节先并行取，队列里只剩画。
+    //   画廊给了 artifactId 就直接下载，不再 GET /artifacts（16 张一起发，服务端排成 11～16 秒）。
+    const fetchBytes = async () => {
+      let id = artifactId;
+      if (!id) {
+        const items = await listOfficeArtifacts(projectId, ac.signal);
+        const match = items.find(item => item.path === path);
+        if (!match) throw new Error("missing");
+        id = match.artifactId;
+      }
+      const res = await fetch(officeArtifactDownloadUrl(projectId, id), {
         credentials: "include",
         cache: "no-store",
         signal: ac.signal,
       });
       if (!res.ok) throw new Error("missing");
-      const bytes = await res.arrayBuffer();
+      return res.arrayBuffer();
+    };
+    let bytes: ArrayBuffer;
+    const draw = async () => {
       if (ac.signal.aborted) return;
       const width = Math.max(240, Math.floor(el.parentElement?.clientWidth || 440));
       if (name.endsWith(".pptx")) {
@@ -296,7 +309,13 @@ export function OfficeThumbnail({
       const top = frame.current?.getBoundingClientRect().top;
       return top === undefined ? Number.MAX_SAFE_INTEGER : Math.abs(top);
     };
-    void (name.endsWith(".docx") ? enqueueOfficeRender(draw, ac.signal, OFFICE_RENDER_TIMEOUT_MS, rank) : draw()).catch(error => {
+    void fetchBytes()
+      .then(got => {
+        bytes = got;
+        if (ac.signal.aborted) throw new DOMException("aborted", "AbortError");
+        return name.endsWith(".docx") ? enqueueOfficeRender(draw, ac.signal, OFFICE_RENDER_TIMEOUT_MS, rank) : draw();
+      })
+      .catch(error => {
       if (!ac.signal.aborted) {
         console.warn("[office-thumb] 画不出来", path, error);
         setState("failed");
@@ -311,7 +330,7 @@ export function OfficeThumbnail({
         // 引擎自己的清理炸了不影响卡片
       }
     };
-  }, [projectId, path, refreshKey, fit, inView]);
+  }, [projectId, path, refreshKey, fit, inView, artifactId]);
 
   if (state === "failed") return null;
   return (

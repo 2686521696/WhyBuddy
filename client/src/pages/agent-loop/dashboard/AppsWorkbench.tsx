@@ -150,6 +150,8 @@ export interface SessionListItem {
   workKind?: "office" | "web";
   officePath?: string;
   officeSha?: string;
+  /** 封面直接按它下载，不再逐张 GET /artifacts 找（2026-10-03 测试库：16 张排成 11～16 秒）。 */
+  officeArtifactId?: string;
 }
 
 export type AppCardStatus = "runnable" | "awaiting" | "draft";
@@ -531,6 +533,8 @@ export interface GalleryItem {
   workKind?: "office" | "web";
   officePath?: string;
   officeSha?: string;
+  /** 封面直接按它下载，不再逐张 GET /artifacts 找（2026-10-03 测试库：16 张排成 11～16 秒）。 */
+  officeArtifactId?: string;
 }
 
 /**
@@ -595,6 +599,7 @@ export function mergeGalleryItems(
       workKind: s.workKind,
       officePath: s.officePath,
       officeSha: s.officeSha,
+      officeArtifactId: s.officeArtifactId,
     }));
   return [...appItems, ...sessionItems];
 }
@@ -894,16 +899,16 @@ const LazySpecPageStage = React.lazy(() =>
  * 新流程产出的封面：文件画第一页（OfficeThumbnail，跟结果卡同一个组件），网页工程贴验收 / 预览截图
  * （useProjectThumbnail，同上）。拿不到就空态，写清楚缺的是什么——不再一律「推演未闭环」。
  */
-export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "projectId" | "officePath" | "officeSha"> }) {
+export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "projectId" | "officePath" | "officeSha" | "officeArtifactId"> }) {
   if (item.workKind === "office") {
     return item.projectId && item.officePath
-      ? <OfficeCover projectId={item.projectId} path={item.officePath} sha={item.officeSha ?? ""} />
+      ? <OfficeCover projectId={item.projectId} path={item.officePath} sha={item.officeSha ?? ""} artifactId={item.officeArtifactId} />
       : <EmptyThumb description="还没有产出文件" />;
   }
   return <WebCover projectId={item.projectId ?? ""} />;
 }
 
-function OfficeCover({ projectId, path, sha }: { projectId: string; path: string; sha: string }) {
+function OfficeCover({ projectId, path, sha, artifactId }: { projectId: string; path: string; sha: string; artifactId?: string }) {
   const [failed, setFailed] = React.useState(false);
   if (failed) return <EmptyThumb description="文件预览画不出来" />;
   const word = /\.docx$/i.test(path);
@@ -915,7 +920,7 @@ function OfficeCover({ projectId, path, sha }: { projectId: string; path: string
       className="flex h-full w-full justify-center overflow-hidden bg-[#fafafa]"
       data-testid="app-thumb-office"
     >
-      <OfficeThumbnail projectId={projectId} path={path} refreshKey={sha}
+      <OfficeThumbnail projectId={projectId} path={path} refreshKey={sha} artifactId={artifactId}
         fit={word ? "content" : "page"} onDrawn={ok => !ok && setFailed(true)} />
     </div>
   );

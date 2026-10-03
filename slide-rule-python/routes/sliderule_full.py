@@ -421,6 +421,8 @@ def list_sess(
             if work.get("officePath"):
                 item["officePath"] = work["officePath"]
                 item["officeSha"] = work.get("officeSha") or ""
+                if work.get("officeArtifactId"):
+                    item["officeArtifactId"] = work["officeArtifactId"]
         items.append(item)
     return {"sessions": items}
 
