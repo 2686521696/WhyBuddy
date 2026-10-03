@@ -257,7 +257,7 @@ def test_handoff_passes_goal_tools():
     from control_turn_support import strip_python
     from pathlib import Path
 
-    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    src = strip_python(Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py")
     at = src.find("async def _handoff_factory")
     assert at > 0
     body = src[at : at + 2200]
@@ -272,7 +272,7 @@ def test_forced_closed_tools_bind_write_scope():
     from control_turn_support import strip_python
     from pathlib import Path
 
-    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    src = strip_python(Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py")
     hop = src.find("if forced in FACTORY_HOPS")
     assert hop > 0
     hop_body = src[hop : hop + 1600]
@@ -326,7 +326,7 @@ def test_assumptions_waiting_resume_completes_before_control_llm():
     from control_turn_support import strip_python
     from pathlib import Path
 
-    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    src = strip_python(Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py")
     at = src.find("async def _resume_control_llm_after_write")
     end = src.find("async def _control_llm_loop")
     assert at > 0 and end > at
