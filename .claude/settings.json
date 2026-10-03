@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash /tmp/claude-0/-home-user-WhyBuddy/58350d02-bcb1-5275-b6a9-3b38767e5f6b/scratchpad/iso/online-up.sh)"
+    ]
+  }
+}
