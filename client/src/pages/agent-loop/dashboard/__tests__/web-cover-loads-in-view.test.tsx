@@ -12,12 +12,15 @@
  *
  * 变异（逐条实测过）：WebCover 去掉 inView 门（直接传 projectId）→ 第一条红；
  *   查的时候也画「还没有页面截图」→ 第一条红；预览截图改回 fetch 预检 → 第二条红；
- *   预览图加载失败也当成有图 → 第三条红。
+ *   预览图加载失败也当成有图 → 第三条红；
+ *   WebCover 不看列表给的 webCover（照旧逐张查）→ 后三条红。
  */
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { WorkThumb } from "../AppsWorkbench";
+import type { ListedWebCover } from "@/pages/sliderule/project-runtime/useProjectThumbnail";
+import { verificationArtifactUrl } from "@/pages/sliderule/project-runtime/verification-artifacts";
 
 const NO_VERIFICATION = { operationId: null, operationStatus: null, snapshot: null };
 const fetched: string[] = [];
@@ -61,7 +64,7 @@ async function settle() {
   for (let i = 0; i < 10; i += 1) await act(async () => { await Promise.resolve(); });
 }
 
-async function mountWebCover() {
+async function mountWebCover(webCover?: ListedWebCover) {
   vi.stubGlobal("Image", FakeImage);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -74,7 +77,7 @@ async function mountWebCover() {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root!.render(<WorkThumb item={{ workKind: "web", projectId: "prj-1" }} />);
+    root!.render(<WorkThumb item={{ workKind: "web", projectId: "prj-1", webCover }} />);
   });
   await settle();
   return container;
@@ -117,5 +120,34 @@ describe("「我的应用」网页工程封面", () => {
     expect(box.querySelector('[data-testid="app-thumb-web"]')).toBeNull();
     expect(box.querySelector('[data-testid="app-thumb-loading"]')).toBeNull();
     expect(box.textContent).toContain("还没有页面截图");
+  });
+
+  // ── 第二版：封面随 GET /sessions 一次给齐（服务端 latest_web_covers），卡片一发请求都不打 ──────────
+  // 形状照服务端 _attach_web_covers 原样输出（VerificationArtifactRef.model_dump(mode="json")）。
+  const LISTED_VERIFIED: ListedWebCover = {
+    verificationId: "pver-1",
+    artifactRefs: [{ artifactId: "art-page", sha256: "c".repeat(64), mediaType: "image/png", sizeBytes: 48213, label: "page.png" }],
+  };
+
+  it("列表带了验收封面：直接贴验收截图，不查验收、不探预览", async () => {
+    const box = await mountWebCover(LISTED_VERIFIED);
+    const img = box.querySelector<HTMLImageElement>('[data-testid="app-thumb-web"]');
+    expect(img?.getAttribute("src")).toBe(verificationArtifactUrl("pver-1", "art-page"));
+    expect(fetched).toEqual([]);
+    expect(imageSrcs).toEqual([]);
+  });
+
+  it("列表说只有预览截图：直接贴预览图，不查验收", async () => {
+    const box = await mountWebCover({ preview: true });
+    expect(box.querySelector('[data-testid="app-thumb-web"]')?.getAttribute("src"))
+      .toBe("/api/sliderule/projects/prj-1/preview-snapshot");
+    expect(fetched).toEqual([]);
+  });
+
+  it("反向：列表说没有，立刻写「还没有页面截图」，不再自己去查", async () => {
+    const box = await mountWebCover({ none: true });
+    expect(box.textContent).toContain("还没有页面截图");
+    expect(box.querySelector('[data-testid="app-thumb-loading"]')).toBeNull();
+    expect(fetched).toEqual([]);
   });
 });

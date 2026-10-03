@@ -1164,9 +1164,11 @@ describe("我的应用：新流程的产出按类别进、空会话不进（2026
   const office: SessionListItem = {
     sessionId: "sr-office", goal: "做一份市场部 2025 年预算执行分析 Excel", artifactCount: 0,
     projectId: "prj-o", workKind: "office", officePath: "市场部2025年预算执行分析.xlsx", officeSha: "ffab87f3",
+    officeArtifactId: "art-o",
   };
   const web: SessionListItem = {
     sessionId: "sr-web", goal: "给社区咖啡店做一个会员招募落地页", artifactCount: 0, projectId: "prj-w", workKind: "web",
+    webCover: { preview: true },
   };
   const shell: SessionListItem = { sessionId: "sr-shell", goal: "", artifactCount: 0 };
   const chat: SessionListItem = { sessionId: "sr-chat", goal: "这些数据存在哪里？", artifactCount: 0 };
@@ -1178,6 +1180,9 @@ describe("我的应用：新流程的产出按类别进、空会话不进（2026
     const card = items.find(i => i.sessionId === "sr-office")!;
     expect([card.workKind, card.projectId, card.officePath, card.officeSha])
       .toEqual(["office", "prj-o", "市场部2025年预算执行分析.xlsx", "ffab87f3"]);
+    // ⚠ 2026-10-03：封面一次给齐的两个字段，卡片拿到才不逐张去查（漏传一个，那一类卡就退回慢路）
+    expect(card.officeArtifactId).toBe("art-o");
+    expect(items.find(i => i.sessionId === "sr-web")!.webCover).toEqual({ preview: true });
   });
 
   it("五个标签分完全部：网页工程 / 文件按类别，推演中 / 已闭环 / 待补充只管老推演卡", () => {

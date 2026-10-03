@@ -16,7 +16,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from models.project_runtime import VerificationArtifactRef, VerificationRecord
+from models.project_runtime import ProjectRevision, VerificationArtifactRef, VerificationRecord
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_verification_gate import RUNNER_VERSION, SUITE_ASSERTIONS, validate_build_evidence, validate_verification_result, verification_snapshot
 
@@ -295,3 +295,58 @@ class ProjectVerificationStore:
         if len(data) != ref.sizeBytes or len(data) != rows[0]["size_bytes"] or hashlib.sha256(data).hexdigest() != ref.sha256:
             raise ProjectStoreUnavailable("verification_artifact_corrupt")
         return data
+
+
+def latest_web_covers(store, project_ids: list[str]) -> dict[str, dict]:
+    """「我的应用」网页卡封面，一次查齐：{projectId: {"verificationId", "artifactRefs"} | {"preview": True}}。
+
+    ⚠ 2026-10-03 用户截图：网页工程卡一屏 24 张全是灰占位。每张卡各打一发 GET /projects/{id}/verification，
+      那一发要读整条会话（判授权）、再把这个工程做过的所有操作连 payload 翻一遍找最近一次验收——
+      一屏 24 发，每发都重。这里按工程批量：最近一条验收记录 + 当前版本（判过期）+ 有没有预览截图，三条查询。
+
+    过期判据跟 ProjectVerificationStore.latest() 一样走 verification_snapshot（版本 / 树哈希 / 规格 / 计划引用 /
+    构建证据，用当前版本自带的 planRef）。**少一步**：路由那条单查还会拿会话里最新批准的计划再比一次
+    （verification_with_current_authority）——那要逐条读会话，正是慢的根源。代价：重新批准了计划、代码还没动时，
+    封面仍是当前代码那张截图。封面只是「现在长什么样」，不是验收通过的绿灯，交付判定照旧走单查。
+    过期的不给（§7：旧证据不许冒充新产出），有预览截图退到预览截图，都没有就不出现在结果里。
+    """
+    ids = sorted({str(pid) for pid in project_ids if pid})
+    out: dict[str, dict] = {}
+    for start in range(0, len(ids), 200):
+        chunk = ids[start:start + 200]
+        marks = ",".join(f"${i + 1}" for i in range(len(chunk)))
+        projects = {str(row["id"]): str(row.get("current_revision") or "") for row in store._q(
+            f"select id, current_revision from wb_project where id in ({marks})", chunk)}
+        revisions: dict[str, ProjectRevision] = {}
+        current = [rev for rev in projects.values() if rev]
+        if current:
+            rev_marks = ",".join(f"${i + 1}" for i in range(len(current)))
+            for row in store._q(f"select payload from wb_project_revision where id in ({rev_marks})", current):
+                revision = ProjectRevision.model_validate_json(row["payload"])
+                revisions[revision.revision] = revision
+        # ⚠ 验收表是第一次验收时才建的（ProjectVerificationStore.__init__ 里的 DDL）。从没验收过的库查它会炸——
+        #   那时只是「没有验收截图」，预览截图照样要给（测试库「只有预览截图」那条就是这么红的）。
+        #   这里不跑 DDL：列表接口每次都来，不该往库里写。
+        try:
+            latest = store._q(
+                f"select v.project_id, v.payload from wb_project_verification v where v.project_id in ({marks}) "
+                "and not exists (select 1 from wb_project_verification w where w.project_id = v.project_id "
+                "and (w.created_at > v.created_at or (w.created_at = v.created_at and w.id > v.id)))", chunk)
+        except ProjectStoreUnavailable:
+            latest = []
+        for row in latest:
+            pid = str(row["project_id"])
+            revision = revisions.get(projects.get(pid, ""))
+            if revision is None:
+                continue
+            record = VerificationRecord.model_validate_json(row["payload"])
+            snapshot = verification_snapshot(record, revision=revision.revision, tree_hash=revision.treeHash,
+                spec_revision=revision.specRevision, plan_ref=revision.planRef,
+                lockfile_hash=next((item.sha256 for item in revision.manifest.files
+                                    if item.path == "package-lock.json"), None))
+            if snapshot.effectiveStatus != "stale" and record.artifactRefs:
+                out[pid] = {"verificationId": record.verificationId,
+                            "artifactRefs": [ref.model_dump(mode="json") for ref in record.artifactRefs]}
+        for row in store._q(f"select project_id from wb_project_preview_snapshot where project_id in ({marks})", chunk):
+            out.setdefault(str(row["project_id"]), {"preview": True})
+    return out
