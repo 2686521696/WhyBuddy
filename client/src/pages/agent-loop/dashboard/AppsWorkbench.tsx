@@ -99,7 +99,8 @@ import {
 } from "./app-store-client";
 import { fetchSessionsList } from "./sessions-list-client";
 import { OfficeThumbnail } from "@/pages/sliderule/project-runtime/OfficeThumbnail";
-import { useProjectThumbnail } from "@/pages/sliderule/project-runtime/useProjectThumbnail";
+import { useProjectThumbnailState } from "@/pages/sliderule/project-runtime/useProjectThumbnail";
+import { useInViewOnce } from "@/pages/sliderule/project-runtime/useInViewOnce";
 
 export { appPreviewUrl };
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -921,9 +922,23 @@ function OfficeCover({ projectId, path, sha }: { projectId: string; path: string
 }
 
 function WebCover({ projectId }: { projectId: string }) {
-  const url = useProjectThumbnail(projectId || null);
-  if (!url) return <EmptyThumb description="还没有页面截图" />;
-  return <img src={url} alt="" className="h-full w-full object-cover object-top" data-testid="app-thumb-web" />;
+  // ⚠ 2026-10-03 用户截图：网页卡一律先显示「还没有页面截图」，过好一阵图才冒出来。64 张卡一打开同时查验收
+  //   （本地 p50 3.3 秒），屏幕外的也在抢；查的过程中又把「还在找」说成「没有」。
+  //   进视口才查；查的时候画占位，查完确实没有才写「还没有页面截图」。
+  const [frame, inView] = useInViewOnce<HTMLDivElement>();
+  const { url, loading } = useProjectThumbnailState(inView ? projectId || null : null);
+  const pending = !inView || loading;
+  return (
+    <div ref={frame} className="h-full w-full" data-testid="app-thumb-web-frame" data-state={pending ? "loading" : url ? "ok" : "none"}>
+      {url ? (
+        <img src={url} alt="" className="h-full w-full object-cover object-top" data-testid="app-thumb-web" />
+      ) : pending && projectId ? (
+        <div className="h-full w-full animate-pulse bg-[#f2f3f5]" data-testid="app-thumb-loading" />
+      ) : (
+        <EmptyThumb description="还没有页面截图" />
+      )}
+    </div>
+  );
 }
 
 export function EmptyThumb({ description }: { description?: React.ReactNode }) {

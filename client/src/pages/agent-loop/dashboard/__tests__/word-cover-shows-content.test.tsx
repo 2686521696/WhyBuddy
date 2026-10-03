@@ -12,7 +12,7 @@
  * 标题块在页面 38%～50% 高、横向 25%～75%。
  *
  * 变异（逐条实测过）：AppsWorkbench 里 fit 写死 "page" → 第一、四条红；contentCrop 改成返回整页 → 第一、三条红；
- *   OfficeThumbnail 去掉「进视口才开画」→ 第四条红；排队改回按进队顺序 → office-thumbnail-queue 的「离顶最近先画」红。
+ *   OfficeThumbnail 去掉「进视口才开画」→ 第四条红；裁剪那步去掉 try/catch 退回 → 第五条红；排队改回按进队顺序 → office-thumbnail-queue 的「离顶最近先画」红。
  */
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -64,15 +64,23 @@ beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 const realGetContext = HTMLCanvasElement.prototype.getContext;
+/** 设了它，引擎画的那张 canvas 上读像素就炸（模拟用户那份文件：引擎给 canvas 拿了别的上下文 / 读回失败）。 */
+let breakPixelRead = false;
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
     const canvas = this;
     return {
       fillStyle: "",
       fillRect() {},
-      getImageData: (_x: number, _y: number, w: number, h: number) =>
-        pages.has(canvas) ? coverPixels(w, h) : { width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) },
-      drawImage: (src: HTMLCanvasElement, ...args: number[]) => void drawn.push({ src, args }),
+      getImageData: (_x: number, _y: number, w: number, h: number) => {
+        if (breakPixelRead) throw new DOMException("The operation is insecure.", "SecurityError");
+        return pages.has(canvas) ? coverPixels(w, h) : { width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) };
+      },
+      drawImage: (src: HTMLCanvasElement, ...args: number[]) => {
+        // 整张照搬（drawImage(src, 0, 0)）：像素跟着过去
+        if (args.length === 2 && pages.has(src)) pages.add(canvas);
+        drawn.push({ src, args });
+      },
     };
   } as unknown as typeof HTMLCanvasElement.prototype.getContext;
 });
@@ -86,6 +94,7 @@ afterEach(async () => {
   container?.remove();
   drawn.length = 0;
   rendered.length = 0;
+  breakPixelRead = false;
   fetched.length = 0;
   HTMLCanvasElement.prototype.getContext = realGetContext;
   vi.unstubAllGlobals();
@@ -122,8 +131,9 @@ describe("「我的应用」Word 封面", () => {
     expect(thumb?.dataset.state).toBe("ok");
     expect(thumb?.dataset.fit).toBe("content");
     expect(rendered).toEqual([expect.stringMatching(/^docx:0:\d+:offscreen$/)]);
-    expect(drawn).toHaveLength(1);
-    const { src, args } = drawn[0];
+    const toCard = drawn.filter(d => d.args.length === 8);
+    expect(toCard).toHaveLength(1);
+    const { src, args } = toCard[0];
     const [sx, sy, sw, sh, dx, dy, dw, dh] = args;
     expect(sy).toBeGreaterThan(src.height * 0.3);        // 从标题那里开始，跳过上面那一大块空白
     expect(sw).toBeLessThan(src.width * 0.7);            // 横向也只取标题那一段，放大看得清
@@ -166,6 +176,17 @@ describe("「我的应用」Word 封面", () => {
     await act(async () => observers.at(-1)!([{ isIntersecting: true }]));
     await settle();
     expect(fetched.some(url => url.endsWith("/artifacts"))).toBe(true);
-    expect(drawn).toHaveLength(1);
+    expect(drawn.filter(d => d.args.length === 8)).toHaveLength(1);
+  });
+
+  it("裁剪那一步炸了：退回画整页，不许说成「画不出来」，原因记在卡上", async () => {
+    breakPixelRead = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const thumb = await mountCover(WORD);
+    expect(thumb?.dataset.state).toBe("ok");                     // 不是 failed → 不会出「文件预览画不出来」
+    expect(thumb?.dataset.error).toMatch(/insecure/);
+    expect(rendered.at(-1)).toMatch(/^docx:0:\d+:onscreen$/);    // 整页直接画到卡上
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

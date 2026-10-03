@@ -203,7 +203,10 @@ describe("只有一份实现（§4）", () => {
     expect(HOOK).toMatch(/verificationArtifactUrl\(/);
     expect(HOOK).toMatch(/previewSnapshotUrl\(/);
     expect(HOOK).toMatch(/resolveProjectThumbnail\(/);
-    expect(HOOK).toMatch(/fetch\(\s*previewSnapshotUrl\(/);
+    // ⚠ 2026-10-03：预览截图改用 Image 预加载探存在（<img> 复用同一份），不再 fetch 整张 PNG 预检——
+    //   原来这一行钉的就是 fetch 预检，「我的应用」一张网页卡同一张图下两次。反过来钉住别再回去。
+    expect(HOOK).toMatch(/const shot = previewSnapshotUrl\(id\);[\s\S]*imageLoads\(shot,/);
+    expect(HOOK).not.toMatch(/fetch\(\s*(previewSnapshotUrl\(|shot\b)/);
     // 变异判据：把 displayableScreenshots(...)[0] 改回 artifactRefs[0] 就红。
     expect(HOOK).not.toMatch(/artifactRefs\s*(\?\.)?\[\s*0\s*\]/);
   });

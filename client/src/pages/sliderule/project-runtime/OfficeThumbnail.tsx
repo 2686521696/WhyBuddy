@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { listOfficeArtifacts, officeArtifactDownloadUrl } from "./office-artifacts-client";
+import { useInViewOnce } from "./useInViewOnce";
 
 /**
  * 结果卡上那张办公文件的「第一页」缩略图：PPT 第一张、Word 第一页、Excel 第一张表左上角。
@@ -165,6 +166,37 @@ export function enqueueOfficeRender<T>(job: () => Promise<T>, signal: AbortSigna
   });
 }
 
+/** 卡片墙 Word：离屏画大一点，裁出第一页有字的那块铺满 el。任何一步炸了由调用方退回整页。 */
+async function drawContentCrop(
+  doc: { renderPage: (target: HTMLCanvasElement, page: number, opts: { width: number }) => Promise<void> },
+  el: HTMLCanvasElement
+) {
+  const box = el.parentElement;
+  const view = { w: Math.max(1, box?.clientWidth || 240), h: Math.max(1, box?.clientHeight || 135) };
+  const page = document.createElement("canvas");
+  await doc.renderPage(page, 0, { width: Math.min(900, Math.max(480, view.w * 3)) });
+  if (!page.width || !page.height) throw new Error("empty_page_canvas");
+  // 像素从自己的 2D 画布上读：引擎有时给它的 canvas 拿的是 bitmaprenderer 上下文，那上面 getContext("2d") 是 null
+  const copy = document.createElement("canvas");
+  copy.width = page.width;
+  copy.height = page.height;
+  const copyCtx = copy.getContext("2d", { willReadFrequently: true });
+  if (!copyCtx) throw new Error("no_2d_context");
+  copyCtx.fillStyle = "#fff";
+  copyCtx.fillRect(0, 0, copy.width, copy.height);
+  copyCtx.drawImage(page, 0, 0);
+  const crop = contentCrop(copyCtx.getImageData(0, 0, copy.width, copy.height), view);
+  const area = crop ?? { sx: 0, sy: 0, sw: copy.width, sh: Math.min(copy.height, Math.round((copy.width * view.h) / view.w)) };
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  el.width = Math.round(view.w * dpr);
+  el.height = Math.round(view.h * dpr);
+  const out = el.getContext("2d");
+  if (!out) throw new Error("no_card_context");
+  out.fillStyle = "#fff";
+  out.fillRect(0, 0, el.width, el.height);
+  out.drawImage(copy, area.sx, area.sy, area.sw, area.sh, 0, 0, el.width, el.height);
+}
+
 export function OfficeThumbnail({
   projectId,
   path,
@@ -180,25 +212,14 @@ export function OfficeThumbnail({
   fit?: "page" | "content";
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const frame = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ok" | "failed">("loading");
+  const [cropError, setCropError] = useState<string | null>(null);
   const drawnRef = useRef(onDrawn);
   drawnRef.current = onDrawn;
   // ⚠ 2026-10-03 隔离真机「我的应用 → 文件」：113 份文件 84 张卡一打开全部开画，Word 按挂载顺序排队，
   //   屏幕最上面那排 Word 第 55～57 秒才画出来（PPT / Excel 17 秒）——那一分钟里就是用户截图那张白卡。
-  //   进了视口（含下方 300px 预取）才开画；画过的滚出去不撤。没有 IntersectionObserver 的环境照旧直接画（fail-open）。
-  const [inView, setInView] = useState(() => typeof IntersectionObserver === "undefined");
-  useEffect(() => {
-    if (inView || !frame.current) return;
-    const io = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting)) {
-        setInView(true);
-        io.disconnect();
-      }
-    }, { rootMargin: "300px 0px" });
-    io.observe(frame.current);
-    return () => io.disconnect();
-  }, [inView]);
+  //   进了视口（含下方 300px 预取）才开画（useInViewOnce）。
+  const [frame, inView] = useInViewOnce<HTMLDivElement>();
 
   useEffect(() => {
     const el = canvas.current;
@@ -206,6 +227,7 @@ export function OfficeThumbnail({
     const ac = new AbortController();
     let disposer: { destroy?: () => void } | null = null;
     setState("loading");
+    setCropError(null);
     const name = path.toLowerCase();
     const draw = async () => {
       const items = await listOfficeArtifacts(projectId, ac.signal);
@@ -230,22 +252,17 @@ export function OfficeThumbnail({
         const doc = await DocxDocument.load(bytes);
         disposer = doc as { destroy?: () => void };
         if (fit === "content") {
-          // 先在离屏 canvas 上画大一点（裁出来还要放大），再把有字的那块搬到卡片上
-          const box = el.parentElement;
-          const view = { w: Math.max(1, box?.clientWidth || 240), h: Math.max(1, box?.clientHeight || 135) };
-          const src = document.createElement("canvas");
-          await doc.renderPage(src, 0, { width: Math.min(900, Math.max(480, view.w * 3)) });
-          const ctx = src.getContext("2d");
-          const crop = ctx ? contentCrop(ctx.getImageData(0, 0, src.width, src.height), view) : null;
-          const area = crop ?? { sx: 0, sy: 0, sw: src.width, sh: Math.min(src.height, Math.round((src.width * view.h) / view.w)) };
-          const dpr = Math.min(2, window.devicePixelRatio || 1);
-          el.width = Math.round(view.w * dpr);
-          el.height = Math.round(view.h * dpr);
-          const out = el.getContext("2d");
-          if (!out) throw new Error("no-canvas");
-          out.fillStyle = "#fff";
-          out.fillRect(0, 0, el.width, el.height);
-          out.drawImage(src, area.sx, area.sy, area.sw, area.sh, 0, 0, el.width, el.height);
+          // ⚠ 2026-10-03 用户截图（上线后）：采购审批 DOCX 的卡变成「文件预览画不出来」，同一份文件结果卡上画得好好的，
+          //   隔离真机上 6 份 Word 也都好。裁剪这一步是增强（CLAUDE.md §7 fail-open）：哪一环炸了都退回画整页，
+          //   原因记在 data-error 和控制台，别再把一份画得出来的文件说成画不出来。
+          try {
+            await drawContentCrop(doc, el);
+          } catch (error) {
+            if (ac.signal.aborted) return;
+            console.warn("[office-thumb] 裁剪失败，改画整页", path, error);
+            setCropError(String((error as Error)?.message || error).slice(0, 200));
+            await doc.renderPage(el, 0, { width });
+          }
         } else {
           await doc.renderPage(el, 0, { width });
         }
@@ -279,8 +296,9 @@ export function OfficeThumbnail({
       const top = frame.current?.getBoundingClientRect().top;
       return top === undefined ? Number.MAX_SAFE_INTEGER : Math.abs(top);
     };
-    void (name.endsWith(".docx") ? enqueueOfficeRender(draw, ac.signal, OFFICE_RENDER_TIMEOUT_MS, rank) : draw()).catch(() => {
+    void (name.endsWith(".docx") ? enqueueOfficeRender(draw, ac.signal, OFFICE_RENDER_TIMEOUT_MS, rank) : draw()).catch(error => {
       if (!ac.signal.aborted) {
+        console.warn("[office-thumb] 画不出来", path, error);
         setState("failed");
         drawnRef.current?.(false);
       }
@@ -304,8 +322,12 @@ export function OfficeThumbnail({
       data-state={state}
       data-office-path={path}
       data-fit={fit}
+      data-error={cropError ?? undefined}
     >
-      <canvas ref={canvas} className={fit === "content" ? "block h-full w-full" : "block h-auto w-full"} aria-hidden />
+      {/* 裁剪退回整页时：整页按宽铺满、从页顶起（object-cover 不拉伸） */}
+      <canvas ref={canvas} className={fit === "content"
+        ? `block h-full w-full ${cropError ? "object-cover object-top" : ""}`
+        : "block h-auto w-full"} aria-hidden />
     </div>
   );
 }

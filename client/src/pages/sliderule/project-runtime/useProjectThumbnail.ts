@@ -73,15 +73,46 @@ export function resolveProjectThumbnail(input: {
   return null;
 }
 
-/** 取结果卡缩略图；没有就是 null。 */
-export function useProjectThumbnail(
+/**
+ * 预览截图在不在：用 Image 预加载，不用 fetch。
+ *
+ * ⚠ 2026-10-03「我的应用」网页卡太慢才出图：原来先 fetch 整张 PNG（no-store）只为看 content-type，
+ *   <img> 显示时再下一遍——一张卡同一张图下两次。Image 预加载的那份，同一 URL 的 <img> 直接复用。
+ */
+function imageLoads(url: string, signal: AbortSignal): Promise<boolean> {
+  return new Promise(resolve => {
+    if (typeof Image === "undefined") return resolve(false);
+    const img = new Image();
+    const done = (ok: boolean) => {
+      signal.removeEventListener("abort", stop);
+      resolve(ok);
+    };
+    const stop = () => {
+      img.src = "";
+      done(false);
+    };
+    img.onload = () => done(img.naturalWidth > 0);
+    img.onerror = () => done(false);
+    signal.addEventListener("abort", stop);
+    img.src = url;
+  });
+}
+
+/**
+ * 取缩略图，并说清还在不在找：`loading` 为 true 时卡片该画占位，不该写「还没有页面截图」。
+ * ⚠ 2026-10-03 用户截图：网页卡先一律显示「还没有页面截图」，过好一阵图才冒出来——看着像没图。
+ */
+export function useProjectThumbnailState(
   projectId: string | null | undefined
-): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+): { url: string | null; loading: boolean } {
+  const [state, setState] = useState<{ url: string | null; loading: boolean }>(() => ({
+    url: null,
+    loading: Boolean(String(projectId || "").trim()),
+  }));
 
   useEffect(() => {
     const id = String(projectId || "").trim();
-    setUrl(null);
+    setState({ url: null, loading: Boolean(id) });
     if (!id) return;
 
     const controller = new AbortController();
@@ -95,33 +126,26 @@ export function useProjectThumbnail(
       if (controller.signal.aborted) return;
       const verified = thumbnailFromVerification(verification);
       if (verified) {
-        setUrl(verified);
+        setState({ url: verified, loading: false });
         return;
       }
-      try {
-        const shot = await fetch(previewSnapshotUrl(id), {
-          credentials: "include",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (
-          shot.ok &&
-          (shot.headers.get("content-type") || "").includes("image/png")
-        ) {
-          setUrl(
-            resolveProjectThumbnail({
-              verification: null,
-              previewAvailable: true,
-              projectId: id,
-            })
-          );
-        }
-      } catch {
-        // 预览图也没有：卡片那一块不画。
-      }
+      const shot = previewSnapshotUrl(id);
+      const ok = await imageLoads(shot, controller.signal);
+      if (controller.signal.aborted) return;
+      setState({
+        url: ok ? resolveProjectThumbnail({ verification: null, previewAvailable: true, projectId: id }) : null,
+        loading: false,
+      });
     })();
     return () => controller.abort();
   }, [projectId]);
 
-  return url;
+  return state;
+}
+
+/** 取结果卡缩略图；没有就是 null。 */
+export function useProjectThumbnail(
+  projectId: string | null | undefined
+): string | null {
+  return useProjectThumbnailState(projectId).url;
 }
