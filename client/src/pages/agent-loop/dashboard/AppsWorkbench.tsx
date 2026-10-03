@@ -905,15 +905,17 @@ export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "proj
 function OfficeCover({ projectId, path, sha }: { projectId: string; path: string; sha: string }) {
   const [failed, setFailed] = React.useState(false);
   if (failed) return <EmptyThumb description="文件预览画不出来" />;
+  const word = /\.docx$/i.test(path);
   return (
     // ⚠ 2026-10-01 隔离真机：Word 说明书第一页上方是一大块页边距，卡片画面只有 ~135px 高，按宽铺满只露出那条白边。
-    //   Word 按高缩进整页（居中），PPT / Excel 照旧按宽铺满。
+    //   当时改成「按高缩进整页」——⚠ 2026-10-03 用户截图：整页缩到 105×136，字只剩两三像素，卡片照样一片白。
+    //   现在 Word 只取第一页有字的那块铺满（OfficeThumbnail 的 contentCrop），PPT / Excel 照旧按宽铺满。
     <div
-      className={`flex h-full w-full justify-center overflow-hidden bg-[#fafafa] ${
-        /\.docx$/i.test(path) ? "[&>div]:h-full [&>div]:w-auto [&_canvas]:h-full! [&_canvas]:w-auto!" : ""}`}
+      className="flex h-full w-full justify-center overflow-hidden bg-[#fafafa]"
       data-testid="app-thumb-office"
     >
-      <OfficeThumbnail projectId={projectId} path={path} refreshKey={sha} onDrawn={ok => !ok && setFailed(true)} />
+      <OfficeThumbnail projectId={projectId} path={path} refreshKey={sha}
+        fit={word ? "content" : "page"} onDrawn={ok => !ok && setFailed(true)} />
     </div>
   );
 }

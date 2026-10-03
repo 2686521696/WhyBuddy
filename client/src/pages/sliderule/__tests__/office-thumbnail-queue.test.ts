@@ -42,9 +42,23 @@ describe("Word 缩略图排队画", () => {
     expect(ran).toBe(false);
   });
 
+  it("离屏幕顶上最近的先画，不按进队顺序（瀑布流 DOM 顺序 ≠ 屏幕位置）", async () => {
+    // ⚠ 2026-10-03 隔离真机：只做「进视口才开画」以后，最上面那排 Word 仍排在第四、五排后面（10 秒 vs 18～20 秒）
+    const signal = new AbortController().signal;
+    const order: string[] = [];
+    let release!: () => void;
+    const blocker = enqueueOfficeRender(() => new Promise<void>(r => { release = r; }), signal);
+    const at = (name: string, top: number) =>
+      enqueueOfficeRender(async () => void order.push(name), signal, undefined, () => top);
+    const jobs = [at("第五排", 862), at("第一排", 126), at("第四排", 678)];
+    release();
+    await Promise.all([blocker, ...jobs]);
+    expect(order).toEqual(["第一排", "第四排", "第五排"]);
+  });
+
   it("接在链路上：只有 Word 进队，PPT / Excel 照旧直接画", () => {
     const src = readFileSync(new URL("../project-runtime/OfficeThumbnail.tsx", import.meta.url), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(src).toMatch(/name\.endsWith\("\.docx"\) \? enqueueOfficeRender\(draw, ac\.signal\) : draw\(\)/);
+    expect(src).toMatch(/name\.endsWith\("\.docx"\) \? enqueueOfficeRender\(draw, ac\.signal, OFFICE_RENDER_TIMEOUT_MS, rank\) : draw\(\)/);
   });
 });
