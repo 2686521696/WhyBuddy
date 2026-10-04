@@ -73,6 +73,33 @@ export function resolveProjectThumbnail(input: {
   return null;
 }
 
+/** GET /sessions 随列表给的网页工程封面（服务端 latest_web_covers）。 */
+export type ListedWebCover =
+  | { verificationId: string; artifactRefs: unknown }
+  | { preview: true }
+  | { none: true };
+
+/**
+ * 列表给了封面就直接用：返回图片地址，或 null（服务端说没有）；列表没给（旧服务端 / 批量查挂了）返回 undefined，
+ * 调用方退回逐张查。挑截图、拼地址走同一份共享判据（displayableScreenshots / verificationArtifactUrl），不另写一份（§4）。
+ *
+ * ⚠ 2026-10-03 用户截图：网页工程卡一屏 24 张灰占位——每张卡各查一发验收，每发都重。
+ */
+export function thumbnailFromListedCover(
+  cover: ListedWebCover | null | undefined,
+  projectId: string | null | undefined
+): string | null | undefined {
+  if (!cover || typeof cover !== "object") return undefined;
+  if ("verificationId" in cover) {
+    const refs = Array.isArray(cover.artifactRefs) ? (cover.artifactRefs as Parameters<typeof displayableScreenshots>[0]) : [];
+    const ref = displayableScreenshots(refs)[0];
+    return ref && cover.verificationId ? verificationArtifactUrl(cover.verificationId, ref.artifactId) : null;
+  }
+  const id = String(projectId || "").trim();
+  if ("preview" in cover) return id ? previewSnapshotUrl(id) : null;
+  return null;
+}
+
 /**
  * 预览截图在不在：用 Image 预加载，不用 fetch。
  *

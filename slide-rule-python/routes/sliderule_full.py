@@ -30,6 +30,7 @@ from middlewares.current_user import CurrentUserOptional
 from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
 from services.project_site_store import ProjectSiteStore
 from services.project_source_operations import fork_published_project
+from services.project_verification_store import latest_web_covers
 from services.published_site import render, resolve_path, site_headers, site_prefix
 from services.gate_health import (
     ledger_since as _gate_since,
@@ -429,7 +430,25 @@ def list_sess(
                 if work.get("officeArtifactId"):
                     item["officeArtifactId"] = work["officeArtifactId"]
         items.append(item)
+    _attach_web_covers(items)
     return {"sessions": items}
+
+
+def _attach_web_covers(items: list[dict]) -> None:
+    """网页工程卡的封面随列表一次给齐（latest_web_covers 头注）。卡片看到 webCover 就不再逐张查验收。
+
+    增强项（第七条）：批量查挂了就不带这个字段，卡片退回逐张查——慢，但不会把侧栏拖成 500。
+    """
+    web = [item for item in items if item.get("workKind") == "web" and item.get("projectId")]
+    if not web:
+        return
+    try:
+        covers = latest_web_covers(get_project_store(), [item["projectId"] for item in web])
+    except Exception as exc:  # noqa: BLE001 — 增强项，不许拖垮主链路
+        print(f"[sessions] 网页封面批量查询不可用，卡片逐张查: {str(exc)[:160]}")
+        return
+    for item in web:
+        item["webCover"] = covers.get(item["projectId"]) or {"none": True}
 
 
 def _session_work_index() -> dict:

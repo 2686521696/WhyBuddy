@@ -99,7 +99,11 @@ import {
 } from "./app-store-client";
 import { fetchSessionsList } from "./sessions-list-client";
 import { OfficeThumbnail } from "@/pages/sliderule/project-runtime/OfficeThumbnail";
-import { useProjectThumbnailState } from "@/pages/sliderule/project-runtime/useProjectThumbnail";
+import {
+  thumbnailFromListedCover,
+  useProjectThumbnailState,
+  type ListedWebCover,
+} from "@/pages/sliderule/project-runtime/useProjectThumbnail";
 import { useInViewOnce } from "@/pages/sliderule/project-runtime/useInViewOnce";
 
 export { appPreviewUrl };
@@ -160,6 +164,8 @@ export interface SessionListItem {
    *   没有（存量还没补算 / 老代码写过、摘要作废）→ 这张卡照旧逐张拉，不画过期的卡。
    */
   card?: SessionCardSummary;
+  /** 网页工程封面，随列表给齐（服务端 latest_web_covers）；没有这个字段时卡片退回逐张查。 */
+  webCover?: ListedWebCover;
 }
 
 /**
@@ -629,6 +635,8 @@ export interface GalleryItem {
   officeArtifactId?: string;
   /** session 源：列表带回来的卡片摘要（见 SessionListItem.card）。有它 ensureDetail 不打网络。 */
   card?: SessionCardSummary;
+  /** 网页工程封面，随列表给齐（服务端 latest_web_covers）；没有这个字段时卡片退回逐张查。 */
+  webCover?: ListedWebCover;
 }
 
 /**
@@ -695,6 +703,7 @@ export function mergeGalleryItems(
       officeSha: s.officeSha,
       officeArtifactId: s.officeArtifactId,
       card: s.card,
+      webCover: s.webCover,
     }));
   return [...appItems, ...sessionItems];
 }
@@ -994,13 +1003,13 @@ const LazySpecPageStage = React.lazy(() =>
  * 新流程产出的封面：文件画第一页（OfficeThumbnail，跟结果卡同一个组件），网页工程贴验收 / 预览截图
  * （useProjectThumbnail，同上）。拿不到就空态，写清楚缺的是什么——不再一律「推演未闭环」。
  */
-export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "projectId" | "officePath" | "officeSha" | "officeArtifactId"> }) {
+export function WorkThumb({ item }: { item: Pick<GalleryItem, "workKind" | "projectId" | "officePath" | "officeSha" | "officeArtifactId" | "webCover"> }) {
   if (item.workKind === "office") {
     return item.projectId && item.officePath
       ? <OfficeCover projectId={item.projectId} path={item.officePath} sha={item.officeSha ?? ""} artifactId={item.officeArtifactId} />
       : <EmptyThumb description="还没有产出文件" />;
   }
-  return <WebCover projectId={item.projectId ?? ""} />;
+  return <WebCover projectId={item.projectId ?? ""} listed={item.webCover} />;
 }
 
 function OfficeCover({ projectId, path, sha, artifactId }: { projectId: string; path: string; sha: string; artifactId?: string }) {
@@ -1021,13 +1030,16 @@ function OfficeCover({ projectId, path, sha, artifactId }: { projectId: string; 
   );
 }
 
-function WebCover({ projectId }: { projectId: string }) {
+function WebCover({ projectId, listed }: { projectId: string; listed?: ListedWebCover }) {
   // ⚠ 2026-10-03 用户截图：网页卡一律先显示「还没有页面截图」，过好一阵图才冒出来。64 张卡一打开同时查验收
   //   （本地 p50 3.3 秒），屏幕外的也在抢；查的过程中又把「还在找」说成「没有」。
   //   进视口才查；查的时候画占位，查完确实没有才写「还没有页面截图」。
+  // ⚠ 2026-10-03 第二版：列表已经给了封面（webCover）就直接贴，一发请求都不打；没给才逐张查（旧服务端 / 批量查挂了）。
+  const fromList = thumbnailFromListedCover(listed, projectId);
   const [frame, inView] = useInViewOnce<HTMLDivElement>();
-  const { url, loading } = useProjectThumbnailState(inView ? projectId || null : null);
-  const pending = !inView || loading;
+  const lookup = useProjectThumbnailState(fromList === undefined && inView ? projectId || null : null);
+  const url = fromList !== undefined ? fromList : lookup.url;
+  const pending = fromList === undefined && (!inView || lookup.loading);
   return (
     <div ref={frame} className="h-full w-full" data-testid="app-thumb-web-frame" data-state={pending ? "loading" : url ? "ok" : "none"}>
       {url ? (

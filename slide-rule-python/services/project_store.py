@@ -245,7 +245,14 @@ class ProjectStore:
         #   才能下载，16 张一起发、服务端几乎逐个处理，单个 1～2 秒排成 11～16 秒——封面一个都没开画。
         #   id 本来就在这一行，顺手带给画廊，卡片直接下载。
         latest: dict[str, tuple[str, str, str, str]] = {}
-        for row in self._q("select id, project_id, path, sha256, created_at from wb_project_office_artifact", []):
+        # ⚠ 2026-10-03 写网页封面判据时翻出来：办公产物表是第一次收回办公文件时才建的
+        #   （ProjectOfficeArtifactStore 的 DDL）。从没收回过办公文件的库查它会炸，整份索引作废——
+        #   网页工程卡连「是网页工程」都丢了。没有这张表 = 没有办公文件，照常往下走。
+        try:
+            office_rows = self._q("select id, project_id, path, sha256, created_at from wb_project_office_artifact", [])
+        except ProjectStoreUnavailable:
+            office_rows = []
+        for row in office_rows:
             key = str(row["project_id"])
             stamp = str(row.get("created_at") or "")
             if key not in latest or stamp >= latest[key][0]:

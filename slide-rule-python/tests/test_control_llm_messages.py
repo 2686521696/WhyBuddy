@@ -71,7 +71,7 @@ def test_control_loop_does_not_write_none_content():
     from control_turn_support import strip_python
     from pathlib import Path
 
-    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    src = strip_python(Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py")
     at = src.find("assistant_msg")
     assert at > 0
     body = src[at : at + 400]
