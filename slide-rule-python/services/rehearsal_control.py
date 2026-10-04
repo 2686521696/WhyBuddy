@@ -4060,6 +4060,30 @@ def _session_upload_fact(session_id: str, owner_id: str) -> str | None:
     return upload_fact([workspace_path(str(row["name"])) for row in rows])
 
 
+#: 系统提示里「当前目标」摘多少字。每一发都带，摘开头就够认出是哪件事；全文在对话里。
+GOAL_BRIEF_MAX_CHARS = 200
+
+
+def _goal_brief(goal: str) -> str:
+    """系统提示里的「当前目标」：太长就在行边界摘开头，并**说明摘了**、全文在哪。
+
+    ⚠ 2026-10-04 真机 @office-skills 门店销售 Excel（sr-20261004022542-B36BSG2G90）：用户贴了 10 行
+      CSV（261 字），这里原来是 `goal[:200]`——硬切在第 6 行中间（`9/3,浦东店,轻食,1800\n9/`），
+      不说切了。执行回合的对话里其实有全文（_conversation_history include_current），模型却读着
+      系统提示说「原始消息在末尾截断，我按计划里的核对值补齐最后 4 条明细」。这次计划里刚好有核对值；
+      没有的话就是在编用户的数据。摘要可以短，但不能装成全文。
+    """
+    text = str(goal or "")
+    if len(text) <= GOAL_BRIEF_MAX_CHARS:
+        return text
+    head = text[:GOAL_BRIEF_MAX_CHARS]
+    cut = head.rfind("\n")
+    if cut >= GOAL_BRIEF_MAX_CHARS // 2:
+        head = head[:cut]
+    return (f"{head.rstrip()}……（只摘了开头：用户原话共 {len(text)} 字，全文在对话里用户那条消息中，"
+            "数据和要求以那条为准）")
+
+
 def _system_prompt(state: V5SessionState) -> str:
     """给控制面模型的那一句。抄 grok：complete the request，不是答题手册。
 
@@ -4342,7 +4366,7 @@ def _system_prompt(state: V5SessionState) -> str:
         "等待类工具（shell_wait、project_status 的 waitSeconds）在活干完时立刻返回，"
         "所以一次给足秒数比反复短轮询便宜。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
-        f"当前目标：{goal[:200]}。停泊：{parked}。"
+        f"当前目标：{_goal_brief(goal)}。停泊：{parked}。"
         f"{fact_blob}"
     )
     return f"{base}\n{extra}" if extra else base
