@@ -393,6 +393,11 @@ def list_sess(
             "artifactCount": int(summary.get("artifactCount") or 0),
             "phase": summary.get("phase"),
         }
+        # ⚠ 2026-10-04：卡片摘要（services/session_card.py）。「我的应用」原来每张会话卡挂载
+        #   就 GET /sessions/{sid} 拉整包推这几样——首屏 99 条 / 9 MB / 最后一条 23 s。
+        #   过期（card_rev ≠ rev）或没算过的不给，前端那张卡退回逐张拉，不画过期的卡。
+        if summary.get("card"):
+            item["card"] = summary["card"]
         # ⚠ 2026-08-24：会话摘要带上 appId + 缩略图三件套。
         #
         # 应用中心把「全部会话」和「**一页**应用」合并去重（mergeGalleryItems 按

@@ -152,7 +152,42 @@ export interface SessionListItem {
   officeSha?: string;
   /** 封面直接按它下载，不再逐张 GET /artifacts 找（2026-10-03 测试库：16 张排成 11～16 秒）。 */
   officeArtifactId?: string;
+  /**
+   * 卡片摘要（Python services/session_card.py 在**保存时**算好，GET /sessions 一次带齐）。
+   *
+   * ⚠ 2026-10-03 用户截图「我的应用」一长串「待处理」：每张会话卡挂载就 GET /sessions/{sid}
+   *   拉整份会话推状态/指标——本地复现首屏 99 条、9.0 MB、最后一条 23 s。有它就不再拉。
+   *   没有（存量还没补算 / 老代码写过、摘要作废）→ 这张卡照旧逐张拉，不画过期的卡。
+   */
+  card?: SessionCardSummary;
 }
+
+/**
+ * 会话卡片摘要的线上形状。字段逐个对应 `deriveAppCardDetail(state)` 推出来的那份
+ * AppCardDetail（去掉 model / specPages 两个本体）。两边被同一份金样钉着：
+ * slide-rule-python/tests/fixtures/session_card_parity.json。
+ */
+export interface SessionCardSummary {
+  v: number;
+  runtimeKind: "project" | null;
+  projectId: string | null;
+  projectRevision: string | null;
+  status: AppCardStatus;
+  evidenceCount: number;
+  blocked: boolean;
+  entities: number;
+  pages: number;
+  flowNodes: number;
+  roles: number | null;
+  aiCaps: number | null;
+  identity: { productName: string; theme: string; icon: string } | null;
+  pageNames: string[];
+  entityNames: string[];
+  stableDigest: string | null;
+}
+
+/** 后端摘要版本。不认识的版本当没有，退回逐张拉整包——宁慢，不错。 */
+export const SESSION_CARD_VERSION = 1;
 
 export type AppCardStatus = "runnable" | "awaiting" | "draft";
 
@@ -411,6 +446,63 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
 }
 
 /**
+ * 会话卡片摘要 → 卡片详情。与 `deriveAppCardDetail(state)` 同一份结果，只是不带
+ * model / specPages 两个本体（会话卡点击直接进会话，用不到只读预览）。
+ *
+ * 形状不对 / 版本不认识 → null：调用方退回 GET /sessions/{sid} 拉整包。
+ */
+export function deriveDetailFromSessionCard(card: unknown): AppCardDetail | null {
+  const c = card as Partial<SessionCardSummary> | null | undefined;
+  if (!c || typeof c !== "object" || c.v !== SESSION_CARD_VERSION) return null;
+  if (c.status !== "runnable" && c.status !== "awaiting" && c.status !== "draft") return null;
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const countOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const id = c.identity;
+  const detail: AppCardDetail = {
+    status: c.status,
+    evidenceCount: count(c.evidenceCount),
+    blocked: c.blocked === true,
+    entities: count(c.entities),
+    pages: count(c.pages),
+    flowNodes: count(c.flowNodes),
+    roles: countOrNull(c.roles),
+    aiCaps: countOrNull(c.aiCaps),
+    identity:
+      id && typeof id === "object"
+        ? { productName: String(id.productName ?? ""), theme: String(id.theme ?? "azure"), icon: String(id.icon ?? "boxes") }
+        : null,
+    pageNames: names(c.pageNames),
+    entityNames: names(c.entityNames),
+    stableDigest: typeof c.stableDigest === "string" && c.stableDigest ? c.stableDigest : undefined,
+    model: null,
+    specPages: null,
+  };
+  if (c.runtimeKind !== "project") return detail;
+  return {
+    ...detail,
+    runtimeKind: "project",
+    projectId: typeof c.projectId === "string" ? c.projectId : null,
+    projectRevision: typeof c.projectRevision === "string" ? c.projectRevision : null,
+    projectRevisionMode: "current",
+  };
+}
+
+/**
+ * 卡片详情能不能**不打网络**就拿到：能 → 详情（或 null = 确实没有）；不能 → undefined，
+ * 调用方去 GET /sessions/{sid} 拉整包。
+ *
+ *   app 源     —— 列表摘要就够（2026-08-22 起卡片不再 GET /apps/{id}）。
+ *   session 源 —— 带着卡片摘要就够（2026-10-04，见 SessionListItem.card）；
+ *                 摘要缺 / 版本不认识 → undefined，退回老路（慢但对，不画过期的卡）。
+ */
+export function detailWithoutNetwork(gi: Pick<GalleryItem, "source" | "summary" | "card">): AppCardDetail | null | undefined {
+  if (gi.source === "app") return gi.summary ? deriveDetailFromAppSummary(gi.summary) : null;
+  const fromCard = gi.card ? deriveDetailFromSessionCard(gi.card) : null;
+  return fromCard ?? undefined;
+}
+
+/**
  * App Store 完整记录（含 model_json）→ 卡片详情。App Store 只存闭环应用，
  * model_json 就是那份 five-system 模型，直接喂 buildDetailFromModel（证据满 6、
  * 不 blocked），得到的指标/身份/活渲染模型跟会话卡完全同源。
@@ -535,6 +627,8 @@ export interface GalleryItem {
   officeSha?: string;
   /** 封面直接按它下载，不再逐张 GET /artifacts 找（2026-10-03 测试库：16 张排成 11～16 秒）。 */
   officeArtifactId?: string;
+  /** session 源：列表带回来的卡片摘要（见 SessionListItem.card）。有它 ensureDetail 不打网络。 */
+  card?: SessionCardSummary;
 }
 
 /**
@@ -600,6 +694,7 @@ export function mergeGalleryItems(
       officePath: s.officePath,
       officeSha: s.officeSha,
       officeArtifactId: s.officeArtifactId,
+      card: s.card,
     }));
   return [...appItems, ...sessionItems];
 }
@@ -1799,12 +1894,10 @@ export function AppsWorkbench() {
    */
   const ensureDetail = React.useCallback((gi: GalleryItem) => {
     if (detailsRef.current[gi.key] !== undefined) return;
-    if (gi.source === "app") {
-      // 同步落，不进 inflight——没有异步，也就没有"在飞"这回事。
-      setDetails(prev => ({
-        ...prev,
-        [gi.key]: gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
-      }));
+    // 同步落，不进 inflight——没有异步，也就没有"在飞"这回事。
+    const local = detailWithoutNetwork(gi);
+    if (local !== undefined) {
+      setDetails(prev => ({ ...prev, [gi.key]: local }));
       return;
     }
     if (inflightRef.current.has(gi.key)) return;

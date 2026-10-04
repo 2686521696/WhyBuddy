@@ -399,6 +399,9 @@ modules = [
   "services.run_pause",
   "services.run_registry",
   "services.session_blob_store",
+  # 会话卡片摘要：payload → 卡片那几样，纯函数（2026-10-04，「我的应用」不再逐张拉整包）。
+  # 段名读产品原型账本（archetype_legal，util），所以在 core 不在 util。
+  "services.session_card",
   "services.slide_rule_coverage",
   "services.slide_rule_llm",
   "services.slide_rule_orchestrator",
@@ -838,6 +841,8 @@ modules = [
   "services.project_verification_store",
   "services.project_site_store",
   "services.session_blob_store",
+  # 摘要是落库投影的一部分，跟 goal_text / runtime_phase 同一路子。
+  "services.session_card",
 ]
 
 [component.workspace]

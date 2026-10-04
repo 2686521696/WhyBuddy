@@ -57,6 +57,8 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
+from .session_card import decode_card, encode_card, session_card_summary
+
 TABLE = "sliderule_session"
 
 #: 侧栏 GET /sessions 的瘦查询。⚠ 2026-08-19 白天：`select session_id, payload`
@@ -71,7 +73,8 @@ select
   last_active,
   goal_text,
   runtime_phase as phase,
-  coalesce(artifact_count, 0) as artifact_count
+  coalesce(artifact_count, 0) as artifact_count,
+  case when card_rev = rev then card_summary end as card_summary
 from {TABLE}
 """
 
@@ -83,7 +86,8 @@ select
   last_active,
   goal_text,
   runtime_phase as phase,
-  coalesce(artifact_count, 0) as artifact_count
+  coalesce(artifact_count, 0) as artifact_count,
+  case when card_rev = rev then card_summary end as card_summary
 from {TABLE}
 """
 
@@ -91,7 +95,20 @@ _LIST_PROJ_COLUMNS = (
     ("goal_text", "text"),
     ("runtime_phase", "varchar(32)"),
     ("artifact_count", "integer"),
+    # 卡片摘要（services/session_card.py）。card_rev = 算摘要时那一版的 rev；
+    # 列表只在 card_rev = rev 时给摘要——老代码写过一次（rev+1、不碰这两列）
+    # 摘要就自动作废，前端退回逐张拉整包，**不会画一张过期的卡**。
+    ("card_summary", "text"),
+    ("card_rev", "integer"),
 )
+
+#: 摘要要补算的行。按最近活跃排，先补用户最先看到的那几屏。
+_STALE_CARD_SQL = f"""
+select session_id, rev from {TABLE}
+where card_rev is null or card_rev <> rev
+order by last_active desc
+limit :n
+"""
 
 _BACKFILL_LIST_PROJ_PG = f"""
 update {TABLE} set
@@ -159,6 +176,7 @@ def _list_projection(payload: dict[str, Any]) -> dict[str, Any]:
         "goal": summary["goal"] or "",
         "phase": summary["phase"],
         "n_art": int(summary["artifactCount"] or 0),
+        "card": encode_card(payload),
     }
 
 
@@ -226,6 +244,8 @@ def _summary_from_payload(
         "lastActive": _stamp_iso(active),
         "artifactCount": len(artifacts) if isinstance(artifacts, list) else 0,
         "phase": payload.get("runtimePhase") if isinstance(payload, dict) else None,
+        # 文件后端没有投影列，摘要就地算——同一个函数，不会跟库后端漂移。
+        "card": session_card_summary(payload) if isinstance(payload, dict) else None,
     }
 
 
@@ -261,6 +281,7 @@ def row_to_summary(row: Any) -> dict[str, Any]:
         "lastActive": _stamp_iso(_cell(row, "last_active", "lastActive")),
         "artifactCount": count,
         "phase": phase,
+        "card": decode_card(_cell(row, "card_summary")),
     }
 
 
@@ -321,6 +342,16 @@ class SessionBlobStore:
             json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()
         ).hexdigest()
 
+    def stale_card_rows(self, limit: int) -> list[tuple[str, int]]:
+        """卡片摘要过期（或从没算过）的行：(session_id, rev)。只读两列，不碰 payload。
+
+        文件后端没有投影列，摘要每次列表现算，永远不过期。"""
+        return []
+
+    def write_card(self, session_id: str, rev: int, card: Optional[str]) -> bool:
+        """只写投影，不动 payload、不动 rev；rev 对不上（期间有人写过）就不写。"""
+        return False
+
     def delete(self, session_id: str) -> bool:
         raise NotImplementedError
 
@@ -341,7 +372,9 @@ create table if not exists {TABLE} (
     owner_id varchar(64),
     goal_text text,
     runtime_phase varchar(32),
-    artifact_count integer
+    artifact_count integer,
+    card_summary text,
+    card_rev integer
 )
 """
 
@@ -355,7 +388,9 @@ create table if not exists {TABLE} (
     owner_id varchar(64),
     goal_text text,
     runtime_phase varchar(32),
-    artifact_count integer
+    artifact_count integer,
+    card_summary text,
+    card_rev integer
 )
 """
 
@@ -387,7 +422,7 @@ def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_s
     proj = _list_projection(payload)
     params = [session_id, json.dumps(payload, ensure_ascii=False), _now_iso(),
               proj["owner"], proj["goal"], proj["phase"], proj["n_art"], expected_rev,
-              fence["runId"], fence["ownerId"], fence["generation"], fence["workerId"]]
+              fence["runId"], fence["ownerId"], fence["generation"], fence["workerId"], proj["card"]]
     clock = "(julianday('now') - 2440587.5) * 86400" if is_sqlite else "extract(epoch from clock_timestamp())"
     cancelled = "json_extract(cr.payload, '$.cancelRequested') = 0" if is_sqlite else "cast(cr.payload as jsonb)->>'cancelRequested' = 'false'"
     lock = "" if is_sqlite else " for update of cr"
@@ -409,8 +444,8 @@ def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_s
     owned = f"exists(select 1 from owned_control where lease_expires_at > {clock})"
     blob = "$2" if is_sqlite else "cast($2 as jsonb)"
     if expected_rev is None:
-        sql = (f"insert into {TABLE}(session_id,payload,rev,created_at,last_active,owner_id,goal_text,runtime_phase,artifact_count) "
-               f"select $1,{blob},1,$3,$3,$4,$5,$6,$7 where cast($8 as integer) is null and {owned} "
+        sql = (f"insert into {TABLE}(session_id,payload,rev,created_at,last_active,owner_id,goal_text,runtime_phase,artifact_count,card_summary,card_rev) "
+               f"select $1,{blob},1,$3,$3,$4,$5,$6,$7,$13,1 where cast($8 as integer) is null and {owned} "
                "on conflict(session_id) do nothing returning session_id")
     else:
         owner = "json_extract(payload, '$.ownerId')" if is_sqlite else "payload->>'ownerId'"
@@ -421,7 +456,8 @@ def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_s
                 "and s.payload->>'ownerId'=$10 for update of s) "
             )
             owned = f"exists(select 1 from locked_session where lease_expires_at > {clock})"
-        sql = (f"update {TABLE} set payload={blob},rev=rev+1,last_active=$3,owner_id=$4,goal_text=$5,runtime_phase=$6,artifact_count=$7 "
+        sql = (f"update {TABLE} set payload={blob},rev=rev+1,last_active=$3,owner_id=$4,goal_text=$5,runtime_phase=$6,artifact_count=$7,"
+               "card_summary=$13,card_rev=rev+1 "
                f"where session_id=$1 and rev=$8 and {owner}=$10 "
                f"and {owned} returning session_id")
     return cte + sql, params
@@ -538,6 +574,7 @@ class SqlSessionBlobStore(SessionBlobStore):
             "goal": proj["goal"],
             "phase": proj["phase"],
             "n_art": proj["n_art"],
+            "card": proj["card"],
         }
         with self._engine.begin() as conn:
             if expected_rev is None:
@@ -548,9 +585,9 @@ class SqlSessionBlobStore(SessionBlobStore):
                         self._text(
                             f"insert into {TABLE} "
                             f"(session_id, payload, rev, created_at, last_active, "
-                            f"owner_id, goal_text, runtime_phase, artifact_count) "
+                            f"owner_id, goal_text, runtime_phase, artifact_count, card_summary, card_rev) "
                             f"values (:sid, {payload_expr}, 1, :now, :now, "
-                            f":owner, :goal, :phase, :n_art)"
+                            f":owner, :goal, :phase, :n_art, :card, 1)"
                         ),
                         binds,
                     )
@@ -561,12 +598,32 @@ class SqlSessionBlobStore(SessionBlobStore):
                 self._text(
                     f"update {TABLE} set payload = {payload_expr}, rev = rev + 1, "
                     f"last_active = :now, owner_id = :owner, goal_text = :goal, "
-                    f"runtime_phase = :phase, artifact_count = :n_art "
+                    f"runtime_phase = :phase, artifact_count = :n_art, "
+                    f"card_summary = :card, card_rev = rev + 1 "
                     f"where session_id = :sid and rev = :rev"
                 ),
                 {**binds, "rev": expected_rev},
             )
             return (result.rowcount or 0) > 0
+
+    def stale_card_rows(self, limit: int) -> list[tuple[str, int]]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                self._text(_STALE_CARD_SQL),
+                {"n": int(limit)},
+            ).all()
+        return [(str(r[0]), int(r[1])) for r in rows]
+
+    def write_card(self, session_id: str, rev: int, card: Optional[str]) -> bool:
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                self._text(
+                    f"update {TABLE} set card_summary = :card, card_rev = rev "
+                    f"where session_id = :sid and rev = :rev"
+                ),
+                {"card": card, "sid": session_id, "rev": int(rev)},
+            )
+        return (result.rowcount or 0) > 0
 
     def delete(self, session_id: str) -> bool:
         with self._engine.begin() as conn:
@@ -672,8 +729,8 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
             # on conflict do nothing + returning：撞上了返回 0 行 = CAS 失败
             affected = self._rows_affected(
                 f"insert into {TABLE} (session_id, payload, rev, created_at, last_active, "
-                f"owner_id, goal_text, runtime_phase, artifact_count) "
-                f"values ($1, $2::jsonb, 1, $3, $3, $4, $5, $6, $7) "
+                f"owner_id, goal_text, runtime_phase, artifact_count, card_summary, card_rev) "
+                f"values ($1, $2::jsonb, 1, $3, $3, $4, $5, $6, $7, $8, 1) "
                 f"on conflict (session_id) do nothing returning session_id",
                 [
                     session_id,
@@ -683,12 +740,14 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
                     proj["goal"],
                     proj["phase"],
                     proj["n_art"],
+                    proj["card"],
                 ],
             )
             return affected > 0
         affected = self._rows_affected(
             f"update {TABLE} set payload = $2::jsonb, rev = rev + 1, last_active = $3, "
-            f"owner_id = $5, goal_text = $6, runtime_phase = $7, artifact_count = $8 "
+            f"owner_id = $5, goal_text = $6, runtime_phase = $7, artifact_count = $8, "
+            f"card_summary = $9, card_rev = rev + 1 "
             f"where session_id = $1 and rev = $4 returning session_id",
             [
                 session_id,
@@ -699,9 +758,21 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
                 proj["goal"],
                 proj["phase"],
                 proj["n_art"],
+                proj["card"],
             ],
         )
         return affected > 0
+
+    def stale_card_rows(self, limit: int) -> list[tuple[str, int]]:
+        rows = self._q(_STALE_CARD_SQL.replace(":n", "$1"), [int(limit)])
+        return [(str(r["session_id"]), int(r.get("rev") or 0)) for r in rows]
+
+    def write_card(self, session_id: str, rev: int, card: Optional[str]) -> bool:
+        return self._rows_affected(
+            f"update {TABLE} set card_summary = $3, card_rev = rev "
+            f"where session_id = $1 and rev = $2 returning session_id",
+            [session_id, int(rev), card],
+        ) > 0
 
     def delete(self, session_id: str) -> bool:
         return (

@@ -115,6 +115,8 @@ from services.v5_capability_executor import _llm_generate_enabled
 # 而 app 本来就在顶上 import routes/services，放这儿不多一条边。
 import routes.sliderule_full as _routes
 import services.control_run_service as _crs
+import services.persistence as _persistence
+from config.env_flags import flag
 import services.project_creation as _pc
 import services.project_runtime_worker as _prw
 import services.rehearsal_control as _rc
@@ -300,6 +302,7 @@ def _warm_storage_backends() -> None:
     def _warm() -> None:
         import time
 
+        built = {}
         for label, build in (
             ("session store", lambda: __import__(
                 "services.persistence", fromlist=["_blob_store"]
@@ -316,11 +319,24 @@ def _warm_storage_backends() -> None:
         ):
             started = time.time()
             try:
-                build()
+                built[label] = build()
             except Exception as exc:  # noqa: BLE001 — 预热失败退回懒加载即可
                 print(f"[startup] 预热 {label} 失败（退回懒加载）: {str(exc)[:160]}")
                 continue
             print(f"[startup] 预热 {label} 就绪 {int((time.time() - started) * 1000)}ms")
+        # 卡片摘要补算（services/session_card.py）：放在三个后端都建好之后，
+        # 不跟登录要用的身份库抢预热；用的就是上面建好的那个会话后端，不再建一次。
+        # 文件存档（None）没有投影列，不用补。⚠ 这是**写库**——本机 .env 指着
+        # 谁的库，就补谁的库。SLIDERULE_SESSION_CARD_BACKFILL=0 关掉。
+        session_store = built.get("session store")
+        if session_store is None or not flag("SLIDERULE_SESSION_CARD_BACKFILL", default=True):
+            return
+        started = time.time()
+        try:
+            stats = _persistence.refresh_stale_session_cards(store=session_store)
+            print(f"[startup] 卡片摘要补算 {stats} {int((time.time() - started) * 1000)}ms")
+        except Exception as exc:  # noqa: BLE001 — 增强类，失败只是卡片退回逐张拉
+            print(f"[startup] 卡片摘要补算失败: {str(exc)[:160]}")
 
     threading.Thread(target=_warm, name="warm-storage", daemon=True).start()
 

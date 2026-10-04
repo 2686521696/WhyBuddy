@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **360** 个，模块 **360** 个
-- 内部依赖边 **1209** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1118** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **361** 个，模块 **361** 个
+- 内部依赖边 **1214** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1123** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -38,7 +38,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
 | `util` | 159 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 74 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `core` | 75 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -50,10 +50,10 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 ```mermaid
 flowchart TB
   util["util<br/>159 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>74 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  core["core<br/>75 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|164| util
-  flow -->|139| core
+  core -->|165| util
+  flow -->|140| core
   flow -->|172| util
 ```
 
@@ -67,15 +67,15 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>276 个模块<br/>业务"]
+  services["services<br/>277 个模块<br/>业务"]
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
   scripts["scripts<br/>40 个模块<br/>运维脚本"]
-  app -->|1| config
+  app -->|2| config
   app -->|1| models
   app -->|17| routes
-  app -->|28 · 其中 3 条边来自函数体 import| services
+  app -->|29 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -160,7 +160,7 @@ flowchart LR
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>41"]
   permission["permission<br/>8"]
-  persist["persist<br/>12"]
+  persist["persist<br/>13"]
   platform["platform<br/>44"]
   run_control["run_control<br/>4"]
   runtime["runtime<br/>11"]
@@ -206,8 +206,8 @@ flowchart LR
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|3| persist
-  entrypoint -->|7| platform
+  entrypoint -->|4| persist
+  entrypoint -->|8| platform
   entrypoint -->|5| runtime
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
@@ -254,7 +254,7 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|41| platform
+  persist -->|42| platform
   run_control -->|1| platform
   runtime -->|2| identity
   runtime -->|12| persist

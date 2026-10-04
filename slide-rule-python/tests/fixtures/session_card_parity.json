@@ -1,0 +1,1550 @@
+{
+ "_comment": "会话卡片摘要金样：state → expected（Python services/session_card.py 的输出）。前端 session-card-parity.test.ts 拿同一批 state 跑原推导 deriveAppCardDetail，必须与「expected → deriveDetailFromSessionCard」逐字段相等。改口径：先改前端推导，再按 tests/test_session_card.py 头注重生 expected，两边一起过。",
+ "cases": [
+  {
+   "name": "空会话",
+   "state": {},
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "闭环满 6 条、模型齐全 → runnable",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "blocked": false,
+     "stableDigest": "abc123",
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "runnable",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": "abc123"
+   }
+  },
+  {
+   "name": "证据不足 6 条 → draft",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 5,
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 5,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "证据满但 blocked → 不是 runnable",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "blocked": true,
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 6,
+    "blocked": true,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "blocked = [] 在 JS 里是真",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "blocked": [],
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 6,
+    "blocked": true,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "blocked = 0 / awaitReason = '' 都是假",
+   "state": {
+    "awaitReason": "",
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "blocked": 0,
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "runnable",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "证据数是字符串 '6'",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": "6",
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "runnable",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "证据数是坏字符串 → 0",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": "six",
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "没模型、有 awaitReason → awaiting",
+   "state": {
+    "awaitReason": "need_user_input",
+    "publishClosure": {
+     "evidencePresentCount": 6
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "awaiting",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "证据满但模型一段都没有 → 不是 runnable",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "perSkillEvidence": {
+      "page": {
+       "modelSection": [
+        "不是对象"
+       ]
+      },
+      "rbac": "坏",
+      "aigc": null
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "只有部分模型段",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 3,
+     "perSkillEvidence": {
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "唯一一页"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {}
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 3,
+    "blocked": false,
+    "entities": 0,
+    "pages": 1,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [
+     "唯一一页"
+    ],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "身份只有 theme、空 icon → 默认 boxes",
+   "state": {
+    "publishClosure": {
+     "perSkillEvidence": {
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "theme": "violet",
+         "icon": "  "
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": {
+     "productName": "",
+     "theme": "violet",
+     "icon": "boxes"
+    },
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "身份 productName / theme 都空 → 没有身份",
+   "state": {
+    "publishClosure": {
+     "perSkillEvidence": {
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "",
+         "icon": "boxes"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "摘要取 closureHash、截 32 位",
+   "state": {
+    "publishClosure": {
+     "closureHash": "0123456789abcdef0123456789abcdef-tail",
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 5,
+    "pages": 9,
+    "flowNodes": 2,
+    "roles": 3,
+    "aiCaps": 1,
+    "identity": {
+     "productName": "小店进销存",
+     "theme": "emerald",
+     "icon": "shopping-cart"
+    },
+    "pageNames": [
+     "首页",
+     "orders",
+     "客户",
+     "报表",
+     "设置",
+     "日志"
+    ],
+    "entityNames": [
+     "订单",
+     "customer",
+     "商品",
+     "库存"
+    ],
+    "stableDigest": "0123456789abcdef0123456789abcdef"
+   }
+  },
+  {
+   "name": "publishClosure 是 null",
+   "state": {
+    "publishClosure": null,
+    "awaitReason": "x"
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "awaiting",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "perSkillEvidence 是数组",
+   "state": {
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "perSkillEvidence": [
+      1,
+      2
+     ]
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": null,
+    "projectId": null,
+    "projectRevision": null,
+    "status": "draft",
+    "evidenceCount": 6,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": 0,
+    "aiCaps": 0,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "工程会话：只认工程指针，旧闭环不算",
+   "state": {
+    "runtimeKind": "project",
+    "projectId": "prj-1",
+    "projectRevision": "prv-2",
+    "publishClosure": {
+     "evidencePresentCount": 6,
+     "perSkillEvidence": {
+      "datamodel": {
+       "modelSection": {
+        "entities": [
+         {
+          "name": "订单"
+         },
+         {
+          "id": "customer"
+         },
+         {
+          "name": "商品"
+         },
+         {
+          "name": "库存"
+         },
+         {
+          "name": "仓库"
+         }
+        ]
+       }
+      },
+      "rbac": {
+       "modelSection": {
+        "roles": [
+         {
+          "id": "admin"
+         },
+         {
+          "id": "staff"
+         },
+         {
+          "id": "guest"
+         }
+        ]
+       }
+      },
+      "workflow": {
+       "modelSection": {
+        "nodes": [
+         {
+          "id": "n1"
+         },
+         {
+          "id": "n2"
+         }
+        ]
+       }
+      },
+      "page": {
+       "modelSection": {
+        "pages": [
+         {
+          "name": "首页"
+         },
+         {
+          "id": "orders"
+         },
+         {
+          "name": "客户"
+         },
+         {
+          "name": ""
+         },
+         "坏页",
+         {
+          "name": "报表"
+         },
+         {
+          "name": "设置"
+         },
+         {
+          "name": "日志"
+         },
+         {
+          "name": "第八页"
+         }
+        ]
+       }
+      },
+      "aigc": {
+       "modelSection": {
+        "capabilities": [
+         {
+          "id": "summarize"
+         }
+        ]
+       }
+      },
+      "appbundle": {
+       "modelSection": {
+        "appIdentity": {
+         "productName": "  小店进销存 ",
+         "theme": " emerald ",
+         "icon": "shopping-cart"
+        }
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": "project",
+    "projectId": "prj-1",
+    "projectRevision": "prv-2",
+    "status": "draft",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": null,
+    "aiCaps": null,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  },
+  {
+   "name": "工程会话 + awaitReason → awaiting",
+   "state": {
+    "runtimeKind": "project",
+    "projectId": 7,
+    "awaitReason": {
+     "kind": "plan"
+    }
+   },
+   "expected": {
+    "v": 1,
+    "runtimeKind": "project",
+    "projectId": null,
+    "projectRevision": null,
+    "status": "awaiting",
+    "evidenceCount": 0,
+    "blocked": false,
+    "entities": 0,
+    "pages": 0,
+    "flowNodes": 0,
+    "roles": null,
+    "aiCaps": null,
+    "identity": null,
+    "pageNames": [],
+    "entityNames": [],
+    "stableDigest": null
+   }
+  }
+ ]
+}

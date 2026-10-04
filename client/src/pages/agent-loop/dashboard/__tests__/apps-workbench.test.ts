@@ -181,11 +181,17 @@ describe("应用卡不再拉整包", () => {
   );
 
   it("ensureDetail 的 app 分支不打网络", () => {
-    expect(ensure).toContain("deriveDetailFromAppSummary");
+    // 2026-10-04：「不打网络就能拿到的详情」抽成 detailWithoutNetwork（会话卡摘要也走它），
+    //   app 分支搬了家，判据跟着去——盯的仍是「先问它、问到了就 return，不掉进 fetch」。
+    const local = src.slice(
+      src.indexOf("export function detailWithoutNetwork"),
+      src.indexOf("export function deriveDetailFromAppRecord"),
+    );
+    expect(local).toMatch(/gi\.source === "app"\) return [^;]*deriveDetailFromAppSummary/);
+    expect(ensure).toMatch(/detailWithoutNetwork\(gi\)[\s\S]{0,200}?return;[\s\S]*fetch\(/);
     // 反向：整段 ensureDetail 里不许再出现 getApp。
     expect(ensure).not.toContain("getApp");
-    // app 分支必须先 return，别掉进下面那条会话卡的 fetch 里。
-    expect(ensure).toMatch(/gi\.source === "app"[\s\S]{0,400}?return;/);
+    expect(local).not.toContain("getApp");
   });
 
   it("会话卡还得拉——它们没落进 App Store，状态只在会话档里", () => {

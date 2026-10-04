@@ -37,6 +37,7 @@ from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
 from services.project_authority import assert_session_authorized, has_generated_application
+from services.session_card import encode_card, session_card_summary
 
 STORE_FILE = "data/sliderule-sessions.json"
 STORE_FILE_ENV = "SLIDERULE_SESSIONS_FILE"
@@ -1261,6 +1262,10 @@ def _summary_from_state(state: V5SessionState, meta: Dict[str, Any]) -> dict[str
         "lastActive": m.get("lastActive"),
         "artifactCount": len(getattr(state, "artifacts", None) or []),
         "phase": getattr(state, "runtimePhase", None),
+        # 文件存档那一路（没配库 / SLIDERULE_SESSIONS_FILE）：没有投影列，摘要现算。
+        # ⚠ 2026-10-04 第一版只改了库后端的 row_to_summary / _summary_from_payload，
+        #   文件这一路走的是这里——「我的应用」在本地文件存档下照旧逐张拉整包（第四条）。
+        "card": session_card_summary(state.model_dump()),
     }
 
 
@@ -1297,6 +1302,55 @@ def list_session_summaries(store_file: Optional[StorePath] = None) -> list:
     if error or rows is None:
         return []
     return rows
+
+
+def refresh_stale_session_cards(
+    batch: int = 25, store_file: Optional[StorePath] = None, *, store: Any = None,
+    max_rows: Optional[int] = None,
+) -> dict:
+    """把卡片摘要过期 / 没算过的会话补算一遍（services/session_card.py）。
+
+    ⚠ 2026-10-04：卡片摘要上线前的存量会话一条都没有摘要；老代码（还没部署
+      新版的那台机器）写过的会话摘要也会作废（card_rev ≠ rev）。没摘要的卡前端
+      退回逐张拉整包——正确但慢，正是这次要消掉的那 9 MB。
+
+    增强类，fail-open：哪条读不出 / 写不进就跳过，不重试、不抛（本仓第七条）。
+    写回带 rev 条件：补算期间有人保存了这条会话，新那次保存自己会带上摘要。
+    每条只试一次——同一条反复失败也不会把这个循环拖成死循环。
+    """
+    # 启动预热已经建好了后端就直接用它，不再建一次（建一次 ~1.5 s，见 app._warm_storage_backends）。
+    store = store if store is not None else _blob_store(store_file)
+    stats = {"written": 0, "skipped": 0, "failed": 0}
+    if store is None:
+        return stats
+    tried: set[str] = set()
+    while max_rows is None or len(tried) < max_rows:
+        try:
+            rows = store.stale_card_rows(batch + len(tried))
+        except Exception as exc:  # noqa: BLE001 — 列不存在 / 网关抖：这轮作罢
+            print(f"[session_card] 补算列表查询失败: {str(exc)[:160]}")
+            stats["failed"] += 1
+            break
+        todo = [(sid, rev) for sid, rev in rows if sid not in tried]
+        if not todo:
+            break
+        for sid, rev in todo:
+            if max_rows is not None and len(tried) >= max_rows:
+                break
+            tried.add(sid)
+            try:
+                row = store.load(sid)
+                if row is None or row.rev != rev:
+                    stats["skipped"] += 1
+                    continue
+                if store.write_card(sid, rev, encode_card(row.payload)):
+                    stats["written"] += 1
+                else:
+                    stats["skipped"] += 1
+            except Exception as exc:  # noqa: BLE001
+                stats["failed"] += 1
+                print(f"[session_card] {sid} 补算失败: {str(exc)[:160]}")
+    return stats
 
 
 def session_has_goal(row: Any) -> bool:
