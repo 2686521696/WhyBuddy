@@ -99,6 +99,7 @@ import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
 import {
   attachProjectChipsToTurns,
   projectActionDetail,
+  projectToolFailed,
   projectToolStillOpen,
   turnsHaveProjectChips, liveToolResultDetail } from "./project-activity";
 import {
@@ -1824,7 +1825,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onControlToolResult: (event: Record<string, unknown>) => {
                 const tool = projectToolLabel(event.tool);
                 if (!tool) return;
-                const ok = event.ok !== false;
+                const ok = !projectToolFailed(event);
                 const stillOpen = projectToolStillOpen(event);
                 const detail = liveToolResultDetail(event);
                 const label = !ok
@@ -2882,7 +2883,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const tool = projectToolLabel(event.tool);
                 if (!tool) return;
                 replaySeq += 1;
-                const ok = event.ok !== false;
+                const ok = !projectToolFailed(event);
                 const stillOpen = projectToolStillOpen(event);
                 const detail = projectActionDetail(event);
                 replayedChips.push({

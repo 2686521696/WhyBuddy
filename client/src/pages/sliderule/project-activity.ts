@@ -363,6 +363,34 @@ export function projectComputerView(
 const TERMINAL_OPERATION = new Set(["completed", "failed", "cancelled"]);
 
 /**
+ * 回执里的 status 说的是**这件工具自己跑的命令**的那几件。
+ * project_logs / shell_wait / project_status 回执里也有 status，但那是**被查看的那条命令**的——
+ * 查看一条失败命令的日志，查看这件事本身是成功的。
+ */
+const OWN_COMMAND_TOOLS = new Set(["shell_exec", "bash", "project_exec", "project_start"]);
+
+/**
+ * 这一步在用户眼里算不算失败。
+ *
+ * ⚠ 2026-10-04 真机 @pptx-* 做 Q3 复盘（sr-20261004014048-30K5A9VBHA）：沙盒没装 python-pptx，
+ *   第一次 `python3 build_q3_sales_review.py` 退出码非 0，回执是 `ok: true, status: "failed"`——
+ *   shell_exec 的 ok 只表示「命令已受理」（工具说明原话），成败在 status / exitCode。
+ *   三处显示（实时流、续播、刷新后从 controlTranscript 还原）都只看 ok，于是步骤写「已运行 1 个命令」，
+ *   不标失败；同组里 file_read 的 project_file_not_found 倒是标了「3 失败」——同一种坏消息，一个说一个不说。
+ *   三处统一走这一个判定（§四）。
+ */
+export function projectToolFailed(
+  event: Record<string, unknown> | null | undefined
+): boolean {
+  if (!event || typeof event !== "object") return false;
+  if (event.ok === false) return true;
+  if (!OWN_COMMAND_TOOLS.has(String(event.tool || ""))) return false;
+  if (String(event.status || "").trim().toLowerCase() === "failed") return true;
+  const code = event.exitCode;
+  return event.commandFinished === true && typeof code === "number" && code !== 0;
+}
+
+/**
  * 工具回执还没到终态：命令还在沙箱里跑。
  *
  * ⚠ 2026-09-18：`project_exec` 15 秒等不完就交回 `status=running`。
@@ -451,7 +479,7 @@ export function chipFromControlTranscriptRow(
     };
   }
   if (kind === "tool_result") {
-    const ok = item.ok !== false;
+    const ok = !projectToolFailed(item);
     const stillOpen = projectToolStillOpen(item);
     return {
       id: `${id}-result`,
