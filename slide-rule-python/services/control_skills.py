@@ -328,3 +328,37 @@ def _xml_escape(value: str) -> str:
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
+
+
+#: 像「流程」的段落标题：阶段 / 步骤 / 自查 / 验收。参考资料类（Scripts、Dependencies、Design Ideas）不算。
+_PROCESS_HEADING = re.compile(
+    r"\b(stage|step|phase|process|workflow|qa|review|testing|critique|checklist|verification)\b"
+    r"|流程|阶段|步骤|自查|自检|验收",
+    re.IGNORECASE,
+)
+_PROCESS_SECTIONS_MAX = 8
+
+
+def process_sections(body: str) -> list[str]:
+    """技能正文里规定了做法 / 先后的二级段落标题（代码块里的不算），按原文顺序，最多 8 条。
+
+    ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004172458-JFH426E38Y：开场说了「最后用
+      『新同事会问什么』做一次可读性检查」（它的 Stage 3: Reader Testing），计划的「技能落点」只写了
+      Stage 1/2 怎么落、跳过了访谈，Stage 3 一个字没提，执行也没做——write_plan 说明里那句「跳过的写为什么」
+      （修复 4）照样被漏掉。同类：@frontend-design 两轮没有它 Process 段的自查。漏的都是正文后半段的
+      流程段落，模型写计划时没再回头看。写计划那一刻把这几段的标题摆回眼前（write_plan 回执）。
+    """
+    out: list[str] = []
+    fenced = False
+    for line in str(body or "").splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced or not line.startswith("## "):
+            continue
+        title = line[3:].strip()
+        if title and _PROCESS_HEADING.search(title) and title not in out:
+            out.append(title)
+        if len(out) >= _PROCESS_SECTIONS_MAX:
+            break
+    return out

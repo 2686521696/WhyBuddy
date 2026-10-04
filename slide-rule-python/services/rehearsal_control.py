@@ -170,6 +170,7 @@ from services.control_skills import (
     mentioned_skill_playbooks,
     mentioned_skill_slugs,
     normalize_skill_name,
+    process_sections,
     skill_tool_description,
 )
 from services.deliverable_kind import (
@@ -6377,12 +6378,26 @@ async def _dispatch_tool(
         receipt = {"type": "control_tool_result", "tool": name, "ok": True,
                    "revision": latest_control_plan(state)["revision"]}
         unopened = [] if revising else _unopened_installed_skills(state)
+        hints: list[str] = []
         if unopened:
             receipt["unopenedSkills"] = [info.name for info in unopened]
-            receipt["hint"] = (
+            hints.append(
                 "计划定下之前过一遍这些已装、这次还没打开的技能："
                 + "；".join(f"{info.name}（{info.description[:70]}）" for info in unopened)
                 + "。能让这次结果更好的现在就 skill 加载、把要点写进计划；不对口的不用管。")
+        # 打开过的技能里规定了流程的段落（control_skills.process_sections 头注：真机漏的都是后半段）。
+        # 跟上面同一个时机、同样只说一次：改计划时不再摆。
+        stages = {} if revising else {
+            info.name: sections for info in _carried_skill_infos(state)
+            if (sections := process_sections(info.body))}
+        if stages:
+            receipt["skillStages"] = stages
+            hints.append(
+                "这次打开的技能自己规定了流程的段落："
+                + "；".join(name + "".join(f"「{s}」" for s in sections) for name, sections in stages.items())
+                + "。对一下计划：每段落在哪一步，或者写了为什么不做；漏了的重写计划补上，都写到了就直接往下走。")
+        if hints:
+            receipt["hint"] = "\n".join(hints)
         yield receipt
         return
     if name == "exit_plan_mode":
