@@ -364,6 +364,9 @@ class ControlRunService:
 
     async def start(self):
         if self._scanner is None:
+            # ⚠ 2026-10-04：本地连线上库时，执行阶段被谁领走只能拿库里的 lease_owner 对这一行——
+            #   以前不打，本地被线上工作器抢单查了半天才确认。pool=None 是默认组（线上）。
+            print(f"[control] worker={self.worker_id} pool={self.store.pool}", flush=True)
             self._scanner = asyncio.create_task(self._scan())
 
     async def submit(self, payload, owner_id, idempotency_key):
