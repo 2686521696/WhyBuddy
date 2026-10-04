@@ -31,10 +31,16 @@ const origin = new URL(url).origin;
 //   project_browser_action_failed。真因是本机 Playwright 1.61 要的 chromium 1228 没装
 //   （容器里是 1194），浏览器根本没起来——下面那句兜底 catch 把它抹成了「动作失败」。
 //   起不来、打不开、被拒，三件事分开报，模型才知道是环境不是代码。
+// ⚠ 2026-10-04 真机 @frontend-design 咖啡店落地页（sr-20261004015422-02T1R1SA0W）：同上，容器里
+//   Playwright 要的版本又没装（只有 chromium-1194），browser_navigate / browser_view 全回
+//   driver_unavailable，模型只好跳过 frontend-design 要求的「截图自查」。9-25 那次只把错报清楚了，
+//   没让它能起来。验收那边（server/project-verification/browser-runner.mjs）和整套浏览器测试
+//   早就认 SLIDERULE_CHROMIUM_PATH 指一个现成的 Chrome——这里是漏掉的那一处（§四）。
+const executablePath = process.env.SLIDERULE_CHROMIUM_PATH || "";
 (async () => {
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
   } catch (_) {
     throw new Error("project_browser_driver_unavailable");
   }
