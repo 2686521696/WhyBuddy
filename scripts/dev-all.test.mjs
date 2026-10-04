@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildPythonUvicornArgs, collectLlmBypassHosts, hostnameFromMaybeUrl, pythonStdioEnv } from "./dev-all.mjs";
+import { buildPythonUvicornArgs, collectLlmBypassHosts, devWorkerPoolEnv, hostnameFromMaybeUrl, pythonStdioEnv } from "./dev-all.mjs";
 
 function sourceWithoutComments(src) {
   return src
@@ -96,6 +96,26 @@ test("dev:all and dev:sliderule actually pass pythonStdioEnv to the child", () =
     /pythonStdioEnv\(/,
     "dev:sliderule starts python without PYTHONIOENCODING"
   );
+});
+
+// 2026-10-04：本地连线上库时，本地测试的执行阶段被线上工作器领走。本地起的 Python 必须进本地分组。
+test("devWorkerPoolEnv puts local python in its own pool, explicit value wins", () => {
+  assert.equal(devWorkerPoolEnv({}, "box1").SLIDERULE_WORKER_POOL, "dev-box1");
+  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "  " }, "box1").SLIDERULE_WORKER_POOL, "dev-box1");
+  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "team-a" }, "box1").SLIDERULE_WORKER_POOL, "team-a");
+});
+
+test("dev:all and dev:sliderule actually pass devWorkerPoolEnv to the python child", () => {
+  const allSrc = sourceWithoutComments(
+    readFileSync(fileURLToPath(new URL("./dev-all.mjs", import.meta.url)), "utf8")
+  );
+  const slideruleSrc = sourceWithoutComments(
+    readFileSync(fileURLToPath(new URL("./dev-sliderule.mjs", import.meta.url)), "utf8")
+  );
+  const pyStart = allSrc.indexOf("function startPythonBackend");
+  const pyFn = allSrc.slice(pyStart, allSrc.indexOf("async function main()"));
+  assert.match(pyFn, /\.\.\.devWorkerPoolEnv\(/, "dev:all python joins the shared default pool");
+  assert.match(slideruleSrc, /\.\.\.devWorkerPoolEnv\(/, "dev:sliderule python joins the shared default pool");
 });
 
 test("hostnameFromMaybeUrl keeps the host and drops the path", () => {

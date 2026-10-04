@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
+import { hostname } from "node:os";
 import dotenv from "dotenv";
 import Dockerode from "dockerode";
 
@@ -70,6 +71,18 @@ export function pythonStdioEnv(env = process.env) {
     PYTHONIOENCODING: env.PYTHONIOENCODING || "utf-8:replace",
     PYTHONUTF8: env.PYTHONUTF8 || "1",
   };
+}
+
+/**
+ * 本地起的 Python 进本地自己的「工作器分组」（slide-rule-python/services/worker_pool.py）。
+ *
+ * ⚠ 2026-10-04：.env 指着线上库时，本地和线上两套工作器抢同一个任务队列——本地测试的执行阶段
+ *   被线上工作器领走（跑的是线上代码），本地工作器也能领走线上真实用户的单。分组之后各领各的。
+ *   组名带机器名：几台开发机连同一个库也互不抢。显式设了 SLIDERULE_WORKER_POOL 就用设的。
+ */
+export function devWorkerPoolEnv(env = process.env, host = hostname()) {
+  const explicit = String(env.SLIDERULE_WORKER_POOL ?? "").trim();
+  return { SLIDERULE_WORKER_POOL: explicit || `dev-${host}` };
 }
 
 export function buildPythonUvicornArgs(pythonDir, pythonPort, env = process.env) {
@@ -692,6 +705,7 @@ function startPythonBackend(sharedDevEnv) {
   const pythonEnv = {
     ...sharedDevEnv,
     ...pythonStdioEnv(sharedDevEnv),
+    ...devWorkerPoolEnv(sharedDevEnv),
     AGENT_LOOP_RUNS_DIR:
       process.env.AGENT_LOOP_RUNS_DIR ??
       resolve(__projectRoot, ".agent-loop", "runs"),

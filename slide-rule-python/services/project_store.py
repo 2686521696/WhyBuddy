@@ -26,6 +26,7 @@ from config.settings import settings
 from models.project_runtime import Project, ProjectOperation, ProjectRevision, RuntimeEvent, RuntimeInstance, WorkspaceLease
 from services.project_manifest import build_manifest, canonical_json, content_hash
 from services.sql_gateway import HttpSqlGateway, _sql_engine_config, configure_sqlite_journal, http_api_credentials
+from services.worker_pool import current_pool, pool_filter
 # 叶子层（architecture.toml util）：只洗文件名、拼路径、读写原件磁盘块。
 # 函数体里的 import 一样算架构边（CLAUDE.md），谁都能顶层引叶子。
 from services.session_uploads import (
@@ -167,8 +168,16 @@ class ProjectStore:
         self._dialect = dialect
         self._query = query
         self._engine = None
+        # 工作器分组（services/worker_pool.py）：只领自己组下的工程操作。
+        self.worker_pool = current_pool()
         for statement in _DDL:
             self._q(statement)
+        alter = ("alter table wb_project_operation add column if not exists worker_pool varchar(80)"
+                 if dialect == "postgresql" else "alter table wb_project_operation add column worker_pool varchar(80)")
+        try:
+            self._q(alter)
+        except ProjectStoreUnavailable:  # SQLite 不认 if not exists：列已在就报错，吞掉
+            pass
 
     @classmethod
     def from_url(cls, url: str) -> ProjectStore:
@@ -649,7 +658,10 @@ class ProjectStore:
                 f"where id=${parent_index} and rev=${parent_index + 1} and payload=${parent_index + 2} and "
                 + fence + " returning id) ")
             admission = "exists(select 1 from admitted_parent)"
-        self._q(prefix + "insert into wb_project_operation(id,project_id,idempotency_key,rev,payload) select $1,$2,$3,1,$4 where "
+        params.append(self.worker_pool)
+        pool_index = len(params)
+        self._q(prefix + "insert into wb_project_operation(id,project_id,idempotency_key,rev,payload,worker_pool) "
+            f"select $1,$2,$3,1,$4,cast(${pool_index} as varchar(80)) where "
             + admission + " on conflict(project_id,idempotency_key) do nothing", params)
         saved_rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [parent.projectId, idempotency_key])
         if not saved_rows:
@@ -745,8 +757,8 @@ class ProjectStore:
         operation = ProjectOperation(operationId="pop-" + uuid.uuid4().hex, projectId=project_id,
             sessionId=project.sessionId, kind=kind, idempotencyKey=idempotency_key, requestHash=digest,
             expectedRevision=expected_revision, approvalRef=approval_ref, input=input or {}, createdAt=now, updatedAt=now)
-        self._q("insert into wb_project_operation(id,project_id,idempotency_key,rev,payload) values($1,$2,$3,1,$4) on conflict(project_id,idempotency_key) do nothing",
-            [operation.operationId, project_id, idempotency_key, operation.model_dump_json()])
+        self._q("insert into wb_project_operation(id,project_id,idempotency_key,rev,payload,worker_pool) values($1,$2,$3,1,$4,$5) on conflict(project_id,idempotency_key) do nothing",
+            [operation.operationId, project_id, idempotency_key, operation.model_dump_json(), self.worker_pool])
         rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [project_id, idempotency_key])
         saved = ProjectOperation.model_validate_json(rows[0]["payload"])
         if saved.requestHash != digest:
@@ -813,8 +825,9 @@ class ProjectStore:
         # Filtering JSON in Python keeps both SQL backends compatible. Keyset
         # paging must continue past completed rows and currently leased work.
         while len(selected) < limit:
-            rows = self._q("select o.id,o.payload,p.owner_id,l.payload as lease_payload from wb_project_operation o join wb_project p on p.id=o.project_id left join wb_project_lease l on l.project_id=o.project_id where o.id>$1 and (l.project_id is null or l.expires_at<=$2) order by o.id limit $3",
-                [cursor, time.time(), max(100, limit)])
+            mine, extra = pool_filter("o.worker_pool", self.worker_pool, 4)
+            rows = self._q("select o.id,o.payload,p.owner_id,l.payload as lease_payload from wb_project_operation o join wb_project p on p.id=o.project_id left join wb_project_lease l on l.project_id=o.project_id where o.id>$1 and (l.project_id is null or l.expires_at<=$2) and " + mine + " order by o.id limit $3",
+                [cursor, time.time(), max(100, limit), *extra])
             if not rows:
                 break
             for row in rows:
@@ -994,6 +1007,10 @@ class ProjectStore:
         """Fence out the previous worker, leaving uncertain effects to reconcile."""
         row = self._operation_row(operation_id, owner_id)
         operation = ProjectOperation.model_validate_json(row["payload"])
+        if (operation.kind in {"runtime.start", "runtime.exec"}
+                and (row.get("worker_pool") or None) != self.worker_pool):
+            # 别的组下的单（services/worker_pool.py）：扫描已按组过滤，这里再挡一道。
+            raise ProjectConflict("operation_other_worker_pool")
         lease = self.get_lease(operation.projectId, owner_id=owner_id)
         if (lease is None or lease.generation != generation or lease.leaseOwner != lease_owner
                 or lease.expiresAt <= time.time()):

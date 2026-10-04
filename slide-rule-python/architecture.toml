@@ -128,7 +128,8 @@ modules = [
   "services.control_transcript_log",
   "services.control_goal_continuation",
   "services.control_checkpoint",
-  "services.control_run_store",
+  # 工作器分组（2026-10-04）：本地连线上库时各领各的单。只读环境变量、拼 SQL 片段 → 叶子。
+  "services.worker_pool",
   "services.archetype_legal",
   "services.project_rollout",
   "services.project_preview_config",
@@ -328,6 +329,8 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  # 2026-10-04 从 util 挪上来：领单要按工作器分组过滤，顶层 import 了 services.worker_pool。
+  "services.control_run_store",
   "services.project_access",
   # 模型自己攒的记忆（抄 grok xai-grok-memory 的分寸，不抄它那套向量索引）。
   # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
@@ -830,6 +833,7 @@ why = """会话落库与单调守卫。谁写、写成什么样，只有这里�
 may_depend_on = ["platform"]
 modules = [
   "services.control_run_store",
+  "services.worker_pool",
   "services.project_creation",
   "services.persistence",
   "services.project_store",

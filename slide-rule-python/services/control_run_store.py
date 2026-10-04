@@ -26,7 +26,9 @@ import math
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Optional
+
+from .worker_pool import current_pool, normalize_pool, pool_filter
 
 TERMINAL = frozenset({"completed", "waiting_user", "failed", "cancelled", "interrupted"})
 #: 非终态的「停在这儿等一个外部条件」。**必须与 TERMINAL 互斥**：进了
@@ -185,17 +187,32 @@ def _goal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "updatedAt": _now()}
 
 
+def _add_pool_column(q, table: str) -> None:
+    """老库就地补 worker_pool 列。Postgres 认 if not exists；SQLite 不认，退一步直接加，已有就会报错——吞掉。"""
+    for sql in (f"alter table {table} add column if not exists worker_pool varchar(80)",
+                f"alter table {table} add column worker_pool varchar(80)"):
+        try:
+            q(sql)
+            return
+        except Exception:  # noqa: BLE001 — 列已存在 / 方言不认
+            continue
+
+
 class ControlRunStore:
     def __init__(self, query: Callable[[str, list[Any]], list[dict[str, Any]]], *,
-                 max_run_bytes: int = MAX_RUN_BYTES, max_events: int = MAX_EVENTS):
+                 max_run_bytes: int = MAX_RUN_BYTES, max_events: int = MAX_EVENTS,
+                 pool: Optional[str] = ...):  # type: ignore[assignment]
         if type(max_run_bytes) is not int or not 8192 <= max_run_bytes <= MAX_RUN_BYTES:
             raise ValueError("invalid_control_run_limit")
         if type(max_events) is not int or not 1 <= max_events <= MAX_EVENTS:
             raise ValueError("invalid_control_event_limit")
         self._query = query
         self.max_run_bytes, self.max_events = max_run_bytes, max_events
+        # 工作器分组（services/worker_pool.py）：只领自己组下的单。不传就读环境变量。
+        self.pool = current_pool() if pool is ... else normalize_pool(pool)
         for statement in _DDL:
             self._q(statement)
+        _add_pool_column(self._q, "wb_control_run")
 
     def _q(self, sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         try:
@@ -356,8 +373,8 @@ class ControlRunStore:
                     "generation": 0, "leaseOwner": None, "leaseExpiresAt": 0.0, "cancelRequested": False,
                     "goal": _goal_from_payload(json.loads(encoded)),
                     "createdAt": now, "updatedAt": now, "error": None}
-                self._q("insert into wb_control_run(id,session_id,owner_id,idempotency_key,status,accepted,rev,generation,lease_owner,lease_expires_at,payload) values($1,$2,$3,$4,'queued',0,0,0,null,0,$5) on conflict(session_id,idempotency_key) do nothing",
-                    [run_id, session_id, owner_id, idempotency_key, _json(record, self.max_run_bytes - _RESERVED_BYTES)])
+                self._q("insert into wb_control_run(id,session_id,owner_id,idempotency_key,status,accepted,rev,generation,lease_owner,lease_expires_at,payload,worker_pool) values($1,$2,$3,$4,'queued',0,0,0,null,0,$5,$6) on conflict(session_id,idempotency_key) do nothing",
+                    [run_id, session_id, owner_id, idempotency_key, _json(record, self.max_run_bytes - _RESERVED_BYTES), self.pool])
                 continue
             changed = self._q("update wb_control_session set active_run_id=$1,rev=rev+1 where session_id=$2 and owner_id=$3 and rev=$4 returning session_id",
                 [run_id, session_id, owner_id, slot["rev"]])
@@ -369,12 +386,14 @@ class ControlRunStore:
     def list_runnable(self, *, limit: int = 100) -> list[dict[str, Any]]:
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("invalid_control_scan_limit")
-        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status in ('queued','running') and r.lease_expires_at<=$1 order by r.id limit $2", [time.time(), limit])
+        mine, extra = pool_filter("r.worker_pool", self.pool, 3)
+        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status in ('queued','running') and r.lease_expires_at<=$1 and " + mine + " order by r.id limit $2", [time.time(), limit, *extra])
         return [self._assemble(row) for row in rows]
 
     def list_waiting_operation(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """List durable goals paused on an async project operation."""
-        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_operation' order by r.id limit $1", [limit])
+        mine, extra = pool_filter("r.worker_pool", self.pool, 2)
+        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_operation' and " + mine + " order by r.id limit $1", [limit, *extra])
         return [self._assemble(row) for row in rows]
 
     def requeue_waiting(self, run_id: str, *, operation_ids: list[str]) -> dict[str, Any]:
@@ -398,7 +417,8 @@ class ControlRunStore:
 
     def list_waiting_continue(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """停在「说完了但没做完」上的目标。跟 list_waiting_operation 同形。"""
-        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_continue' order by r.id limit $1", [limit])
+        mine, extra = pool_filter("r.worker_pool", self.pool, 2)
+        rows = self._q("select r.* from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_continue' and " + mine + " order by r.id limit $1", [limit, *extra])
         return [self._assemble(row) for row in rows]
 
     def wait_for_continue(self, run_id: str, worker_id: str, generation: int,
@@ -464,6 +484,9 @@ class ControlRunStore:
             row = self._row(run_id)
             record = self._assemble(row)
             if record["status"] in TERMINAL:
+                return None
+            if normalize_pool(row.get("worker_pool")) != self.pool:
+                # 别的组下的单（worker_pool.py）：扫描已经按组过滤；这里再挡一道，谁直接拿 id 来领也领不走。
                 return None
             now = time.time()
             if row["lease_expires_at"] > now:

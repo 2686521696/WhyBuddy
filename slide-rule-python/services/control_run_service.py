@@ -34,6 +34,7 @@ from services.deliverable_kind import office_file_uses_task_delivery, plan_deliv
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
+from services.worker_pool import current_pool
 from sliderule_llm.gateway_circuit import reject_reason
 from services.project_rollout import rollout_readiness
 from services.scope_authority import latest_control_plan, plan_execution_authorized
@@ -326,6 +327,8 @@ class ControlRunService:
         store._query = project_store._q
         store.max_run_bytes = 8 * 1024 * 1024
         store.max_events = 2000
+        # 绕过 __init__ 的那一份也得有组：它不领单，但谁误调了 list_*/claim，按本进程的组过滤，不是 AttributeError。
+        store.pool = current_pool()
         service = cls.__new__(cls)
         service.store = store
         service.project_store = project_store
