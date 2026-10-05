@@ -93,3 +93,14 @@ def test_reader_test_is_known_on_both_sides_and_safe_to_retry():
     assert "reader_test" in CLOSED_TOOLS and "reader_test" in READ_ONLY_TOOLS
     ts = (Path(__file__).resolve().parents[2] / "client/src/lib/factory-hops.ts").read_text("utf-8")
     assert '"reader_test"' in ts
+
+
+def test_the_planner_is_told_reader_test_exists_before_it_is_offered():
+    """真机 r24：写计划时 reader_test 还不在清单里，计划写「当前无子代理工具」主动跳过 Reader Testing。
+    走模型真拿到的那份 write_plan 说明（list_control_tools），不读源码常量。"""
+    from models.v5_state import V5SessionState
+    state = V5SessionState(sessionId="sr-reader-plan", ownerId="alice", goal={"text": "写一份远程办公制度"})
+    tools = {t["function"]["name"]: t["function"] for t in control.list_control_tools(state)}
+    assert "reader_test" not in tools                                   # 规划时确实还没列出
+    said = tools["write_plan"]["description"]
+    assert "reader_test" in said and "没看过这次对话" in said
