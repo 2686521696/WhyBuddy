@@ -277,6 +277,7 @@ const PROJECT_TOOL_LABELS: Record<string, string> = {
   info_search_web: "正在检索资料",
   idle: "正在等待用户",
   skill: "正在加载技能",
+  reader_test: "正在请新读者试读",
   read_file: "正在读取工程文件",
   write_file: "正在写入工程源码",
   search_replace: "正在替换工程源码",

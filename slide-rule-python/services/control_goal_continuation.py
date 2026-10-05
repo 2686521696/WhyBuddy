@@ -435,6 +435,8 @@ READ_ONLY_TOOLS = frozenset({
     "project_status", "project_logs", "project_read", "project_search", "project_revisions",
     "project_list", "project_verification", "file_read", "read_file", "list_dir", "glob", "grep",
     "file_find_in_content", "file_find_by_name", "shell_view", "shell_wait", "recall",
+    # 无上下文读者：只读文件、问一发模型，不改任何东西（services/reader_test）。重启后补个中断回执、让它再试就行。
+    "reader_test",
 })
 
 

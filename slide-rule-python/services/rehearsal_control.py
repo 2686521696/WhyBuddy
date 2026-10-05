@@ -88,6 +88,7 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.reader_test import clean_questions, reader_document_text, reader_messages
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
@@ -1254,6 +1255,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "report_done": lambda st: plan_execution_authorized(st) and (_has_pages(st) or _has_model(st)),
     # 执行清单只在计划批准后开放。
     "todo_write": lambda st: plan_execution_authorized(st),
+    # 试读要有文件可读：计划批准后、手里有工程（执行期）。
+    "reader_test": lambda st: plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None,
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
     "remember": lambda st: bool(_memory_scope_id(st)),
     "recall": lambda st: bool(_memory_scope_id(st)),
@@ -1724,6 +1727,32 @@ def stamp_control_plan_kind(state: V5SessionState) -> bool:
 
 
 _TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv)\s*>?\)", re.IGNORECASE)
+
+
+def _reader_test_document(state: V5SessionState, path: str) -> tuple:
+    """试读那份文件的正文：先找产物库（收回的办公文件 / 文本交付物），再找源码树。读不到返回 (路径, None)。"""
+    tools = _PROJECT_TOOLS.get()
+    project_id = getattr(state, "projectId", None)
+    store, owner = getattr(tools, "store", None), getattr(tools, "owner_id", None)
+    if not project_id or store is None or not owner:
+        return path, None
+    rel = path
+    for prefix in ("sandbox:", "/home/user/workspace/", "/home/user/", "./"):
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+    rel = rel.lstrip("/")
+    try:
+        artifacts = ProjectOfficeArtifactStore(store)
+        meta = artifacts.find_by_path(project_id, rel, owner_id=owner)
+        if meta is not None:
+            _meta, data = artifacts.get_bytes(project_id, meta["artifactId"], owner_id=owner)
+            return meta["path"], reader_document_text(meta["path"], data=data)
+        files = store.read_files(project_id, owner_id=owner)
+    except Exception:  # noqa: BLE001 — 读不到就说读不到
+        return rel, None
+    if rel in files:
+        return rel, reader_document_text(rel, text=files[rel])
+    return rel, None
 
 
 def _deliver_linked_text_files(store, project_id: str, owner: str, text: str) -> None:
@@ -2291,6 +2320,28 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
     },
     # 抄 grok `TodoWriteTool`。工具说明两句都要——第二句「用户能看见」
     # 是它存在的理由，去掉就只剩模型自言自语。
+    {
+        "type": "function",
+        "function": {
+            "name": "reader_test",
+            "description": (
+                "让一个没看过这次对话的新读者只读这份文件，回答你给的问题（services/reader_test 头注）。"
+                "技能要的「Reader Testing / 用没有上下文的新读者试读」用的就是它。"
+                "读者答不上、答错、说含糊的地方，就是真读者会卡住的地方：改正文后可以再试一次。"
+                "file 是工作区里的文件（.docx / .pptx / .md / .txt）；questions 写真读者会问的 3～10 个问题。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "questions": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10},
+                    "reader": {"type": "string", "description": "读者是谁，例如「刚入职的员工」"},
+                },
+                "required": ["file", "questions"],
+                "additionalProperties": False,
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -6897,6 +6948,31 @@ async def _dispatch_tool(
                 await _apersist(state)
         # 正文只回给模型（tool result）。不要另发 control_text。
         yield {"type": "control_tool_result", "tool": "skill", **result}
+        return
+    if name == "reader_test":
+        questions = clean_questions(args.get("questions"))
+        path = str(args.get("file") or "").strip()
+        yield tool_start_event(name, summary=f"{path}（{len(questions)} 个问题）")
+        if not path or not questions:
+            yield {"type": "control_tool_result", "tool": name, "ok": False,
+                   "error": "要给 file（工作区里的文件）和 questions（3～10 个读者会问的问题）。"}
+            return
+        found, document = await run_in_threadpool(_reader_test_document, state, path)
+        if document is None:
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "file": found or path,
+                   "error": "这份文件读不出正文（不在工作区、还没生成，或不是 .docx / .pptx / .md / .txt）。"}
+            return
+        reader = str(args.get("reader") or "").strip()
+        try:
+            answered = await _invoke_control_llm(reader_messages(document, questions, reader), tools=[],
+                                                 timeout_ms=180_000)
+        except Exception as exc:  # noqa: BLE001 — 读者这一发失败照实说，不编答案（§七）
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "file": found,
+                   "error": f"读者这一发没有返回：{str(exc)[:200]}"}
+            return
+        yield {"type": "control_tool_result", "tool": name, "ok": True, "file": found,
+               "reader": reader or "目标读者", "questions": len(questions),
+               "documentChars": len(document), "readerAnswers": str(getattr(answered, "content", "") or "")}
         return
     if name == "todo_write":
         yield {"type": "control_tool_start", "tool": "todo_write"}

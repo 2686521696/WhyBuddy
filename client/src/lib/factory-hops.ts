@@ -40,6 +40,8 @@ export const CLOSED_TOOLS = [
   // 模型记忆 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）。
   "remember",
   "recall",
+  // 无上下文读者试读 2026-10-05 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）。
+  "reader_test",
   // 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
   "skill",
   "rehearse",

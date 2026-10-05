@@ -93,7 +93,10 @@ def test_a_pending_side_effect_is_still_reconciled(env, monkeypatch, pending, as
 
 def test_the_read_only_names_are_real_tools():
     """判据自己的前提：名单里写错一个名字，那一发就会静默走对账。"""
-    assert READ_ONLY_TOOLS - {"recall"} <= set(PROJECT_TOOL_NAMES)
+    control_names = {tool["function"]["name"] for tool in control.CONTROL_TOOLS}
+    # recall / reader_test 是控制面工具（不是工程工具），但得是真名字
+    assert {"recall", "reader_test"} <= control_names
+    assert READ_ONLY_TOOLS - {"recall", "reader_test"} <= set(PROJECT_TOOL_NAMES)
     assert not READ_ONLY_TOOLS & {"shell_exec", "bash", "file_write", "file_str_replace", "project_patch",
                                   "project_verify", "project_start", "project_create", "browser_click"}
 

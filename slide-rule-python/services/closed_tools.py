@@ -71,6 +71,8 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     # remember 写的是**记忆**不是五系统模型，不进工厂信封。
     "remember",
     "recall",
+    # 无上下文读者试读（2026-10-05，services/reader_test）。READ：只读文件、不造五系统模型。
+    "reader_test",
     # 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
     "skill",
     "rehearse",
