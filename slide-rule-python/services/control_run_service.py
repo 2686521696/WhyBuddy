@@ -22,14 +22,15 @@ from services.control_run_store import (
     project_goal_promotion, session_goal_text, stamp_control_goal_payload)
 from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
-from services.project_tools import ProjectTools, queue_blocker
+from services.project_tools import ProjectTools, control_call_operation_key, queue_blocker
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
     progress_mark, sampling_interrupted_checkpoint, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user,
     unfinished_project_waits_for_user, undelivered_notice,
-    dispatching_readonly_checkpoint, READ_ONLY_TOOLS)
+    dispatching_readonly_checkpoint, dispatching_reconciled_checkpoint,
+    RECONCILABLE_COMMAND_TOOLS, READ_ONLY_TOOLS)
 from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
@@ -498,6 +499,34 @@ class ControlRunService:
                     continue
                 self._wake.set()
 
+    def _recorded_command_receipts(self, record, checkpoint) -> dict:
+        """挂着的命令类调用 → 库里按键查到的那条工程操作的回执正文。查不到 / 查失败的不放进来（照旧对账）。"""
+        calls = checkpoint.get("pendingCalls") if isinstance(checkpoint, dict) else None
+        wanted = [call for call in calls or [] if isinstance(call, dict)
+                  and call.get("name") in RECONCILABLE_COMMAND_TOOLS and control_call_operation_key(call.get("id"))]
+        if not wanted:
+            return {}
+        try:
+            project = self.project_store.get_project_for_session(record["sessionId"], owner_id=record["ownerId"])
+        except Exception:
+            return {}
+        if project is None:
+            return {}
+        tools = ProjectTools(self.project_store, self.project_supervisor, record["ownerId"])
+        out = {}
+        for call in wanted:
+            try:
+                operation = self.project_store.operation_by_key(
+                    project.projectId, control_call_operation_key(call["id"]), owner_id=record["ownerId"])
+                if operation is None:
+                    continue
+                body = {"tool": call["name"], "ok": True, **tools._snapshot(operation.operationId),
+                        "recoveredAfterRestart": True}
+            except Exception:
+                continue
+            out[str(call["id"])] = bound_tool_result(body, call["name"])
+        return out
+
     async def _goal_is_done(self, record) -> bool:
         """目标达没达到可交付状态——**问证据，不问模型**。
 
@@ -777,6 +806,14 @@ class ControlRunService:
                 #   tool result，开新一轮。dispatching 仍对账，不许借这条
                 #   重放已经发出去的工具。
                 resumed = sampling_interrupted_checkpoint(checkpoint)
+                if resumed is not None:
+                    await port.save(resumed)
+                    checkpoint = resumed
+            if checkpoint is not None and checkpoint.get("phase") == "dispatching":
+                # 挂着命令：按调用 id 定下的键查库里那条操作，查到了拿真实状态当回执（不重放）。
+                # 查不到的照旧对账（dispatching_reconciled_checkpoint 头注）。
+                receipts = await asyncio.to_thread(self._recorded_command_receipts, record, checkpoint)
+                resumed = dispatching_reconciled_checkpoint(checkpoint, receipts)
                 if resumed is not None:
                     await port.save(resumed)
                     checkpoint = resumed

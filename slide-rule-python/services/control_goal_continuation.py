@@ -474,6 +474,52 @@ def dispatching_readonly_checkpoint(checkpoint: Any) -> Optional[Dict[str, Any]]
     )
 
 
+#: 恢复时能按键查回的命令类工具（project_tools.control_call_operation_key）。
+RECONCILABLE_COMMAND_TOOLS = frozenset({"shell_exec", "bash"})
+
+
+def dispatch_reconciled_notice() -> str:
+    """命令派发中服务重启、按库里的记录补上回执后新开一轮的合成提示。"""
+    return (
+        "[服务重启] 服务在上一条命令派发时重启了。那条命令在工程里已经有记录，上面补的回执就是库里记下的"
+        "真实状态（可能已结束、失败，或还在排队/运行）。按回执里的状态接着做：没跑完的再查一次，"
+        "失败的看日志决定要不要重跑，不要当成已经成功。"
+    )
+
+
+def dispatching_reconciled_checkpoint(checkpoint: Any, receipts: Any) -> Optional[Dict[str, Any]]:
+    """派发中被打断，挂着的调用每一发要么只读、要么是**按键在库里查到了那条工程操作**的命令。
+
+    ⚠ 2026-10-05 真机 sr-20261005075508-N0HNNHN7SN（新员工入职 PPT）：容器重启落在 shell_exec 派发中，
+      checkpoint 停在 dispatching、挂着 `python3 scripts/build_deck.py`。操作已经落库，却只能判
+      control_reconciliation_required、目标 failed——幂等键是随机的，对不上这一发。
+      dispatching 不许重放（工具可能已经有副作用）。这里也不重放：按调用 id 定下的键**查**那条操作，
+      查到了就拿它的真实状态当回执（receipts：call id → 回执正文），跟只读的一起补齐、开新一轮。
+      有一发既不只读、又没查到（没落库，或不是命令类），返回 None，照旧对账。
+    """
+    if not isinstance(checkpoint, dict) or checkpoint.get("phase") != "dispatching":
+        return None
+    calls = checkpoint.get("pendingCalls")
+    found = receipts if isinstance(receipts, dict) else {}
+    if not isinstance(calls, list) or not calls:
+        return None
+    reconciled = [call for call in calls if isinstance(call, dict) and str(call.get("id") or "") in found]
+    if not reconciled:
+        return None
+    if not all(isinstance(call, dict) and (call in reconciled or call.get("name") in READ_ONLY_TOOLS)
+               for call in calls):
+        return None
+    messages = checkpoint.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    filled = list(messages) + [{"role": "tool", "tool_call_id": str(call["id"]), "content": str(found[str(call["id"])])}
+                               for call in reconciled]
+    return continuation_checkpoint(
+        {**checkpoint, "messages": repair_dangling_tool_calls(filled), "phase": "settling", "pendingCalls": []},
+        dispatch_reconciled_notice(),
+    )
+
+
 def operation_settled_notice(operations: Any) -> str:
     """后台命令进终态之后叫醒模型的那句话。
 

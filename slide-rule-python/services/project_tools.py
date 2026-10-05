@@ -167,6 +167,17 @@ def _skill_files_near(package: dict[str, str], wanted: str, *, cap: int = 30) ->
 
 # 这一轮（一次 control run）开始时的源码版本。rehearsal_control 在点火时设；只读不写。
 TURN_START_REVISION: ContextVar[str | None] = ContextVar("project_turn_start_revision", default=None)
+#: 控制面这一发工具调用的 id（模型给的 call_…）。命令类工具拿它当工程操作的幂等键。
+#: ⚠ 2026-10-05 真机 sr-20261005075508-N0HNNHN7SN（新员工入职 PPT）：容器重启正好落在 shell_exec 派发中，
+#:   操作已经落库（pop-b9f40…），但幂等键是随机 uuid，跟这一发对不上——恢复时只能判 interrupted、
+#:   目标记 failed。部署重启几乎总落在命令上。键由调用 id 定下来，恢复时按键**查**这条操作对账，不重放。
+CONTROL_CALL_ID: ContextVar[str | None] = ContextVar("control_call_id", default=None)
+
+
+def control_call_operation_key(call_id: object) -> str | None:
+    """一发工具调用对应的工程操作幂等键。没有 id 就没有（照旧随机）。"""
+    text = str(call_id or "").strip()
+    return ("call-" + text)[:200] if text else None
 
 
 def _net_change_sentence(before: dict, after: dict, *, limit: int = 6) -> str:
@@ -1946,6 +1957,11 @@ class ProjectTools:
                 raise ValueError("project_shell_exec_dir_not_supported")
             if name == "bash":
                 params["idempotency_key"] = str(uuid.uuid4())
+            # 控制面派发的命令：键跟这一发调用绑定（CONTROL_CALL_ID 头注），重启后能按键对账。
+            # 模型自己给了 id 的 shell_exec 照旧用它的。
+            call_key = control_call_operation_key(CONTROL_CALL_ID.get())
+            if call_key and (name == "bash" or not getattr(parsed, "id", None)):
+                params["idempotency_key"] = call_key
             managed, script = classify_shell_command(parsed.command)
             if subdir:
                 # 子目录里跑：交成普通 shell，先 cd 进去（受管的 check/build/test

@@ -195,7 +195,7 @@ from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_M
     PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
-from services.project_tools import (TURN_START_REVISION, command_receipt_from, explain_queue, present_project_tool_result, queue_blocker,
+from services.project_tools import (CONTROL_CALL_ID as PROJECT_CONTROL_CALL_ID, TURN_START_REVISION, command_receipt_from, explain_queue, present_project_tool_result, queue_blocker,
     withdraw_unrunnable_build)
 from services.project_store import get_project_store
 from services.session_uploads import upload_fact, workspace_path
@@ -5677,6 +5677,8 @@ async def _control_llm_loop(
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
                 tool_body: Optional[Dict[str, Any]] = None
                 await checkpoint("dispatching", _round, calls[call_index:], content)
+                # 命令类工具的工程操作按这一发的 id 定幂等键（project_tools.CONTROL_CALL_ID 头注）。
+                call_token = PROJECT_CONTROL_CALL_ID.set(str(call.get("id") or "") or None)
                 with tool_scope_scope(name):
                     async with aclosing(_dispatch_tool(
                         name,
@@ -5709,6 +5711,7 @@ async def _control_llm_loop(
                                 wrote = True
                             elif et == "complete" and not wrote:
                                 aborted = True
+                PROJECT_CONTROL_CALL_ID.reset(call_token)
                 if parked or aborted:
                     return
                 # 记这一次调用及其结果。**在这儿记、到下一轮开头才判**，
