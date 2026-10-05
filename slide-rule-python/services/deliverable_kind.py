@@ -27,6 +27,15 @@ DELIVERABLE_KINDS = frozenset({WEB_APP, OFFICE_FILE})
 TASKS_TEMPLATE_ID = "react-vite-tasks"
 WRONG_ARTIFACT = "project_template_wrong_artifact"
 OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".xlsx"})
+#: 纯文本交付物。跟办公文件同一条交付路（产物库 → 下载地址 → 右栏查看器），只是字节是 UTF-8 文本。
+#: ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：模型写了一份 Markdown，
+#:   办公计划只认 .pptx/.docx/.xlsx，它就落回 web-app——建 Vite 工程、开端口、跑浏览器验收（失败），
+#:   收尾给的是 `/home/user/workspace/…md`，用户点不开。交付是「把文件交给用户」，不该绑在「做网页」上。
+TEXT_DELIVERABLE_EXTENSIONS = frozenset({".md", ".txt", ".csv"})
+DELIVERABLE_EXTENSIONS = OFFICE_EXTENSIONS | TEXT_DELIVERABLE_EXTENSIONS
+MAX_TEXT_DELIVERABLE_BYTES = 2 * 1024 * 1024
+#: 文本交付物要从沙盒自动收的目录。别处的 .md 是说明、源码、技能中间件——只有显式链接才算交付。
+TEXT_DELIVERABLE_DIR = "output"
 OFFICE_ZIP_MAGIC = b"PK\x03\x04"
 OFFICE_SKIP_DIRS = frozenset({"node_modules", ".venv", "__pycache__", ".git", "dist"})
 OFFICE_FILE_NOT_TEXT = "project_office_file_not_text"
@@ -41,6 +50,8 @@ WORKSPACE_README = (
     #   留着它，模型照旧绕开 heredoc 或干脆不核对——第 31 轮就是后者。
     "命令输出在 project_logs / shell_view（带 operationId），不进源码树。"
     "办公文件（.pptx / .docx / .xlsx）不进源码树。"
+    # ⚠ 2026-10-04：文本交付物（TEXT_DELIVERABLE_EXTENSIONS 头注）。只陈述收回规则，不写成命令。
+    "output/ 下的 .md / .txt / .csv 收回成交付文件；收尾那句话里用 [文件名](路径) 链到的文本文件也是。"
 )
 #: 办公计划建成的电脑。不进 CreateArguments.templateId——模型仍可传
 #: react-vite*，host 按批准计划覆盖。
@@ -196,6 +207,46 @@ def office_artifact_suffix(path: Any) -> str | None:
 
 def is_office_artifact_path(path: Any) -> bool:
     return office_artifact_suffix(path) is not None
+
+
+def deliverable_suffix(path: Any) -> str | None:
+    """能当交付物交给用户的文件后缀：办公文件或纯文本。办公专属的判断（量结构、转 PDF）仍用 office_artifact_suffix。"""
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for ext in DELIVERABLE_EXTENSIONS:
+        if name.endswith(ext) and len(name) > len(ext):
+            return ext
+    return None
+
+
+def is_text_deliverable_bytes(data: Any) -> bool:
+    """UTF-8（可带 BOM）、不含 NUL、不超上限。二进制改个 .txt 后缀不算。"""
+    if not isinstance(data, (bytes, bytearray)) or not 1 <= len(data) <= MAX_TEXT_DELIVERABLE_BYTES:
+        return False
+    blob = bytes(data)
+    if b"\x00" in blob:
+        return False
+    try:
+        blob.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def is_deliverable_bytes(path: Any, data: Any) -> bool:
+    """这份字节配得上它的后缀：办公文件是 zip 包，文本是 UTF-8。"""
+    suffix = deliverable_suffix(path)
+    if suffix in OFFICE_EXTENSIONS:
+        return is_office_zip_bytes(data)
+    if suffix in TEXT_DELIVERABLE_EXTENSIONS:
+        return is_text_deliverable_bytes(data)
+    return False
+
+
+def is_auto_collected_text(path: Any) -> bool:
+    """沙盒里自动收的文本交付物：只认 output/ 下的（office-skills 的约定：output/ 只放给用户的最终产物）。"""
+    rel = str(path or "").replace("\\", "/").lstrip("/")
+    return (rel.split("/", 1)[0] == TEXT_DELIVERABLE_DIR and "/" in rel
+            and deliverable_suffix(rel) in TEXT_DELIVERABLE_EXTENSIONS)
 
 
 _CHART_PART = re.compile(r"^(?:ppt|word|xl)/charts/chart\d+\.xml$")

@@ -24,7 +24,9 @@ from urllib.parse import unquote, urlsplit
 
 from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
-    is_office_artifact_path,
+    TEXT_DELIVERABLE_EXTENSIONS,
+    deliverable_suffix,
+    is_deliverable_bytes,
     is_office_zip_bytes,
     office_artifact_suffix,
     office_preview_payload,
@@ -119,10 +121,11 @@ class ProjectOfficeArtifactStore:
     def put(self, project_id: str, *, owner_id: str, path: str, data: bytes) -> dict:
         self._require_project(project_id, owner_id)
         rel = source_path(str(path or "").replace("\\", "/").lstrip("/"))
-        if not is_office_artifact_path(rel):
+        if deliverable_suffix(rel) is None:
             raise ValueError("project_office_path_required")
         payload = bytes(data)
-        if not is_office_zip_bytes(payload):
+        # 办公文件认 zip 包，文本交付物认 UTF-8（deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS 头注）。
+        if not is_deliverable_bytes(rel, payload):
             raise ValueError("project_office_zip_required")
         if not 4 <= len(payload) <= MAX_OFFICE_ARTIFACT_BYTES:
             raise ValueError("project_office_file_too_large")
@@ -422,6 +425,49 @@ def office_artifact_download_url(project_id: str, artifact_id: str) -> str:
 _MD_LINK = re.compile(r"\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?\s*\)")
 _USABLE_TARGET = re.compile(r"^(?:https?:|mailto:|/api/)", re.IGNORECASE)
 _SANDBOX_SCHEME = re.compile(r"^sandbox:", re.IGNORECASE)
+
+
+#: 沙盒里工作区的根（e2b_workspace_provider.PROJECT_ROOT）。模型写的绝对路径去掉它才是源码树里的路径。
+_WORKSPACE_PREFIXES = ("/home/user/workspace/", "/home/user/", "/workspace/", "./")
+
+
+def linked_text_deliverables(text: str, files: Mapping[str, str]) -> list[str]:
+    """模型给用户的话里，用 `[字](路径)` 链接到的、源码树里的文本交付物（.md / .txt / .csv）。
+
+    ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：收尾是
+      `[team-weekly-meeting-guide.md](/home/user/workspace/team-weekly-meeting-guide.md)`。文件是 file_write 写进
+      源码树的，产物库里没有它，链接换不成下载地址，用户点不开。
+      照 Manus 的做法：交付就是「把文件附上」——这句话里的链接就是那份声明。链到的文件由宿主收进产物库。
+
+    只认链接目标**逐字落在源码树里**的路径（去掉 sandbox:、工作区前缀之后），对不上的不猜；
+    同名文件只有一份时才按文件名认。http(s) / mailto / /api/ 原样放过。
+    """
+    if not text or "](" not in text or not files:
+        return []
+    by_name: dict[str, list[str]] = {}
+    for path in files:
+        by_name.setdefault(Path(str(path)).name, []).append(str(path))
+    found: list[str] = []
+    for match in _MD_LINK.finditer(text):
+        target = match.group(2).replace("\\/", "/")
+        if _USABLE_TARGET.match(target):
+            continue
+        target = unquote(_SANDBOX_SCHEME.sub("", target))
+        rel = target
+        for prefix in _WORKSPACE_PREFIXES:
+            if rel.startswith(prefix):
+                rel = rel[len(prefix):]
+                break
+        rel = rel.lstrip("/")
+        if deliverable_suffix(rel) not in TEXT_DELIVERABLE_EXTENSIONS:
+            continue
+        hit = rel if rel in files else None
+        if hit is None:
+            same = by_name.get(Path(rel).name) or []
+            hit = same[0] if len(same) == 1 else None
+        if hit is not None and hit not in found:
+            found.append(hit)
+    return found[:8]
 
 
 def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:

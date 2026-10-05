@@ -180,6 +180,9 @@ elif action == "collect-office":
     # template .pptx/.docx files; collecting them would present them as this turn's deliverable.
     skip = {"node_modules", ".venv", "__pycache__", ".git", "dist", ".sliderule"}
     suffix = (".pptx", ".docx", ".xlsx")
+    # Text deliverables (deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS) only under output/: elsewhere a .md is
+    # a README, source, or a skill's working file — those are delivered only when the reply links them.
+    text_suffix, text_dir, text_cap = (".md", ".txt", ".csv"), "output/", 2097152
     cap = 8388608
     files, total = [], 0
     def visit(fd, prefix="", depth=0):
@@ -194,10 +197,17 @@ elif action == "collect-office":
                 try: visit(child, prefix + name + "/", depth + 1)
                 finally: os.close(child)
             elif stat.S_ISREG(mode):
-                if not name.lower().endswith(suffix) or len(files) >= 8: continue
-                try: data = regular(fd, name, cap)
+                lower = name.lower()
+                is_text = lower.endswith(text_suffix) and prefix.startswith(text_dir)
+                if not (lower.endswith(suffix) or is_text) or len(files) >= 8: continue
+                try: data = regular(fd, name, text_cap if is_text else cap)
                 except ValueError: continue
-                if not data.startswith(b"PK\x03\x04") or total + len(data) > 16777216: continue
+                if is_text:
+                    if not data or b"\x00" in data: continue
+                    try: data.decode("utf-8-sig")
+                    except UnicodeDecodeError: continue
+                elif not data.startswith(b"PK\x03\x04"): continue
+                if total + len(data) > 16777216: continue
                 total += len(data)
                 files.append({"path": prefix + name, "sha256": hashlib.sha256(data).hexdigest(),
                     "sizeBytes": len(data), "data": base64.b64encode(data).decode()})

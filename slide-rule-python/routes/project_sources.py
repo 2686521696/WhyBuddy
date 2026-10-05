@@ -13,7 +13,7 @@ from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
 from services.project_office_artifacts import ProjectOfficeArtifactStore
-from services.deliverable_kind import office_artifact_suffix
+from services.deliverable_kind import deliverable_suffix
 from services.project_creation import load_authorized_session
 from services.session_uploads import (
     MAX_UPLOAD_BYTES,
@@ -270,6 +270,10 @@ _OFFICE_TYPES = {
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # 文本交付物（deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS）。下载头仍是 attachment + nosniff，不在本域里当页面渲染。
+    ".md": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
 }
 
 
@@ -378,7 +382,7 @@ def download_office_artifact(project_id: str, artifact_id: str, request: Request
         service.authority(project_id)
         meta, data = ProjectOfficeArtifactStore(service.store).get_bytes(
             project_id, artifact_id, owner_id=service.owner_id)
-        suffix = office_artifact_suffix(meta["path"]) or ""
+        suffix = deliverable_suffix(meta["path"]) or ""
         name = str(meta["path"]).rsplit("/", 1)[-1]
         return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -403,7 +407,7 @@ def download_office_artifact_version(project_id: str, artifact_id: str, sha256: 
         service.authority(project_id)
         meta, data = ProjectOfficeArtifactStore(service.store).get_version_bytes(
             project_id, artifact_id, sha256, owner_id=service.owner_id)
-        suffix = office_artifact_suffix(meta["path"]) or ""
+        suffix = deliverable_suffix(meta["path"]) or ""
         name = str(meta["path"]).rsplit("/", 1)[-1]
         return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",

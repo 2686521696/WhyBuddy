@@ -4,16 +4,15 @@ import {
   officeArtifactDownloadUrl,
   officeVersionDownloadUrl,
 } from "./office-artifacts-client";
+import {
+  decodeTextDeliverable,
+  deliverableKind,
+  isTextDeliverableKind,
+  type OfficeDeliverableKind,
+} from "./deliverable-files";
+import { TextDeliverableView } from "./TextDeliverableView";
 
-type OfficeKind = "xlsx" | "pptx" | "docx";
-
-function officeKind(path: string): OfficeKind | null {
-  const name = path.toLowerCase();
-  if (name.endsWith(".xlsx")) return "xlsx";
-  if (name.endsWith(".pptx")) return "pptx";
-  if (name.endsWith(".docx")) return "docx";
-  return null;
-}
+type OfficeKind = OfficeDeliverableKind;
 
 /**
  * 浏览器里用 @silurus/ooxml 画宿主正在看的那份文件。
@@ -38,7 +37,8 @@ export function PresentedOfficeFile({
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
-  const kind = officeKind(path);
+  // 办公文件交给 @silurus/ooxml 画；文本交付物（.md / .txt / .csv）解码后交给 TextDeliverableView（deliverable-files 头注）。
+  const kind = deliverableKind(path);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -81,6 +81,13 @@ export function PresentedOfficeFile({
   }
   if (!bytes) {
     return <p className="m-0 px-3 py-6 text-sm opacity-70">正在打开这份文件…</p>;
+  }
+  if (isTextDeliverableKind(kind)) {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-white">
+        <TextDeliverableView kind={kind} text={decodeTextDeliverable(bytes)} />
+      </div>
+    );
   }
   return (
     <OfficeOoxmlView

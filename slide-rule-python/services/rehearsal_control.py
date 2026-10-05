@@ -91,6 +91,7 @@ from services.archetype_legal import (
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
+    linked_text_deliverables,
     rewrite_deliverable_links,
 )
 from services.user_questions import (
@@ -1685,6 +1686,30 @@ def stamp_control_plan_kind(state: V5SessionState) -> bool:
     return changed
 
 
+_TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv)\s*>?\)", re.IGNORECASE)
+
+
+def _deliver_linked_text_files(store, project_id: str, owner: str, text: str) -> None:
+    """这句话链接到的源码树文本文件（.md / .txt / .csv）收进产物库——链接就是交付声明（linked_text_deliverables 头注）。
+
+    收进去之后：下面那步把链接换成下载地址；办公目标的完工闸（has_any）看得见它；右栏有它的查看器。
+    增强类：读不到源码树、写库失败都原样放过（§七 fail-open）——链接换不成，完工闸照旧说没交付（fail-closed 在闸那边）。
+    """
+    # 先便宜地看一眼有没有链到 .md / .txt / .csv：没有就不去读整棵源码树（网关上一次大读取）。
+    if "](" not in text or not _TEXT_LINK_HINT.search(text):
+        return
+    try:
+        files = store.read_files(project_id, owner_id=owner)
+        artifacts = ProjectOfficeArtifactStore(store)
+    except Exception:
+        return
+    for path in linked_text_deliverables(text, files):
+        try:
+            artifacts.put(project_id, owner_id=owner, path=path, data=str(files[path]).encode("utf-8"))
+        except Exception:
+            continue
+
+
 def _with_deliverable_links(state: V5SessionState, text: str) -> str:
     """模型对用户说的话里，办公文件的假地址换成真下载地址（rewrite_deliverable_links 头注）。
 
@@ -1698,6 +1723,10 @@ def _with_deliverable_links(state: V5SessionState, text: str) -> str:
     store, owner = getattr(tools, "store", None), getattr(tools, "owner_id", None)
     if not project_id or store is None or not owner:
         return text
+    # 只有交付文件的计划才把链接当附件收：网页工程链一下 README.md 不是交付，收进产物库会被画廊改判成文件卡
+    # （ProjectStore 会话索引：见到任何一份产物就标「文件」）。
+    if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
+        _deliver_linked_text_files(store, project_id, owner, text)
     try:
         rows = ProjectOfficeArtifactStore(store).list(project_id, owner_id=owner)
     except Exception:
@@ -2086,7 +2115,12 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "用到的技能自己规定了做法或先后的，写清它的哪几步落在这次的哪一步；跳过的写为什么。"
                 "计划正文跟用户同一种语言（默认简体中文）。"
                 "每次重写使上一版批准失效。"
-                "deliverableKind 缺省 web-app；磁盘上的 .pptx / .docx / .xlsx 用 office-file。"
+                # ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：模型写 Markdown，
+                #   这句只列了 .pptx / .docx / .xlsx，它就选了 web-app——建 Vite 工程、跑浏览器验收（失败），
+                #   用户拿到一个点不开的沙盒路径。交给用户的是文件，就不是网页。
+                "deliverableKind 缺省 web-app（交付的是能打开的网页 / 应用）。"
+                "交给用户的是文件——.pptx / .docx / .xlsx，或 .md / .txt / .csv 这类文本——用 office-file："
+                "不建网页、不跑浏览器验收；文件放 output/，或在收尾那句话里用 [文件名](路径) 链接它，就是交出。"
             ),
             "parameters": {
                 "type": "object",

@@ -645,9 +645,12 @@ export function SandboxPreviewSurface({
   //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
   const lastTool = computerNow.current?.tool ?? null;
   const officeDeliverable = isOfficeFileDeliverable(deliverableKind);
+  // ⚠ 2026-10-04：文本交付物是在收尾那句话里被链接时才收进产物库的（Python _deliver_linked_text_files），
+  //   那一刻没有新的工具行——只看最后一行工具，右栏会停在「还没有收回的文件」。这一轮说完（status 变 complete）也重取。
+  const newestTurn = turns?.at(-1);
   const collectedOffice = useOfficeArtifacts(
     officeDeliverable ? projectId : null,
-    `${activityRows.at(-1)?.id ?? ""}:${activityRows.at(-1)?.status ?? ""}:${officeReload}`
+    `${activityRows.at(-1)?.id ?? ""}:${activityRows.at(-1)?.status ?? ""}:${newestTurn?.id ?? ""}:${newestTurn?.status ?? ""}:${officeReload}`
   );
   const previewChoice = hostPreviewChoice({
     rows: activityRows,
@@ -1577,7 +1580,7 @@ export function SandboxPreviewSurface({
             data-testid="office-preview-idle"
           >
             <p className="m-0 text-sm text-[#3c3c3c]">预览还没打开</p>
-            <p className="m-0 text-xs text-[#8a8a8a]">还没有收回的办公文件，源码里也没有页面。</p>
+            <p className="m-0 text-xs text-[#8a8a8a]">还没有交出的文件，源码里也没有页面。</p>
           </div>
         ) : (
         <ScaledStageFrame

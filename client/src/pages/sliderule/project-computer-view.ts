@@ -17,6 +17,7 @@
 
 import { isOfficeFileDeliverable } from "./deliverable-kind";
 import { sourcePathFromActionDetail } from "./project-runtime/preview-selection-bridge";
+import { isDeliverablePath } from "./project-runtime/deliverable-files";
 
 export const COMPUTER_VIEWS = [
   "computer",
@@ -362,8 +363,10 @@ function isHtmlPath(path: string): boolean {
   return /\.html?$/i.test(path);
 }
 
+// ⚠ 2026-10-04：原来是 `/\.(pptx|docx|xlsx)$/`。文本交付物（.md / .txt / .csv）进了产物库，在这里被静默滤掉，
+//   右栏不显示、标签页里也没有。认后缀统一走 deliverable-files（成对 Python deliverable_kind）。
 function isOfficePath(path: string): boolean {
-  return /\.(pptx|docx|xlsx)$/i.test(path);
+  return isDeliverablePath(path);
 }
 
 /**

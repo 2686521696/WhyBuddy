@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { decodeTextDeliverable, deliverableKind, isTextDeliverableKind } from "./deliverable-files";
+import { TextDeliverableView } from "./TextDeliverableView";
 import { listOfficeArtifacts, officeArtifactDownloadUrl } from "./office-artifacts-client";
 import { useInViewOnce } from "./useInViewOnce";
 
@@ -216,6 +218,9 @@ export function OfficeThumbnail({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<"loading" | "ok" | "failed">("loading");
+  // 文本交付物（.md / .txt / .csv）不上 canvas：取到字就排版开头一段（deliverable-files 头注）。
+  const textKind = deliverableKind(path);
+  const [text, setText] = useState<string | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
   const drawnRef = useRef(onDrawn);
   drawnRef.current = onDrawn;
@@ -226,7 +231,8 @@ export function OfficeThumbnail({
 
   useEffect(() => {
     const el = canvas.current;
-    if (!el || !inView) return;
+    // 文本交付物不画 canvas（下面只渲染一个 div），没有 canvas 也得取字。
+    if ((!el && !isTextDeliverableKind(textKind)) || !inView) return;
     const ac = new AbortController();
     let disposer: { destroy?: () => void } | null = null;
     setState("loading");
@@ -252,8 +258,16 @@ export function OfficeThumbnail({
       return res.arrayBuffer();
     };
     let bytes: ArrayBuffer;
+    setText(null);
     const draw = async () => {
       if (ac.signal.aborted) return;
+      if (isTextDeliverableKind(textKind)) {
+        setText(decodeTextDeliverable(bytes));
+        setState("ok");
+        drawnRef.current?.(true);
+        return;
+      }
+      if (!el) throw new Error("no-canvas");
       const width = Math.max(240, Math.floor(el.parentElement?.clientWidth || 440));
       if (name.endsWith(".pptx")) {
         const { PptxPresentation } = await import("@silurus/ooxml/pptx");
@@ -333,6 +347,20 @@ export function OfficeThumbnail({
   }, [projectId, path, refreshKey, fit, inView, artifactId]);
 
   if (state === "failed") return null;
+  if (isTextDeliverableKind(textKind)) {
+    return (
+      <div
+        ref={frame}
+        className={fit === "content" ? "h-full w-full overflow-hidden bg-white" : "max-h-64 w-full overflow-hidden bg-white"}
+        data-testid="turn-result-office-thumb"
+        data-state={state}
+        data-office-path={path}
+        data-fit={fit}
+      >
+        {text !== null ? <TextDeliverableView kind={textKind} text={text} compact /> : null}
+      </div>
+    );
+  }
   return (
     <div
       ref={frame}
