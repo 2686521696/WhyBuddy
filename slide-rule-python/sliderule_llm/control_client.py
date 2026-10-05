@@ -432,10 +432,22 @@ async def _call_control_llm_once(
         # ⚠ AsyncClient + await：取消要靠 asyncio 传导到 socket（见函数头注）。
         #   换回 httpx.Client 不会报错、测试也不一定红——只会让"停止"重新
         #   变成"看起来停了"。别改。
+        # ⚠ 2026-10-05 真机 sr-20261005070335-K7Q52TH3TK：规划第 4 发 20 多分钟没回、一行重试日志都没有。
+        #   httpx 的 timeout 是**每次读**的上限——网关回了头、隔一阵吐几个保活字节，每次读都不超时，
+        #   这一发能挂到回合墙钟（control-v3 是 86400 秒）。总时长由这里兜：到点按超时处理（可重试），
+        #   跟读超时同一类。取消照样经 asyncio 传到 socket（上面那条 AsyncClient 的约束不变）。
+        #   判据 tests/test_control_llm_has_a_total_deadline.py（真 socket 的保活网关）。
         async with httpx.AsyncClient(timeout=_http_timeout(timeout_s)) as client:
-            response = await client.post(
-                url, headers=_headers(cfg.api_key), json=payload
+            response = await asyncio.wait_for(
+                client.post(url, headers=_headers(cfg.api_key), json=payload),
+                timeout=timeout_s,
             )
+    except asyncio.TimeoutError as exc:
+        raise LlmError(
+            f"no complete response within {timeout_s:.0f}s total "
+            f"(waited {time.time() - started:.1f}s; the gateway kept the connection open)",
+            transient=True,
+        ) from exc
     except httpx.TimeoutException as exc:
         raise LlmError(
             _describe_timeout(exc, timeout_s, time.time() - started), transient=True
