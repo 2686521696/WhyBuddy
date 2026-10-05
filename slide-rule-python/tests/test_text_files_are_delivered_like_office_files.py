@@ -36,6 +36,8 @@ from services.project_office_artifacts import ProjectOfficeArtifactStore, linked
 from services.project_runtime_worker import _RuntimeTask
 from services.project_store import ProjectStore
 from services.project_workspace_artifacts import ARTIFACT_IO_SCRIPT
+from project_actor_support import project_actor  # noqa: F401 — tools_setup 要它
+from test_office_artifacts import tools_setup  # noqa: F401 — 真 ProjectTools + 已批准的办公计划
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "text_deliverable_weekly_meeting.json").read_text("utf-8"))
 CLOSING, PATH, DOCUMENT = FIXTURE["closing"], FIXTURE["path"], FIXTURE["document"]
@@ -199,3 +201,30 @@ def test_a_reply_without_text_links_does_not_read_the_whole_source_tree(project,
     assert reads == []
     _say(project, CLOSING, OFFICE_FILE)
     assert reads == [1]                                             # 反向：真有文本链接时照读
+
+
+# —— 六、工具：交出的文本文件按交付文件呈现、读得回来 ——
+
+def test_the_preview_switch_presents_a_delivered_text_file_as_a_file(tools_setup):
+    """file_write 写的 .md 既在源码树也在产物库：按交付文件呈现，不当工程页去开 Vite。"""
+    created = tools_setup.tools.execute("project_create", {"approvalRef": tools_setup.approval}, tools_setup.state)
+    assert created["ok"], created
+    wrote = tools_setup.tools.execute("file_write", {"file": "output/周会制度.md", "content": DOCUMENT}, tools_setup.state)
+    assert wrote["ok"], wrote
+    ProjectOfficeArtifactStore(tools_setup.store).put(
+        created["projectId"], owner_id="alice", path="output/周会制度.md", data=DOCUMENT.encode("utf-8"))
+    shown = tools_setup.tools.execute("make_manus_page", {"file": "output/周会制度.md"}, tools_setup.state)
+    assert shown["presented"] == "office" and shown.get("artifactId")
+    # 反向：源码里的普通文件照旧按工程呈现
+    assert tools_setup.tools.execute("make_manus_page", {"file": "README.md"}, tools_setup.state)["presented"] == "project"
+
+
+def test_a_text_file_only_the_sandbox_wrote_can_be_read_back(tools_setup):
+    """bash 写进 output/ 的文本只在产物库里（不在源码树）：file_read 读得回来，不是 project_file_not_found。"""
+    created = tools_setup.tools.execute("project_create", {"approvalRef": tools_setup.approval}, tools_setup.state)
+    ProjectOfficeArtifactStore(tools_setup.store).put(
+        created["projectId"], owner_id="alice", path="output/门店.csv", data="门店,销售额\n朝阳,1200\n".encode("utf-8"))
+    read = tools_setup.tools.execute("file_read", {"file": "output/门店.csv"}, tools_setup.state)
+    assert read["ok"] is True and "朝阳,1200" in read["excerpt"]          # 短文件全文在 excerpt（file_read 的约定）
+    missing = tools_setup.tools.execute("file_read", {"file": "output/没有.csv"}, tools_setup.state)
+    assert missing["ok"] is False

@@ -47,7 +47,7 @@ from services.deliverable_kind import (
     WORKSPACE_TEMPLATE_VERSION,
     idle_office_exec_allows_source_write,
     operation_left_on_lease,
-    is_auto_collected_text, is_office_artifact_path, is_office_file_plan,
+    deliverable_suffix, is_auto_collected_text, is_office_artifact_path, is_office_file_plan,
     office_facts_sentence,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
@@ -1998,17 +1998,21 @@ class ProjectTools:
                 revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
                 files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
                 path = workspace_file_path(parsed.file, files)
-                if path in files:
-                    result["path"] = path
-                    result["presented"] = "project"
-                else:
+                # ⚠ 2026-10-05：文本交付物（.md / .txt / .csv）既在源码树（file_write 写的）也在产物库（交出时收的）。
+                #   先查源码会把它当成「工程页」呈现，右栏去开 Vite。产物库里有的，按交付文件呈现。
+                meta = None
+                if path not in files or deliverable_suffix(path) is not None:
                     meta = ProjectOfficeArtifactStore(self.store).find_by_path(
                         project.projectId, path, owner_id=self.owner_id)
-                    if meta is None:
-                        raise ProjectNotFound("project_file_not_found")
+                if meta is not None:
                     result["path"] = meta["path"]
                     result["artifactId"] = meta["artifactId"]
                     result["presented"] = "office"
+                elif path in files:
+                    result["path"] = path
+                    result["presented"] = "project"
+                else:
+                    raise ProjectNotFound("project_file_not_found")
             else:
                 # ⚠ 2026-09-24 sr-20260924190011：不带 file 的交付页被记成
                 #   presented=project。产物库里已有 pptx，右侧却去看工程页。
@@ -2324,6 +2328,17 @@ class ProjectTools:
             }
         skill_read = False
         skill_file_note = ""
+        if path not in files and project is not None and deliverable_suffix(path) is not None:
+            # ⚠ 2026-10-05：bash 写进 output/ 的 .md / .txt / .csv 只在沙盒和产物库里，不在源码树——
+            #   模型回头读自己交出的文件得到 project_file_not_found。产物库里有就按文本读出来。
+            try:
+                artifacts = ProjectOfficeArtifactStore(self.store)
+                meta = artifacts.find_by_path(project.projectId, path, owner_id=self.owner_id)
+                if meta is not None:
+                    _meta, data = artifacts.get_bytes(project.projectId, meta["artifactId"], owner_id=self.owner_id)
+                    files = {**files, path: data.decode("utf-8-sig")}
+            except (ProjectNotFound, ProjectStoreUnavailable, UnicodeDecodeError):
+                pass
         if path not in files:
             # ⚠ 2026-09-22 BABCJGGB44：file_read .sliderule/skills/.../SKILL.md
             #   得到 project_file_not_found，模型接着 bash `find /`。
