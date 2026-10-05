@@ -41,13 +41,17 @@ from test_office_artifacts import tools_setup  # noqa: F401 — 真 ProjectTools
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "text_deliverable_weekly_meeting.json").read_text("utf-8"))
 CLOSING, PATH, DOCUMENT = FIXTURE["closing"], FIXTURE["path"], FIXTURE["document"]
+# 交付物只认 output/（2026-10-05 r16 假绿灯之后）。那一轮的收尾链的是根路径，同名只有一份时按名字认到这里。
+OUT = "output/" + PATH
+WORKING = json.loads((Path(__file__).parent / "fixtures" / "closing_links_working_files.json").read_text("utf-8"))
 
 
 @pytest.fixture
 def project(tmp_path):
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'p.db'}")
     made = store.create_project("s-doc", owner_id="alice",
-                                files={"README.md": WORKSPACE_README, PATH: DOCUMENT},
+                                files={"README.md": WORKSPACE_README, OUT: DOCUMENT,
+                                       "INSTRUCT.md": "# 需求与假设", "LOG.md": "# 执行记录"},
                                 template_version="whybuddy-workspace-1", plan_ref="plan-1")
     yield SimpleNamespace(store=store, id=made.projectId)
     store.close()
@@ -116,8 +120,8 @@ def test_the_worker_keeps_collected_output_text(project):
 # —— 四、收尾那句话里的链接 = 附件声明（真机原话） ——
 
 def test_the_real_closing_links_the_file_that_is_in_the_source_tree():
-    files = {"README.md": WORKSPACE_README, PATH: DOCUMENT}
-    assert linked_text_deliverables(CLOSING, files) == [PATH]
+    files = {"README.md": WORKSPACE_README, OUT: DOCUMENT}
+    assert linked_text_deliverables(CLOSING, files) == [OUT]
     # 反向：链接对不上源码树的不猜；同名两份不按名字认
     assert linked_text_deliverables("[x](/home/user/workspace/missing.md)", files) == []
     assert linked_text_deliverables("[x](a.md)", {"d1/a.md": "1", "d2/a.md": "2"}) == []
@@ -136,7 +140,7 @@ def _say(project, text, kind):
 def test_saying_the_closing_delivers_the_file_and_rewrites_the_link(project):
     spoken = _say(project, CLOSING, OFFICE_FILE)
     rows = ProjectOfficeArtifactStore(project.store).list(project.id, owner_id="alice")
-    assert [row["path"] for row in rows] == [PATH]
+    assert [row["path"] for row in rows] == [OUT]
     assert f"/api/sliderule/projects/{project.id}/artifacts/{rows[0]['artifactId']}" in spoken
     assert "/home/user/workspace/" not in spoken                     # 用户点不开的沙盒路径没了
 
@@ -228,3 +232,19 @@ def test_a_text_file_only_the_sandbox_wrote_can_be_read_back(tools_setup):
     assert read["ok"] is True and "朝阳,1200" in read["excerpt"]          # 短文件全文在 excerpt（file_read 的约定）
     missing = tools_setup.tools.execute("file_read", {"file": "output/没有.csv"}, tools_setup.state)
     assert missing["ok"] is False
+
+
+def test_linking_working_files_is_not_a_delivery(project, monkeypatch):
+    """反向（2026-10-05 r16 假绿灯）：xlsx 没生成，收尾链了 INSTRUCT.md / LOG.md——那是工作文件，不是交付；
+    办公目标的完工闸必须照旧说没交付。原话里的链接是宿主换过的 /api 地址，这里还原成模型当时写的沙盒路径。"""
+    import re
+    said = re.sub(r"\[([^\]]+)\]\(/api/[^)]+\)", lambda m: f"[{m.group(1)}](/home/user/workspace/{m.group(1)})",
+                  WORKING["closing"])
+    assert "[INSTRUCT.md](/home/user/workspace/INSTRUCT.md)" in said
+    _say(project, said, OFFICE_FILE)
+    assert ProjectOfficeArtifactStore(project.store).list(project.id, owner_id="alice") == []
+    state = SimpleNamespace(controlTranscript=approved_plan_rows("奶茶店销售 Excel", deliverable_kind=OFFICE_FILE))
+    service = SimpleNamespace(authorize=lambda *_a, **_k: state, project_store=project.store)
+    monkeypatch.setattr(project.store, "get_project_for_session",
+                        lambda _sid, owner_id: SimpleNamespace(projectId=project.id))
+    assert asyncio.run(ControlRunService._goal_is_done(service, {"sessionId": "s", "ownerId": "alice"})) is False

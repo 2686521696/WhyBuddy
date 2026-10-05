@@ -26,6 +26,7 @@ from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
     TEXT_DELIVERABLE_EXTENSIONS,
     deliverable_suffix,
+    is_auto_collected_text,
     is_deliverable_bytes,
     is_office_zip_bytes,
     office_artifact_suffix,
@@ -465,6 +466,12 @@ def linked_text_deliverables(text: str, files: Mapping[str, str]) -> list[str]:
         if hit is None:
             same = by_name.get(Path(rel).name) or []
             hit = same[0] if len(same) == 1 else None
+        # ⚠ 2026-10-05 真机 @office-skills 奶茶店销售 Excel sr-20261005042518-6HZ395D3NQ：xlsx 一份没生成，
+        #   收尾链了 office-skills 的工作说明 `[INSTRUCT.md](…)`，上一版把它收进产物库——办公目标的完工闸
+        #   （has_any）就此亮了，这一轮判成 completed。假绿灯（§七）。交付物只认 output/（跟沙盒自动收同一条规矩）；
+        #   INSTRUCT.md / LOG.md / README.md 是工作文件，链了也不是交付。
+        if hit is not None and not is_auto_collected_text(hit):
+            hit = None
         if hit is not None and hit not in found:
             found.append(hit)
     return found[:8]

@@ -2120,7 +2120,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 #   用户拿到一个点不开的沙盒路径。交给用户的是文件，就不是网页。
                 "deliverableKind 缺省 web-app（交付的是能打开的网页 / 应用）。"
                 "交给用户的是文件——.pptx / .docx / .xlsx，或 .md / .txt / .csv 这类文本——用 office-file："
-                "不建网页、不跑浏览器验收；文件放 output/，或在收尾那句话里用 [文件名](路径) 链接它，就是交出。"
+                "不建网页、不跑浏览器验收；文本文件放进 output/ 才算交出，收尾那句话里用 [文件名](路径) 链接它，宿主换成下载地址。"
             ),
             "parameters": {
                 "type": "object",

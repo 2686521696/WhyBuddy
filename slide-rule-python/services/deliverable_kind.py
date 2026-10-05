@@ -51,7 +51,7 @@ WORKSPACE_README = (
     "命令输出在 project_logs / shell_view（带 operationId），不进源码树。"
     "办公文件（.pptx / .docx / .xlsx）不进源码树。"
     # ⚠ 2026-10-04：文本交付物（TEXT_DELIVERABLE_EXTENSIONS 头注）。只陈述收回规则，不写成命令。
-    "output/ 下的 .md / .txt / .csv 收回成交付文件；收尾那句话里用 [文件名](路径) 链到的文本文件也是。"
+    "output/ 下的 .md / .txt / .csv 收回成交付文件；别处的（README、INSTRUCT.md、LOG.md）是工作文件，不算交付。"
 )
 #: 办公计划建成的电脑。不进 CreateArguments.templateId——模型仍可传
 #: react-vite*，host 按批准计划覆盖。
