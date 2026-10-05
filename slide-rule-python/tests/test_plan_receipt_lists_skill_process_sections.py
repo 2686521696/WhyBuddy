@@ -150,3 +150,46 @@ def test_a_plan_that_names_every_step_is_not_nagged(design_harness):
     assert receipts[0]["skillStages"]["frontend-design"] == sections
     assert "skillStagesUnplaced" not in receipts[0]
     assert "在计划里没点到" not in str(receipts[0].get("hint") or "")
+
+
+# —— 执行轮开工：把计划里技能步骤的落位原话摆回来（2026-10-05 r22） ——
+
+REMOTE_POLICY_PLAN = json.loads((Path(__file__).parent / "fixtures" / "plan_doc_coauthoring_remote_policy.json")
+                                .read_text("utf-8"))["planContent"]
+
+
+def _execution_message(harness, plan):
+    from control_turn_support import llm_text
+    sid = new_sid("skill-commit")
+    seed_session(sid, goal={"text": TOPIC, "status": "clear"})
+    steps = iter([llm_tool("skill", {"name": "doc-coauthoring"}),
+                  llm_tool("write_plan", {"planContent": plan, "deliverableKind": "office-file"}),
+                  llm_tool("write_plan", {"planContent": plan + "\n（修订）", "deliverableKind": "office-file"}),
+                  llm_tool("exit_plan_mode", {})])
+    harness.llm_impl = lambda messages, **kw: next(steps)
+    _, events = harness.post(six_fields(sid, TOPIC))
+    approval = next(e for e in events if e["type"] == "control_plan_approval")
+    seen = []
+
+    def impl(messages, **kw):
+        seen.append(copy.deepcopy(messages))
+        return llm_text("好的。")
+    harness.llm_impl = impl
+    harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"],
+                                                        "outcome": "approved"}))
+    return next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
+
+
+def test_the_execution_turn_is_handed_the_plans_own_skill_commitments(harness):
+    """真机那版计划：Stage 3 落在「生成 DOCX 前后以员工常见问题检查」，执行轮却拆成三条待办、整段没做。"""
+    said = _execution_message(harness, REMOTE_POLICY_PLAN)
+    assert "技能自己的流程步骤是这样落位的" in said
+    assert "Stage 3: Reader Testing" in said and "常见问题" in said        # 原话带着它落在哪一步
+    assert "Final Review" in said
+    assert "待办里每条各占一项" in said
+
+
+def test_a_plan_that_names_no_skill_step_adds_no_commitment_block(harness):
+    """反向：计划里没点到任何段落标题，开工那句话不多出一段。"""
+    said = _execution_message(harness, ROUND_PLAN)
+    assert "技能自己的流程步骤是这样落位的" not in said

@@ -963,7 +963,44 @@ def _planning_skills_note(state: V5SessionState) -> str:
     if others:
         note += ("其他已装、这次还没打开的技能：" + "、".join(others)
                  + "（说明见 skill 工具）。对这次结果有帮助的，执行中照样可以加载。")
+    committed = _plan_skill_commitments(state)
+    if committed:
+        note += ("\n批准的计划里，技能自己的流程步骤是这样落位的（计划原话）：\n"
+                 + "\n".join(f"- {line}" for line in committed)
+                 + "\n待办里每条各占一项；做完的收尾时说一句怎么做的，没做的说为什么。")
     return note
+
+
+_PLAN_COMMITMENT_MAX_LINES = 10
+_PLAN_COMMITMENT_MAX_CHARS = 240
+
+
+def _plan_skill_commitments(state: V5SessionState) -> List[str]:
+    """批准计划里点到技能流程段落标题的那几行（原话）。
+
+    ⚠ 2026-10-05 真机 @doc-coauthoring 远程办公制度 sr-20261005085702-FCHJKG751E：计划把五段都落了位，
+      其中「Stage 3: Reader Testing：生成 DOCX 前后，以普通员工常见问题检查制度……」；执行轮开工把计划拆成
+      三条待办（起草 / 生成 / 核验），读者测试和 Final Review 两段没进待办，整个执行期一次没做，收尾也没提。
+      计划写对了、执行时丢了：开工这句话把模型自己的承诺原样摆回来，并让每条进待办。
+    只认段落标题原样出现的行（跟 write_plan 回执的点名同一个判据），不猜。
+    """
+    plan = latest_control_plan(state)
+    content = str(plan.get("planContent") or "")
+    if not content:
+        return []
+    titles: list[str] = []
+    for info in _carried_skill_infos(state):
+        titles.extend(process_sections(info.body))
+    if not titles:
+        return []
+    lines: list[str] = []
+    for raw in content.splitlines():
+        line = raw.strip().lstrip("-*0123456789.、） ").strip()
+        if line and any(title in line for title in titles) and line not in lines:
+            lines.append(line[:_PLAN_COMMITMENT_MAX_CHARS])
+        if len(lines) >= _PLAN_COMMITMENT_MAX_LINES:
+            break
+    return lines
 
 
 def _memory_scope_id(state: V5SessionState) -> str:
