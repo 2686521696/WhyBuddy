@@ -6424,12 +6424,22 @@ async def _dispatch_tool(
         stages = {} if revising else {
             info.name: sections for info in _carried_skill_infos(state)
             if (sections := process_sections(info.body))}
+        # ⚠ 2026-10-05 真机 @frontend-design 咖啡店 sr-20261005032530-PC36YHZR3X：上一版回执把流程段落标题全摆出来、
+        #   说「对一下计划，都写到了就直接往下走」。模型自己说对上了——计划里一个字没提
+        #   「Process: plan, review against the brief, build, critique」，第三次漏掉自评。
+        #   「对一下」没有可核对的东西。改成：段落标题没**原样**出现在计划里的，逐个点名；都点到了就不说。
+        #   照抄标题也让用户批准计划时看得见「技能的哪一步落在这次的哪一步」。
+        unplaced = {name: [title for title in sections if title not in content]
+                    for name, sections in stages.items()}
+        unplaced = {name: titles for name, titles in unplaced.items() if titles}
         if stages:
             receipt["skillStages"] = stages
+        if unplaced:
+            receipt["skillStagesUnplaced"] = unplaced
             hints.append(
-                "这次打开的技能自己规定了流程的段落："
-                + "；".join(name + "".join(f"「{s}」" for s in sections) for name, sections in stages.items())
-                + "。对一下计划：每段落在哪一步，或者写了为什么不做；漏了的重写计划补上，都写到了就直接往下走。")
+                "这次打开的技能自己规定了流程，这几段在计划里没点到："
+                + "；".join(name + "".join(f"「{t}」" for t in titles) for name, titles in unplaced.items())
+                + "。重写计划：每段照抄标题，写它落在这次的哪一步，或者为什么不做。")
         if hints:
             receipt["hint"] = "\n".join(hints)
         yield receipt

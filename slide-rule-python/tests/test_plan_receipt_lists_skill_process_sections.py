@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import zipfile
 from pathlib import Path
 
@@ -89,7 +90,9 @@ def test_the_plan_receipt_puts_the_opened_skills_stages_back_in_front_of_the_mod
     assert "reference-notes" not in receipt["skillStages"]          # 没打开的、没有流程段落的不列
     # 真的喂到了模型：写计划之后那一发请求里，回执带着这几段
     after_plan = str(shots[2][-1])
-    assert "规定了流程的段落" in after_plan and "Stage 3: Reader Testing" in after_plan
+    assert "在计划里没点到" in after_plan and "Stage 3: Reader Testing" in after_plan
+    # 真机那版计划只写了 Stage 1/2 的意思、没照抄任何标题：五段都算没点到
+    assert "Stage 3: Reader Testing" in receipt["skillStagesUnplaced"]["doc-coauthoring"]
 
 
 def test_it_is_said_once_per_planning_not_on_every_revision(harness):
@@ -100,7 +103,7 @@ def test_it_is_said_once_per_planning_not_on_every_revision(harness):
         llm_tool("exit_plan_mode", {}),
     ])
     first, second = receipts
-    assert first.get("skillStages") and "skillStages" not in second
+    assert first.get("skillStagesUnplaced") and "skillStages" not in second and "hint" not in second
 
 
 def test_no_opened_skill_means_no_stage_list(harness):
@@ -109,3 +112,41 @@ def test_no_opened_skill_means_no_stage_list(harness):
         llm_tool("exit_plan_mode", {}),
     ])
     assert "skillStages" not in receipts[0]
+
+
+# —— 点名而不是「对一下」（2026-10-05 r14） ——
+
+COFFEE_PLAN = json.loads((Path(__file__).parent / "fixtures" / "plan_frontend_design_coffee.json")
+                         .read_text("utf-8"))["planContent"]
+
+
+@pytest.fixture
+def design_harness(monkeypatch):
+    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [_seed("frontend-design")])
+    return ControlHarness(monkeypatch)
+
+
+def test_the_real_coffee_plan_is_told_which_design_steps_it_never_named(design_harness):
+    """真机那版计划没提自评：回执点名 frontend-design 的 Process 段，不是笼统地「对一下」。"""
+    receipts, shots = _plan_turn(design_harness, [
+        llm_tool("skill", {"name": "frontend-design"}),
+        llm_tool("write_plan", {"planContent": COFFEE_PLAN}),
+        llm_tool("exit_plan_mode", {}),
+    ])
+    unplaced = receipts[0]["skillStagesUnplaced"]["frontend-design"]
+    assert "Process: plan, review against the brief, build, critique" in unplaced
+    assert "Process: plan, review against the brief, build, critique" in str(shots[2][-1])
+
+
+def test_a_plan_that_names_every_step_is_not_nagged(design_harness):
+    """反向：每段都照抄标题落了位，回执不再提示（不给已经做对的计划添噪音）。"""
+    sections = process_sections(_seed("frontend-design").body)
+    named = COFFEE_PLAN + "\n技能落点：\n" + "\n".join(f"- {t}：落在第 6 步" for t in sections)
+    receipts, _shots = _plan_turn(design_harness, [
+        llm_tool("skill", {"name": "frontend-design"}),
+        llm_tool("write_plan", {"planContent": named}),
+        llm_tool("exit_plan_mode", {}),
+    ])
+    assert receipts[0]["skillStages"]["frontend-design"] == sections
+    assert "skillStagesUnplaced" not in receipts[0]
+    assert "在计划里没点到" not in str(receipts[0].get("hint") or "")
