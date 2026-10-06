@@ -514,8 +514,21 @@ class ControlRunStore:
             updated = transform(record)
             updated["updatedAt"] = _now()
             encoded = _json(self._shell(updated), self.max_run_bytes - (_RESERVED_BYTES if reserve else 0))
-            saved = self._q("update wb_control_run set status=$1,rev=rev+1,lease_expires_at=$2,payload=$3 where id=$4 and rev=$5 and generation=$6 and lease_owner=$7 and lease_expires_at>$8 and exists(select 1 from wb_control_session s where s.active_run_id=wb_control_run.id and s.session_id=wb_control_run.session_id) returning id",
-                [updated["status"], updated["leaseExpiresAt"], encoded, run_id, row["rev"], generation, worker_id, time.time()])
+            # ⚠ 2026-10-06 真机 r29（tests/test_heartbeat_is_not_rolled_back.py 头注）：heartbeat 只改租约列、不动 rev，
+            #   心跳落在上面「读行」和这里「写」之间时，rev CAS 照过，原来这条 `lease_expires_at=<读到的旧值>` 把刚续的
+            #   租约写回去——连吞两拍就过期，本机把自己还活着的 run 重新领了。租约只在 transform **有意改它**时才写
+            #   （wait_for_operations 清零让别人领）；普通写不碰这一列，续租归 heartbeat 一家。
+            lease_changed = float(updated.get("leaseExpiresAt") or 0) != float(record.get("leaseExpiresAt") or 0)
+            in_session = ("exists(select 1 from wb_control_session s where s.active_run_id=wb_control_run.id "
+                          "and s.session_id=wb_control_run.session_id) returning id")
+            if lease_changed:
+                saved = self._q("update wb_control_run set status=$1,rev=rev+1,lease_expires_at=$2,payload=$3 where id=$4 and rev=$5 "
+                                "and generation=$6 and lease_owner=$7 and lease_expires_at>$8 and " + in_session,
+                    [updated["status"], updated["leaseExpiresAt"], encoded, run_id, row["rev"], generation, worker_id, time.time()])
+            else:
+                saved = self._q("update wb_control_run set status=$1,rev=rev+1,payload=$2 where id=$3 and rev=$4 "
+                                "and generation=$5 and lease_owner=$6 and lease_expires_at>$7 and " + in_session,
+                    [updated["status"], encoded, run_id, row["rev"], generation, worker_id, time.time()])
             if saved:
                 return self._assemble(self._row(run_id))
         raise ControlRunConflict("control_update_conflict")
