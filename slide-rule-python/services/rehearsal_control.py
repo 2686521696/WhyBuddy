@@ -1552,20 +1552,28 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
     state.controlSkillCache = rows
 
 
-_SCRATCH: Dict[int, ScratchSandboxes] = {}
+_SCRATCH: Dict[int, Optional[ScratchSandboxes]] = {}
 
 
 def _scratch_sandboxes() -> Optional[ScratchSandboxes]:
-    """对话档临时沙盒（services/scratch_sandbox）。沙盒提供方取注入进来的运行时（ProjectTools.supervisor.provider）——
+    """对话档临时沙盒（services/scratch_sandbox）。沙盒提供方取注入进来的运行时（ProjectTools.supervisor.provider_factory）——
     control 组不许直接 import workspace 组（architecture.toml），「runtime owner is injected」同一个做法。
-    没有运行时 / 没配沙盒 → None，工具就不摆。按提供方缓存一份，同一会话的沙盒复用。"""
+    没有运行时 / 造不出提供方（没配 E2B）→ None，工具就不摆。按工厂缓存一份，同一会话的沙盒复用。
+
+    ⚠ 2026-10-06 r42：第一版取的是 supervisor.provider——判据自己拼了一个带 .provider 的假运行时，绿了；真的
+      ProjectRuntimeSupervisor 只有 provider_factory（app.py 传的是 E2BWorkspaceProvider 这个类）。真机上取到 None，
+      sandbox_run 一次都没摆出来（§一、§一之二）。判据现在用真的 ProjectRuntimeSupervisor。
+    """
     adapter = _PROJECT_TOOLS.get()
-    provider = getattr(getattr(adapter, "supervisor", None), "provider", None)
-    if provider is None:
+    factory = getattr(getattr(adapter, "supervisor", None), "provider_factory", None)
+    if factory is None:
         return None
-    key = id(provider)
+    key = id(factory)
     if key not in _SCRATCH:
-        _SCRATCH[key] = ScratchSandboxes(provider)
+        try:
+            _SCRATCH[key] = ScratchSandboxes(factory())
+        except Exception:
+            _SCRATCH[key] = None                    # 没配 E2B：记住，别每回合都去造一次
     return _SCRATCH[key]
 
 

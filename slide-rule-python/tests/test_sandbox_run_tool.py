@@ -127,18 +127,26 @@ def test_not_offered_with_a_project_or_without_a_sandbox_provider(monkeypatch):
     assert not control.should_list_tool("sandbox_run", state)                 # 没配 E2B 就不摆
 
 
-def test_the_provider_comes_from_the_injected_runtime():
-    """真路径：沙盒提供方取注入的 ProjectTools.supervisor.provider（control 组不许直接 import workspace 组）。"""
-    from types import SimpleNamespace
-    provider = FakeProvider()
-    token = control._PROJECT_TOOLS.set(SimpleNamespace(supervisor=SimpleNamespace(provider=provider)))
+def test_the_provider_comes_from_the_real_runtime_supervisor(monkeypatch, tmp_path):
+    """真路径：沙盒提供方取注入的 ProjectTools.supervisor.provider_factory。
+    ⚠ r42：第一版判据拼了一个带 .provider 的假运行时，绿了，真机一次都没摆出来——这里用真的 ProjectRuntimeSupervisor。"""
+    from services.project_tools import ProjectTools
+    from services.project_runtime_worker import ProjectRuntimeSupervisor
+    from services.project_store import ProjectStore
+    monkeypatch.setattr(control, "_SCRATCH", {})
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'p.db'}")
+    supervisor = ProjectRuntimeSupervisor(store, FakeProvider)
+    token = control._PROJECT_TOOLS.set(ProjectTools(None, supervisor, "alice"))
     try:
         got = control._scratch_sandboxes()
-        assert got is not None and got.provider is provider and control._scratch_sandboxes() is got   # 同一份复用
+        assert got is not None and isinstance(got.provider, FakeProvider) and control._scratch_sandboxes() is got
     finally:
         control._PROJECT_TOOLS.reset(token)
-    token = control._PROJECT_TOOLS.set(SimpleNamespace(supervisor=SimpleNamespace(provider=None)))
+
+    def no_e2b():
+        raise RuntimeError("e2b_api_key_missing")
+    token = control._PROJECT_TOOLS.set(ProjectTools(None, ProjectRuntimeSupervisor(store, no_e2b), "alice"))
     try:
-        assert control._scratch_sandboxes() is None                            # 没有沙盒提供方 → 不摆
+        assert control._scratch_sandboxes() is None                            # 造不出提供方 → 不摆
     finally:
         control._PROJECT_TOOLS.reset(token)
