@@ -39,4 +39,17 @@ describe("纯回答轮按 markdown 画", () => {
     expect(html).not.toContain("sandbox:");
     expect(html).toContain("下载");
   });
+
+  it("a sandbox file path is text, not a dead link (真机 r30 收尾原样)", () => {
+    const R30 = "本次修改：\n\n- 新增 [src/cart.mjs](/home/user/workspace/src/cart.mjs)\n- 修改 [src/main.tsx](/home/user/workspace/src/main.tsx)";
+    const html = render(turn(R30));
+    expect(html).not.toContain("/home/user/workspace");
+    expect(html).toContain("src/cart.mjs");
+  });
+
+  it("反向：交付链接（/api/）和外部网址照样能点", () => {
+    const html = render(turn("[下载《远程办公制度.docx》](/api/sliderule/projects/prj-067d/artifacts/art-fdd3) 参考 [MDN](https://developer.mozilla.org/)"));
+    expect(html).toContain('href="/api/sliderule/projects/prj-067d/artifacts/art-fdd3"');
+    expect(html).toContain('href="https://developer.mozilla.org/"');
+  });
 });
