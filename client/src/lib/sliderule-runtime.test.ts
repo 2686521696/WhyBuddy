@@ -1383,6 +1383,11 @@ describe('sliderule-runtime V5 closed loop (behavioral regression)', () => {
       const prodRouter = routeMod.default;
       const prodEnabled = routeMod.isTestHelperEnabled;
       expect(prodEnabled()).toBe(false);
+      // ⚠ 2026-10-06：NODE_ENV=production 只在路由模块求值这一下需要（顶层 `enableTestHelpers = …` 已经定了）。
+      //   原来一直挂到下面几发真 fetch 打完才还原——本机 :9700 起着、/sessions 查真库要好几秒，
+      //   vmThreads 同一工作进程里别的用例文件这时加载 react，拿到生产版 jsx-dev-runtime：
+      //   全量跑 33 个文件、150~250 例「jsxDEV is not a function / act is not a function」，单跑全绿。
+      process.env.NODE_ENV = originalNodeEnv;
 
       // Fresh express app + the prod-evaluated router (no test helper routes should exist)
       const expressMod = await import('express');
