@@ -188,6 +188,7 @@ from services.skill_catalog_store import (
     OFFICE_SKILL_CATEGORY,
     installed_skill_files,
     installed_skill_infos,
+    local_seed_files,
     local_seed_skill_info,
     classify_skill_catalog_result,
     resolve_invoked_skill,
@@ -1558,16 +1559,26 @@ def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[s
       读对应的格式说明」，直接回答的回合没有工作区，包里的文件只在沙盒的 .sliderule/skills/ 下才看得见——模型加载完正文
       直接写，这一步静静跳过。Claude Code 是 Skill 给目录、Read 去读；这里没有工作区时就由 skill 自己把包里的文件递过去。
       路径认相对技能目录的，也认带 `.sliderule/skills/<slug>/` 前缀的（正文的 Base directory 就是这么写的）。
+
+    ⚠ 同一天 r39 复跑：模型真的调了 skill(file=examples/general-comms.md)，拿回 skill_not_installed——第一版只认商店的
+      已装行，而 skill() 认的目录是「已装行 + 这一发带来的 installedSkills / @提及 + 仓库种子」（_skill_turn_catalog）。
+      这个账号商店里只装了 11 份，internal-comms 是种子补上的：正文开得了，包里的文件却说没装（§四：同一件事两条口径）。
+      单测是绿的，因为判据自己把 internal-comms 塞进了「已装」（§一之二）。现在跟 skill() 同一份目录：开得了正文就读得了文件。
     """
     owner = str(getattr(state, "ownerId", None) or "").strip()
     if not slug or not owner:
         return {"ok": False, "error": "skill_file_unavailable"}
+    infos, _catalog_error = _skill_turn_catalog(state)
+    if slug not in {getattr(info, "name", "") for info in infos}:
+        return {"ok": False, "error": "skill_not_installed"}
     try:
         files = installed_skill_files(owner, slug)
     except Exception:
-        return {"ok": False, "error": "skill_catalog_unavailable"}
+        files = None
     if files is None:
-        return {"ok": False, "error": "skill_not_installed"}
+        files = local_seed_files(slug)
+    if files is None:
+        return {"ok": False, "error": "skill_package_unavailable"}
     rel = wanted.replace("\\", "/").lstrip("/").removeprefix(f".sliderule/skills/{slug}/")
     while rel.startswith("./"):
         rel = rel[2:]

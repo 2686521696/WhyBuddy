@@ -19,14 +19,19 @@ from services.skill_catalog_store import local_seed_files, local_seed_skill_info
 
 TOPIC = ("@internal-comms 帮我写一封全员邮件：下周一起办公室搬到新地址（浦东张江路 88 号 5 楼），周五下午 3 点后停止使用旧办公室，"
          "需要大家周五中午前把个人物品装箱")
-INSTALLED = {"internal-comms"}
+# r39 复跑时这个账号在商店里真正装着的 11 份（list_installed 原样）。internal-comms **不在里面**——
+# 它是消息里的 @提及 + 仓库种子补进本回合目录的（_skill_turn_catalog）。第一版判据把它塞进「已装」，测的不是真机那一发。
+STORE_INSTALLED = ["avoid-ai-writing", "frontend-design", "interaction-design", "office-skills", "pptx-deck-context",
+                   "pptx-quality-gates", "pptx-slide-specification", "responsive-design", "sliderule",
+                   "verification-before-completion", "visual-design-foundations"]
 
 
 @pytest.fixture
 def harness(monkeypatch):
-    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [local_seed_skill_info("internal-comms")])
+    monkeypatch.setattr(control, "installed_skill_infos",
+                        lambda owner: [i for i in map(local_seed_skill_info, STORE_INSTALLED) if i is not None])
     monkeypatch.setattr(control, "installed_skill_files",
-                        lambda owner, slug: local_seed_files(slug) if slug in INSTALLED else None)
+                        lambda owner, slug: local_seed_files(slug) if slug in STORE_INSTALLED else None)
     return ControlHarness(monkeypatch)
 
 
@@ -65,10 +70,15 @@ def test_a_missing_file_lists_what_is_there(harness):
     assert out["ok"] is False and "examples/general-comms.md" in out["human"]
 
 
-def test_a_skill_that_is_not_installed_is_not_opened(harness):
-    """反向：没装的技能，包里的东西不对这个账号开放。"""
+def test_the_store_list_really_lacks_it():
+    """判据自己的前提：真机那一发里 internal-comms 不在商店已装行——正文是靠 @提及 + 种子开的。"""
+    assert "internal-comms" not in STORE_INSTALLED
+
+
+def test_a_skill_this_turn_cannot_open_is_not_read(harness):
+    """反向：本回合目录里没有的技能（没装、没提及、没随这一发带来），包里的东西不开放。"""
     out = control._skill_package_file(
-        seed_session(new_sid("skill-file-x"), goal={"text": "x"}), "office-skills", "SKILL.md")
+        seed_session(new_sid("skill-file-x"), goal={"text": "x"}), "humanizer-zh", "SKILL.md")
     assert out == {"ok": False, "error": "skill_not_installed"}
 
 
