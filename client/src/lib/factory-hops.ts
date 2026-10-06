@@ -161,7 +161,10 @@ export function isProjectWorkbenchTool(name: unknown): boolean {
     tool === "glob" ||
     // ⚠ 2026-09-20：skill 跟工程/文件/shell 一样是会话动作。
     //   不进白名单 → isProjectChip 滤掉 → 调了也像没调。
-    tool === "skill"
+    tool === "skill" ||
+    // ⚠ 2026-10-06 真机 r27（@doc-coauthoring Stage 3 试读）：同一个坑又踩一次——派了子代理、
+    //   改了正文，步骤里「进入独立读者测试」和「读者测试认为……」中间一行都没有。
+    tool === "subagent"
   );
 }
 

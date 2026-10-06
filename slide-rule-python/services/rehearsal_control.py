@@ -976,6 +976,19 @@ _PLAN_COMMITMENT_MAX_LINES = 10
 _PLAN_COMMITMENT_MAX_CHARS = 240
 
 
+def _workspace_pending_note(state: V5SessionState) -> str:
+    """批准后工作区还没建：说清楚文件 / 命令 / 子代理是建了工程才摆出来的。
+
+    ⚠ 2026-10-06 真机 r27 sr-20261006024958-49FVD87BK4（@doc-coauthoring）：执行第一回合只摆了 project_create，
+      模型对用户说「当前环境未提供命令执行或文件写入工具，因此我会先确认办公工作区是否能直接承载文件生成」——
+      工具按顺序出现是设计（should_list_tool：没 projectId 不列工程工具），它当成了环境缺东西，还念给用户听。
+    """
+    if getattr(state, "projectId", None):
+        return ""
+    return ("\n\n工作区还没建：先调 project_create。文件读写、运行命令、子代理这些工具在工作区建好之后才会出现——"
+            "这是正常顺序，不是环境缺工具，别对用户这么说。")
+
+
 def _plan_skill_commitments(state: V5SessionState) -> List[str]:
     """批准计划里点到技能流程段落标题的那几行（原话）。
 
@@ -1256,7 +1269,9 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 执行清单只在计划批准后开放。
     "todo_write": lambda st: plan_execution_authorized(st),
     # 子代理在工作区里读：计划批准后、手里有工程（执行期）。
-    "subagent": lambda st: plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None,
+    # 没工作区就没处可读（_subagent_workspace 返回 None）：跟工程工具同一条件，建了工程才摆出来。
+    "subagent": lambda st: (plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None
+                            and bool(getattr(st, "projectId", None))),
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
     "remember": lambda st: bool(_memory_scope_id(st)),
     "recall": lambda st: bool(_memory_scope_id(st)),
@@ -5981,7 +5996,7 @@ async def _run_control_turn_body(
             yield _complete(state)
             return
         user_text = (
-            "用户已批准已保存的计划，请按该版本执行。" + _planning_skills_note(state)
+            "用户已批准已保存的计划，请按该版本执行。" + _planning_skills_note(state) + _workspace_pending_note(state)
             if outcome == "approved"
             else "用户取消了计划审批，请继续访谈并修改计划。反馈：" + str(raw_answer.get("feedback") or "")
         )

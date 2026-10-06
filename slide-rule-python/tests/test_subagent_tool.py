@@ -112,3 +112,18 @@ def test_known_on_both_sides_safe_to_retry_and_announced_to_the_planner():
     tools = {t["function"]["name"]: t["function"] for t in control.list_control_tools(state)}
     assert "subagent" not in tools                                   # 规划时还没列出……
     assert "subagent" in tools["write_plan"]["description"]          # ……但写计划时知道执行期有它
+
+
+
+def test_offered_only_once_there_is_a_workspace_to_read(monkeypatch):
+    """⚠ 2026-10-06 r27：执行第一回合还没工程就摆了 subagent——调了只能拿回「没处可读」。"""
+    from models.v5_state import V5SessionState
+    monkeypatch.setattr(control, "plan_execution_authorized", lambda st: True)
+    state = V5SessionState(sessionId="sr-sub-ws", ownerId="alice", goal={"text": "写一份远程办公制度"})
+    token = control._PROJECT_TOOLS.set(object())
+    try:
+        assert not control.should_list_tool("subagent", state)
+        state.projectId = "prj-1"
+        assert control.should_list_tool("subagent", state)
+    finally:
+        control._PROJECT_TOOLS.reset(token)

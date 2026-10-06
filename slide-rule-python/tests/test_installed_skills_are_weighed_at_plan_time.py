@@ -120,7 +120,9 @@ def test_nothing_opened_means_the_execution_message_is_unchanged(harness):
     harness.post(six_fields(sid, "Approve", toolAnswer={"kind": "plan_approval", "reqId": approval["reqId"], "outcome": "approved"}))
     # 2026-10-02 起前面带着对话历史（_conversation_history），批准那句不再是第一条 user
     first_user = next(m["content"] for m in seen[0] if m["role"] == "user" and str(m["content"]).startswith("用户已批准"))
-    assert first_user == "用户已批准已保存的计划，请按该版本执行。"
+    # 2026-10-06 起还没工作区时后面跟一句「工具建了工程才出现」（_workspace_pending_note）——那不是技能清单
+    assert first_user.split("\n\n")[0] == "用户已批准已保存的计划，请按该版本执行。"
+    assert "技能" not in first_user and "skill" not in first_user
     assert load_session(sid).controlTranscript
 
 
