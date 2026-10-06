@@ -71,3 +71,11 @@ def test_known_on_both_sides_and_safe_to_retry():
     assert "calculate" in CLOSED_TOOLS and "calculate" in READ_ONLY_TOOLS
     ts = (Path(__file__).resolve().parents[2] / "client/src/lib/factory-hops.ts").read_text("utf-8")
     assert ts.count('"calculate"') >= 2                                  # 封闭名单 + 轨迹白名单
+
+
+def test_a_label_that_is_not_a_name_still_gets_computed():
+    """⚠ r34 原样：左边带中文括号，不是合法名字——照样算右边，只是后面不能引用它。"""
+    out = calculate(["三年累计现金流（扣初始投资） = 1816272-450000", "月贡献 = 3.76", "月贡献*12"])
+    assert out["ok"] and [r["value"] for r in out["results"]] == [1366272, 3.76, 45.12]
+    assert out["results"][0]["name"] == "三年累计现金流（扣初始投资）"
+    assert calculate(["a == 1"])["ok"] is False                      # 比较不是赋值

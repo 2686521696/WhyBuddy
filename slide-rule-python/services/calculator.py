@@ -33,7 +33,11 @@ _BIN = {
 }
 _UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 _FUNCS = {"round": round, "min": min, "max": max, "abs": abs, "sum": lambda *xs: sum(xs)}
-_ASSIGN = re.compile(r"^\s*([^\W\d][\w]*)\s*=(?!=)\s*(.+)$", re.UNICODE)
+# 「左边 = 算式」：左边是合法名字就记下、后面能引用；不是（「三年累计（扣投资）」）就当标签，照样算右边。
+# ⚠ 2026-10-06 真机 r34：模型写 `三年累计现金流（扣初始投资） = 1816272-450000`，第一版只认合法名字，整行当成算式报
+#   「不是算式」，它换成 net_3y 又算一遍——白烧一轮。
+_ASSIGN = re.compile(r"^\s*([^=<>!]+?)\s*=(?!=)\s*(.+)$", re.UNICODE)
+_NAME = re.compile(r"^[^\W\d]\w*$", re.UNICODE)
 # 模型常写的全角 / 中文符号：× ÷ － （ ） ％ 。百分号按「÷100」认（32% → 0.32）。
 _NORMALIZE = str.maketrans({"×": "*", "÷": "/", "－": "-", "（": "(", "）": ")", "，": ",", "＋": "+", "％": "%"})
 _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*%(?!\s*[\d(])")
@@ -89,7 +93,8 @@ def calculate(lines: Any) -> Dict[str, Any]:
     for raw in rows:
         line = raw[:MAX_LINE_CHARS].translate(_NORMALIZE)
         match = _ASSIGN.match(line)
-        name, expr = (match.group(1), match.group(2)) if match else (None, line)
+        label, expr = (match.group(1).strip(), match.group(2)) if match else (None, line)
+        name = label if label and _NAME.match(label) else None
         expr = _PERCENT.sub(r"(\1/100)", expr)
         try:
             value = _tidy(_eval(ast.parse(expr, mode="eval"), names))
@@ -99,5 +104,6 @@ def calculate(lines: Any) -> Dict[str, Any]:
             return {"ok": False, "results": results, "error": f"「{raw}」：{exc}"}
         if name:
             names[name] = value
-        results.append({"expr": raw, **({"name": name} if name else {}), "value": value})
+        shown = raw.split("=", 1)[0].strip() if label else None   # 标签照模型原样（全角括号不换）
+        results.append({"expr": raw, **({"name": shown} if shown else {}), "value": value})
     return {"ok": True, "results": results}
