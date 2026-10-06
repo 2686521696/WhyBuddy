@@ -125,7 +125,9 @@ def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
     lead = (
         f"Base directory for this skill: {base}（工作区根下）。"
         f"正文里的相对路径（scripts/…、resources/…、references/…）都相对这个目录；"
-        f"在工作区里跑要写全：python3 {base}scripts/…\n\n"
+        f"在工作区里跑要写全：python3 {base}scripts/…\n"
+        f"正文让你读包里的文件（examples/…、references/…）时，可直接 skill(name=\"{_xml_escape(skill.name)}\", "
+        f"file=\"examples/…\") 读——没有工作区也能读。\n\n"
         if base else ""
     )
     return (

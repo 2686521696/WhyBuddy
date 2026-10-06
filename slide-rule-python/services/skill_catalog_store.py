@@ -388,6 +388,22 @@ class SkillCatalogStore:
         body = skill_md_text(files)
         return parse_skill_md(body, path=f".sliderule/skills/{pkg['slug']}/SKILL.md", name=pkg["slug"])
 
+    def installed_skill_files(self, owner_id: str, slug: str) -> dict[str, str] | None:
+        """这个账号装着的这份技能，包里全部文件（相对技能根）。没装 → None；装了但包取不到 → 种子兜底。
+
+        ⚠ 2026-10-06 真机 r38（@internal-comms 全员搬迁邮件）：技能第 2 步「到 examples/ 读对应的格式说明」，
+          直接回答的对话回合没有工作区、也没有读文件的工具——包里的文件只在沙盒里才看得见，这一步被静静跳过。
+          只给**装了的**：没装的技能，包里的东西不对这个账号开放。
+        """
+        for pkg in self.list_installed(owner_id):
+            if str(pkg.get("slug") or "") != slug:
+                continue
+            try:
+                return self.unpack_package(pkg)
+            except Exception:
+                return local_seed_files(slug)
+        return None
+
     def installed_skill_infos(self, owner_id: str) -> list[SkillInfo]:
         infos: list[SkillInfo] = []
         for pkg in self.list_installed(owner_id):
@@ -586,6 +602,16 @@ class SkillCatalogUnavailable(Exception):
     """商店这一发没答上来。不是「用户没装这个技能」。"""
 
     code = "skill_catalog_unavailable"
+
+
+def installed_skill_files(owner_id: str, slug: str) -> dict[str, str] | None:
+    """已装技能包里的全部文件（相对技能根）。没装 → None。商店自己失败就抛（同 installed_skill_infos）。"""
+    try:
+        return get_skill_catalog_store().installed_skill_files(owner_id, slug)
+    except SkillCatalogUnavailable:
+        raise
+    except Exception as exc:
+        raise SkillCatalogUnavailable() from exc
 
 
 def installed_skill_infos(owner_id: str) -> list[SkillInfo]:

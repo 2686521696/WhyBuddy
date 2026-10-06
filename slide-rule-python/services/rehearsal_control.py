@@ -186,6 +186,7 @@ from services.deliverable_kind import (
 )
 from services.skill_catalog_store import (
     OFFICE_SKILL_CATEGORY,
+    installed_skill_files,
     installed_skill_infos,
     local_seed_skill_info,
     classify_skill_catalog_result,
@@ -1547,6 +1548,44 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
     state.controlSkillCache = rows
 
 
+SKILL_FILE_MAX_CHARS = 40_000
+
+
+def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[str, Any]:
+    """skill(name, file=…)：已装技能包里的一份文件。
+
+    ⚠ 2026-10-06 真机 r38 sr-20261006072036-32XXX4H7TT（@internal-comms 全员搬迁邮件）：技能第 2 步「到 examples/
+      读对应的格式说明」，直接回答的回合没有工作区，包里的文件只在沙盒的 .sliderule/skills/ 下才看得见——模型加载完正文
+      直接写，这一步静静跳过。Claude Code 是 Skill 给目录、Read 去读；这里没有工作区时就由 skill 自己把包里的文件递过去。
+      路径认相对技能目录的，也认带 `.sliderule/skills/<slug>/` 前缀的（正文的 Base directory 就是这么写的）。
+    """
+    owner = str(getattr(state, "ownerId", None) or "").strip()
+    if not slug or not owner:
+        return {"ok": False, "error": "skill_file_unavailable"}
+    try:
+        files = installed_skill_files(owner, slug)
+    except Exception:
+        return {"ok": False, "error": "skill_catalog_unavailable"}
+    if files is None:
+        return {"ok": False, "error": "skill_not_installed"}
+    rel = wanted.replace("\\", "/").lstrip("/").removeprefix(f".sliderule/skills/{slug}/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    text = files.get(rel)
+    if text is None:
+        listed = sorted(path for path in files if not path.startswith("."))[:80]
+        return {"ok": False, "error": "skill_file_not_found", "file": rel,
+                "human": f"「{slug}」包里没有 {rel}。包里有：" + "、".join(listed)}
+    clipped = len(text) > SKILL_FILE_MAX_CHARS
+    return {"ok": True, "file": rel,
+            "skill_message": f'<skill_file skill="{_xml_escape_attr(slug)}" path="{_xml_escape_attr(rel)}">\n'
+                             f"{text[:SKILL_FILE_MAX_CHARS]}\n</skill_file>" + ("\n（文件太长，只给了前一段。）" if clipped else "")}
+
+
+def _xml_escape_attr(value: str) -> str:
+    return str(value).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+
+
 def _skill_turn_catalog(state: V5SessionState) -> tuple[list, str | None]:
     """(目录, 失败码)。商店答上来了，空列表也是答案，失败码是 None。
 
@@ -2371,6 +2410,13 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                     "args": {
                         "type": "string",
                         "description": "可选，传给这份技能的补充说明",
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": (
+                            "可选，读这份技能包里的一份文件（相对技能目录，如 examples/general-comms.md）。"
+                            "技能正文让你「去读某个文件」时用它——有没有工作区都能读。"
+                        ),
                     },
                 },
                 "required": ["name"],
@@ -6965,6 +7011,13 @@ async def _dispatch_tool(
         # 开场就带技能名。正文只回给模型（tool result），不进会话。
         slug = normalize_skill_name(str(args.get("name") or args.get("skill") or ""))
         summary = project_tool_summary("skill", args)
+        wanted_file = str(args.get("file") or "").strip()
+        if wanted_file:
+            # 读技能包里的一份文件（_skill_package_file 头注）。不走下面的「已加载」短路：正文加载过 ≠ 这份文件读过。
+            yield tool_start_event("skill", summary=f"{slug} · {wanted_file}"[:120])
+            yield {"type": "control_tool_result", "tool": "skill", "skill": slug,
+                   **await run_in_threadpool(_skill_package_file, state, slug, wanted_file)}
+            return
         yield tool_start_event("skill", summary=summary or "")
         # 先看上一发成功结果，再认这一发 start——正在飞的不算已加载。
         in_context = _SKILLS_IN_CONTEXT.get()
