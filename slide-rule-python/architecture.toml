@@ -128,6 +128,8 @@ modules = [
   "services.control_transcript_log",
   "services.control_goal_continuation",
   "services.control_checkpoint",
+  # 算数（2026-10-06）：AST 白名单的纯函数，不碰任何 services 模块 → 叶子。
+  "services.calculator",
   # 工作器分组（2026-10-04）：本地连线上库时各领各的单。只读环境变量、拼 SQL 片段 → 叶子。
   "services.worker_pool",
   "services.archetype_legal",
@@ -913,6 +915,7 @@ modules = [
   "services.skill_blob_store",
   "services.control_skills",
   "services.subagent",
+  "services.calculator",
   "services.deliverable_kind",
   "services.session_uploads",
   "services.session_events",

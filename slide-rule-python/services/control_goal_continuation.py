@@ -437,6 +437,8 @@ READ_ONLY_TOOLS = frozenset({
     "file_find_in_content", "file_find_by_name", "shell_view", "shell_wait", "recall",
     # 子代理：只读工作区、问模型，不改任何东西（services/subagent）。重启后补个中断回执、让它再派一次就行。
     "subagent",
+    # 算数：纯函数（services/calculator）。
+    "calculate",
 })
 
 

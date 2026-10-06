@@ -89,6 +89,7 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.subagent import document_text as subagent_document_text, run_subagent
+from services.calculator import calculate
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
@@ -2321,6 +2322,23 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {"text": {"type": "string", "description": "一句话"}},
                 "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": (
+                "算数。凡是要写进计划、拿去问用户、或说给用户的数字（合计、比例、回本期、增长……），先在这里算，别心算——"
+                "尤其在说「你给的数字对不上」之前。一行一个算式，可写 `月利润 = 12*(1-32%)-2-2.4`，后面的行能用前面的名字。"
+                "只认算术和 round/min/max/abs/sum。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"lines": {"type": "array", "items": {"type": "string"}, "maxItems": 40,
+                                         "description": "算式，一行一个"}},
+                "required": ["lines"],
             },
         },
     },
@@ -6872,6 +6890,11 @@ async def _dispatch_tool(
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
         yield {"type": "control_tool_result", "tool": name, **result}
+        return
+    if name == "calculate":
+        lines = args.get("lines")
+        yield tool_start_event(name, summary=str((lines or [""])[0] if isinstance(lines, list) else lines or "")[:80])
+        yield {"type": "control_tool_result", "tool": name, **calculate(lines)}
         return
     if name in ("remember", "recall"):
         yield {"type": "control_tool_start", "tool": name}
