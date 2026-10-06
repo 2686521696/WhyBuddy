@@ -156,6 +156,8 @@ class ProjectRuntimeSupervisor:
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._lock = threading.Lock()
+        #: 每个工程一把：submit 的「查有没有在跑的那台 → 没有才建」得是一步（submit 里的头注）。
+        self._start_locks: dict[str, threading.Lock] = {}
         self._workers: dict[str, threading.Thread] = {}
         self._stdin: dict[str, list[dict]] = {}
         #: sandbox_id → {上传文件名: sha256}。同一台沙盒里已经放好的原件不再重推。
@@ -214,14 +216,23 @@ class ProjectRuntimeSupervisor:
         # ⚠ 版本号对不上的不复用，交给 create_operation 报 project_revision_conflict
         #   ——第一版复用排在校验前面，过期请求拿到了在跑的那台（全量
         #   test_http_start_retry_after_live_patch_returns_original_request 逮到）。
-        if (expected_revision == project.currentRevision
-                and self.store.operation_by_key(project_id, idempotency_key, owner_id=owner_id) is None):
-            active = self.store.active_runtime_start(project_id, owner_id=owner_id)
-            if active is not None:
-                return active
-        operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
-            idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
-            input={"port": port})
+        #
+        # ⚠ 2026-10-06 真机 r46 sr-20261006161250-XF6BNT597B（@frontend-design 春节倒计时）：模型起预览
+        #   （幂等键 uuid）和预览面板 POST /preview/wake（preview-wake:*）隔 0.19 秒同时到，两边都先查
+        #   active_runtime_start、都看见「没有」、各建一台——上面那条复用是「先查后建」，并发时两个查都在两个建之前。
+        #   两台抢一份工作区租约，租约换了 7 代（gen 7→13），浏览器验收撞上 workspace_lease_lost。
+        #   两条请求都在同一个 Python 进程里，按工程一把锁把「查 → 建」合成一步。
+        with self._lock:
+            start_lock = self._start_locks.setdefault(project_id, threading.Lock())
+        with start_lock:
+            if (expected_revision == project.currentRevision
+                    and self.store.operation_by_key(project_id, idempotency_key, owner_id=owner_id) is None):
+                active = self.store.active_runtime_start(project_id, owner_id=owner_id)
+                if active is not None:
+                    return active
+            operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
+                idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
+                input={"port": port})
         self._wake.set()
         return operation
 

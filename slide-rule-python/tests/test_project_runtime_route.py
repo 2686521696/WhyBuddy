@@ -480,3 +480,38 @@ def test_start_after_the_running_one_is_cancelled_opens_a_new_one(setup, monkeyp
     setup.store.request_operation_cancel(first.operationId, owner_id="u1")
     woke = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
     assert woke.json()["operation"]["operationId"] != first.operationId
+
+
+def test_model_start_and_preview_wake_at_the_same_moment_make_one_dev_server(setup, monkeypatch):
+    """⚠ 2026-10-06 真机 r46 sr-20261006161250-XF6BNT597B：模型起预览（uuid 键）和预览面板唤醒（preview-wake:*）
+    隔 0.19 秒同时到，各自「先查后建」，两个查都落在两个建之前——各起一台，抢租约 7 代，验收撞 workspace_lease_lost。
+    查的那一步拖慢一点（真机走 HTTPS 网关，一发几百毫秒），两条请求真并发。把 submit 里的锁去掉，本条变红。"""
+    import threading
+    import time as _time
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    real_active = setup.store.active_runtime_start
+
+    def slow_active(*args, **kwargs):
+        found = real_active(*args, **kwargs)
+        _time.sleep(0.2)
+        return found
+    monkeypatch.setattr(setup.store, "active_runtime_start", slow_active)
+    results, barrier = {}, threading.Barrier(2)
+
+    def model():
+        barrier.wait()
+        results["model"] = setup.supervisor.submit(setup.project.projectId, owner_id="u1",
+            expected_revision=setup.project.currentRevision, approval_ref=setup.body["approvalRef"],
+            idempotency_key="36be1daa-219e-46a0-9f4f-3106d8688248").operationId
+
+    def wake():
+        barrier.wait()
+        results["wake"] = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake").json()["operation"]["operationId"]
+    threads = [threading.Thread(target=model), threading.Thread(target=wake)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=20)
+    starts = [op for op in setup.store.list_project_operations(setup.project.projectId, owner_id="u1", limit=100)
+              if op.kind == "runtime.start"]
+    assert len(starts) == 1 and results["model"] == results["wake"] == starts[0].operationId
