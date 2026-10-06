@@ -331,8 +331,8 @@ may_depend_on = ["util"]
 modules = [
   # 2026-10-04 从 util 挪上来：领单要按工作器分组过滤，顶层 import 了 services.worker_pool。
   "services.control_run_store",
-  # 无上下文读者（2026-10-05）：拼读者那一发、把交付文件变成正文。依赖 deliverable_kind（util）。
-  "services.reader_test",
+  # 子代理（2026-10-05，对标 Claude Code Task）：只读工作区工具与循环；问模型由控制面注入。依赖 deliverable_kind（util）。
+  "services.subagent",
   "services.project_access",
   # 模型自己攒的记忆（抄 grok xai-grok-memory 的分寸，不抄它那套向量索引）。
   # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
@@ -912,7 +912,7 @@ modules = [
   "services.skill_package_format",
   "services.skill_blob_store",
   "services.control_skills",
-  "services.reader_test",
+  "services.subagent",
   "services.deliverable_kind",
   "services.session_uploads",
   "services.session_events",

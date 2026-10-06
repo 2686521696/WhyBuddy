@@ -89,7 +89,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   info_search_web: "检索资料",
   idle: "等待用户",
   skill: "加载技能",
-  reader_test: "请新读者试读",
+  subagent: "派子代理",
   read_file: "读取源码",
   write_file: "写入源码",
   search_replace: "替换源码",

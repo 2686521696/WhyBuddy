@@ -88,7 +88,7 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
-from services.reader_test import clean_questions, reader_document_text, reader_messages
+from services.subagent import document_text as subagent_document_text, run_subagent
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
@@ -1255,8 +1255,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "report_done": lambda st: plan_execution_authorized(st) and (_has_pages(st) or _has_model(st)),
     # 执行清单只在计划批准后开放。
     "todo_write": lambda st: plan_execution_authorized(st),
-    # 试读要有文件可读：计划批准后、手里有工程（执行期）。
-    "reader_test": lambda st: plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None,
+    # 子代理在工作区里读：计划批准后、手里有工程（执行期）。
+    "subagent": lambda st: plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None,
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
     "remember": lambda st: bool(_memory_scope_id(st)),
     "recall": lambda st: bool(_memory_scope_id(st)),
@@ -1729,30 +1729,51 @@ def stamp_control_plan_kind(state: V5SessionState) -> bool:
 _TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv)\s*>?\)", re.IGNORECASE)
 
 
-def _reader_test_document(state: V5SessionState, path: str) -> tuple:
-    """试读那份文件的正文：先找产物库（收回的办公文件 / 文本交付物），再找源码树。读不到返回 (路径, None)。"""
+class _StoreWorkspace:
+    """子代理看得见的工作区：源码树 + 产物库（交付文件）。只读，按需读字节。"""
+
+    def __init__(self, store, project_id: str, owner: str):
+        self.store, self.project_id, self.owner = store, project_id, owner
+        self.files = store.read_files(project_id, owner_id=owner)
+        self.artifacts = ProjectOfficeArtifactStore(store)
+        self.delivered = {row["path"]: row["artifactId"]
+                          for row in self.artifacts.list(project_id, owner_id=owner)}
+        self.cache: dict = {}
+
+    def paths(self) -> list:
+        return sorted(set(self.files) | set(self.delivered))
+
+    def read_text(self, path: str):
+        rel = str(path or "")
+        for prefix in ("sandbox:", "/home/user/workspace/", "/home/user/", "./"):
+            if rel.startswith(prefix):
+                rel = rel[len(prefix):]
+        rel = rel.lstrip("/")
+        if rel in self.cache:
+            return self.cache[rel]
+        text = None
+        if rel in self.delivered:
+            try:
+                _meta, data = self.artifacts.get_bytes(self.project_id, self.delivered[rel], owner_id=self.owner)
+                text = subagent_document_text(rel, data=data)
+            except Exception:  # noqa: BLE001 — 读不到就说读不到
+                text = None
+        elif rel in self.files:
+            text = subagent_document_text(rel, text=self.files[rel])
+        self.cache[rel] = text
+        return text
+
+
+def _subagent_workspace(state: V5SessionState):
     tools = _PROJECT_TOOLS.get()
     project_id = getattr(state, "projectId", None)
     store, owner = getattr(tools, "store", None), getattr(tools, "owner_id", None)
     if not project_id or store is None or not owner:
-        return path, None
-    rel = path
-    for prefix in ("sandbox:", "/home/user/workspace/", "/home/user/", "./"):
-        if rel.startswith(prefix):
-            rel = rel[len(prefix):]
-    rel = rel.lstrip("/")
+        return None
     try:
-        artifacts = ProjectOfficeArtifactStore(store)
-        meta = artifacts.find_by_path(project_id, rel, owner_id=owner)
-        if meta is not None:
-            _meta, data = artifacts.get_bytes(project_id, meta["artifactId"], owner_id=owner)
-            return meta["path"], reader_document_text(meta["path"], data=data)
-        files = store.read_files(project_id, owner_id=owner)
-    except Exception:  # noqa: BLE001 — 读不到就说读不到
-        return rel, None
-    if rel in files:
-        return rel, reader_document_text(rel, text=files[rel])
-    return rel, None
+        return _StoreWorkspace(store, project_id, owner)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _deliver_linked_text_files(store, project_id: str, owner: str, text: str) -> None:
@@ -2180,10 +2201,10 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 #   流程命令（本文件 _system_prompt 头注：写成命令模型就开始填答题卡）。
                 "用到的技能自己规定了做法或先后的，写清它的哪几步落在这次的哪一步；跳过的写为什么。"
                 # ⚠ 2026-10-05 真机 r24（@doc-coauthoring 远程办公制度）：计划写「Stage 3: Reader Testing……
-                #   当前无子代理工具，不执行外部读者会话测试」。reader_test 只在批准后列出，写计划时看不见，
+                #   当前无子代理工具，不执行外部读者会话测试」。子代理工具只在批准后列出，写计划时看不见，
                 #   模型据此在计划里主动跳过，执行照计划没做。这里说清执行期有它。
-                "执行期有 reader_test：把交付文件交给没看过这次对话的新读者，只凭文件回答问题（技能里"
-                "「用没有上下文的新读者 / sub-agent 试读」就是它）。"
+                "执行期有 subagent：派一个看不到这次对话的子代理，凭你写的说明在工作区里独立读、查、判断，交回结论"
+                "（技能里「用子代理 / sub-agent / 没有上下文的新读者」的步骤用它）。"
                 "计划正文跟用户同一种语言（默认简体中文）。"
                 "每次重写使上一版批准失效。"
                 # ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：模型写 Markdown，
@@ -2328,21 +2349,21 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "reader_test",
+            "name": "subagent",
             "description": (
-                "让一个没看过这次对话的新读者只读这份文件，回答你给的问题（services/reader_test 头注）。"
-                "技能要的「Reader Testing / 用没有上下文的新读者试读」用的就是它。"
-                "读者答不上、答错、说含糊的地方，就是真读者会卡住的地方：改正文后可以再试一次。"
-                "file 是工作区里的文件（.docx / .pptx / .md / .txt）；questions 写真读者会问的 3～10 个问题。"
+                "派一个子代理独立干一件事：它在全新上下文里工作，看不到这次对话，只拿到你写的 prompt，"
+                "能自己在工作区读文件 / 列文件 / 搜内容（只读），干完交回一段结论（services/subagent 头注）。"
+                "技能里写「用子代理 / sub-agent / 没有上下文的新读者」的步骤用它——例如让新读者只凭文件回答问题、"
+                "独立复核、对照需求挑错。prompt 要写全：它不知道你知道的任何事。files 可点名先附上的文件。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file": {"type": "string"},
-                    "questions": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10},
-                    "reader": {"type": "string", "description": "读者是谁，例如「刚入职的员工」"},
+                    "description": {"type": "string", "description": "三五个字说这件事，给用户看"},
+                    "prompt": {"type": "string"},
+                    "files": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
                 },
-                "required": ["file", "questions"],
+                "required": ["description", "prompt"],
                 "additionalProperties": False,
             },
         },
@@ -6954,30 +6975,27 @@ async def _dispatch_tool(
         # 正文只回给模型（tool result）。不要另发 control_text。
         yield {"type": "control_tool_result", "tool": "skill", **result}
         return
-    if name == "reader_test":
-        questions = clean_questions(args.get("questions"))
-        path = str(args.get("file") or "").strip()
-        yield tool_start_event(name, summary=f"{path}（{len(questions)} 个问题）")
-        if not path or not questions:
+    if name == "subagent":
+        what = str(args.get("description") or "").strip()[:40] or "子代理"
+        prompt = str(args.get("prompt") or "").strip()
+        files = [str(f) for f in (args.get("files") or []) if str(f or "").strip()][:5]
+        yield tool_start_event(name, summary=what)
+        if not prompt:
             yield {"type": "control_tool_result", "tool": name, "ok": False,
-                   "error": "要给 file（工作区里的文件）和 questions（3～10 个读者会问的问题）。"}
+                   "error": "要给 prompt：把这件事写全，子代理看不到这次对话。"}
             return
-        found, document = await run_in_threadpool(_reader_test_document, state, path)
-        if document is None:
-            yield {"type": "control_tool_result", "tool": name, "ok": False, "file": found or path,
-                   "error": "这份文件读不出正文（不在工作区、还没生成，或不是 .docx / .pptx / .md / .txt）。"}
+        workspace = await run_in_threadpool(_subagent_workspace, state)
+        if workspace is None:
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "还没有工作区，子代理没处可读。"}
             return
-        reader = str(args.get("reader") or "").strip()
+
+        async def ask(messages, tools):
+            return await _invoke_control_llm(messages, tools=tools, timeout_ms=180_000)
         try:
-            answered = await _invoke_control_llm(reader_messages(document, questions, reader), tools=[],
-                                                 timeout_ms=180_000)
-        except Exception as exc:  # noqa: BLE001 — 读者这一发失败照实说，不编答案（§七）
-            yield {"type": "control_tool_result", "tool": name, "ok": False, "file": found,
-                   "error": f"读者这一发没有返回：{str(exc)[:200]}"}
-            return
-        yield {"type": "control_tool_result", "tool": name, "ok": True, "file": found,
-               "reader": reader or "目标读者", "questions": len(questions),
-               "documentChars": len(document), "readerAnswers": str(getattr(answered, "content", "") or "")}
+            done = await run_subagent(ask, workspace, prompt, files)
+        except Exception as exc:  # noqa: BLE001 — 子代理这一趟失败照实说，不编结论（§七）
+            done = {"ok": False, "error": f"子代理这一趟没跑完：{str(exc)[:200]}"}
+        yield {"type": "control_tool_result", "tool": name, "description": what, **done}
         return
     if name == "todo_write":
         yield {"type": "control_tool_start", "tool": "todo_write"}
