@@ -1,6 +1,7 @@
 """The durable host owns the real model loop; closing SSE must not own it."""
 
 import asyncio
+import time
 import json
 from contextlib import aclosing
 from types import SimpleNamespace
@@ -206,8 +207,16 @@ def goal_already_done(monkeypatch):
     monkeypatch.setattr(ControlRunService, "_goal_is_done", done)
 
 
+# ⚠ 2026-10-06：原来是「轮询 1000 次 × 5ms」≈ 5 秒的预算。全量 -n 4 同机还起着 dev:all 时，一次恢复跑要的 CPU 超过 5 秒，
+#   test_recovery_keeps_spent_project_budget_and_stops_before_sampling[rounds] 偶发红在「did not reach the expected
+#   observation」——单跑 5/5 绿、这两个文件 -n 4 连跑 8 遍全绿。红的是等待预算，不是被测行为。改成按墙钟等 30 秒：
+#   真挂住的照样红（只是晚一点），慢一点的不再冒充失败。
+WAIT_SECONDS = 30.0
+
+
 async def settled(service, run_id):
-    for _ in range(1000):
+    deadline = time.monotonic() + WAIT_SECONDS
+    while time.monotonic() < deadline:
         record = await asyncio.to_thread(service.store.get, run_id, TEST_USER_ID)
         if record["status"] in TERMINAL:
             return record
@@ -216,7 +225,8 @@ async def settled(service, run_id):
 
 
 async def observed(service, run_id, predicate):
-    for _ in range(1000):
+    deadline = time.monotonic() + WAIT_SECONDS
+    while time.monotonic() < deadline:
         record = await asyncio.to_thread(service.store.get, run_id, TEST_USER_ID)
         if predicate(record):
             return record
