@@ -439,6 +439,8 @@ READ_ONLY_TOOLS = frozenset({
     "subagent",
     # 算数：纯函数（services/calculator）。
     "calculate",
+    # 对话档临时沙盒：一次性沙盒里的命令，重跑无副作用（services/scratch_sandbox）。
+    "sandbox_run",
 })
 
 

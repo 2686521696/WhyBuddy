@@ -97,7 +97,8 @@ const FILE_TOOLS = new Set([
   "write_file",
   "search_replace",
 ]);
-const EXEC_TOOLS = new Set(["project_exec", "shell_exec", "bash"]);
+// sandbox_run：对话档临时沙盒里的命令（services/scratch_sandbox），跟 shell_exec 一样算「运行命令」、命令原文可展开。
+const EXEC_TOOLS = new Set(["project_exec", "shell_exec", "bash", "sandbox_run"]);
 const READ_TOOLS = new Set([
   "project_list",
   "project_search",

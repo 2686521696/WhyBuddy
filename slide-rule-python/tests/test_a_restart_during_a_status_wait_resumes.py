@@ -95,7 +95,7 @@ def test_the_read_only_names_are_real_tools():
     """判据自己的前提：名单里写错一个名字，那一发就会静默走对账。"""
     control_names = {tool["function"]["name"] for tool in control.CONTROL_TOOLS}
     # recall / subagent / calculate 是控制面工具（不是工程工具），但得是真名字
-    control_side = {"recall", "subagent", "calculate"}
+    control_side = {"recall", "subagent", "calculate", "sandbox_run"}
     assert control_side <= control_names
     assert READ_ONLY_TOOLS - control_side <= set(PROJECT_TOOL_NAMES)
     assert not READ_ONLY_TOOLS & {"shell_exec", "bash", "file_write", "file_str_replace", "project_patch",

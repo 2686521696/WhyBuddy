@@ -279,6 +279,7 @@ const PROJECT_TOOL_LABELS: Record<string, string> = {
   skill: "正在加载技能",
   subagent: "子代理正在独立处理",
   calculate: "正在计算",
+  sandbox_run: "正在沙盒里运行命令",
   read_file: "正在读取工程文件",
   write_file: "正在写入工程源码",
   search_replace: "正在替换工程源码",

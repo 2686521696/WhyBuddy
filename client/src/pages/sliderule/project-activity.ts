@@ -91,6 +91,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   skill: "加载技能",
   subagent: "派子代理",
   calculate: "计算",
+  sandbox_run: "运行命令",
   read_file: "读取源码",
   write_file: "写入源码",
   search_replace: "替换源码",

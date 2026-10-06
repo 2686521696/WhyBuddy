@@ -44,6 +44,8 @@ export const CLOSED_TOOLS = [
   "subagent",
   // 算数 2026-10-06 加（services/calculator；规划期也能用）。
   "calculate",
+  // 对话档临时沙盒 2026-10-06 加（services/scratch_sandbox；没有工程时跑技能脚本）。
+  "sandbox_run",
   // 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
   "skill",
   "rehearse",
@@ -168,7 +170,8 @@ export function isProjectWorkbenchTool(name: unknown): boolean {
     //   改了正文，步骤里「进入独立读者测试」和「读者测试认为……」中间一行都没有。
     tool === "subagent" ||
     // 2026-10-06 r33：算数（services/calculator）。不进白名单 = 算过也看不见，照旧像心算。
-    tool === "calculate"
+    tool === "calculate" ||
+    tool === "sandbox_run"
   );
 }
 

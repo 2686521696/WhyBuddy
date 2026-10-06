@@ -90,6 +90,7 @@ from services.archetype_legal import (
 )
 from services.subagent import document_text as subagent_document_text, run_subagent
 from services.calculator import calculate
+from services.scratch_sandbox import ScratchSandboxes
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
@@ -1273,6 +1274,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "todo_write": lambda st: plan_execution_authorized(st),
     # 子代理在工作区里读：计划批准后、手里有工程（执行期）。
     # 没工作区就没处可读（_subagent_workspace 返回 None）：跟工程工具同一条件，建了工程才摆出来。
+    # 对话档临时沙盒（services/scratch_sandbox）：只在没有工程时摆——有工程用 shell_exec；没配 E2B 就不摆。
+    "sandbox_run": lambda st: not getattr(st, "projectId", None) and _scratch_sandboxes() is not None,
     "subagent": lambda st: (plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None
                             and bool(getattr(st, "projectId", None))),
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
@@ -1547,6 +1550,45 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
         total += len(body)
     rows.reverse()
     state.controlSkillCache = rows
+
+
+_SCRATCH: Dict[int, ScratchSandboxes] = {}
+
+
+def _scratch_sandboxes() -> Optional[ScratchSandboxes]:
+    """对话档临时沙盒（services/scratch_sandbox）。沙盒提供方取注入进来的运行时（ProjectTools.supervisor.provider）——
+    control 组不许直接 import workspace 组（architecture.toml），「runtime owner is injected」同一个做法。
+    没有运行时 / 没配沙盒 → None，工具就不摆。按提供方缓存一份，同一会话的沙盒复用。"""
+    adapter = _PROJECT_TOOLS.get()
+    provider = getattr(getattr(adapter, "supervisor", None), "provider", None)
+    if provider is None:
+        return None
+    key = id(provider)
+    if key not in _SCRATCH:
+        _SCRATCH[key] = ScratchSandboxes(provider)
+    return _SCRATCH[key]
+
+
+def _scratch_skill_packages(state: V5SessionState, command: str) -> Dict[str, Dict[str, str]]:
+    """要写进临时沙盒的技能包：这一回合目录里（跟 skill() 同一份，_skill_package_file 头注）、
+    已经打开过或命令里点了它目录的那几份。取包同 skill(file=…)：商店包优先，取不到用种子。"""
+    owner = str(getattr(state, "ownerId", None) or "").strip()
+    infos, _err = _skill_turn_catalog(state)
+    in_context = _SKILLS_IN_CONTEXT.get()
+    loaded = in_context if in_context is not None else _skills_loaded_this_turn(state)
+    out: Dict[str, Dict[str, str]] = {}
+    for info in infos:
+        slug = getattr(info, "name", "")
+        if not slug or (slug not in loaded and f"skills/{slug}/" not in command):
+            continue
+        try:
+            files = installed_skill_files(owner, slug) if owner else None
+        except Exception:
+            files = None
+        files = files if files is not None else local_seed_files(slug)
+        if files:
+            out[slug] = files
+    return out
 
 
 SKILL_FILE_MAX_CHARS = 40_000
@@ -2372,6 +2414,26 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {"text": {"type": "string", "description": "一句话"}},
                 "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_run",
+            "description": (
+                "在一个临时沙盒里跑一条命令（有 python3；没有工程时才有，有工程用 shell_exec）。"
+                "技能让你跑它自带的脚本时用它：技能目录在 .sliderule/skills/<名字>/，照技能正文给的路径写全，"
+                "如 python3 .sliderule/skills/ui-ux-pro-max/scripts/search.py \"…\" --design-system。"
+                "第一次用会起沙盒，要多等几秒；同一会话后面复用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "要跑的命令"},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 120, "description": "秒，缺省 60"},
+                },
+                "required": ["command"],
             },
         },
     },
@@ -6946,6 +7008,18 @@ async def _dispatch_tool(
         yield {"type": "control_tool_start", "tool": name}
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
+        yield {"type": "control_tool_result", "tool": name, **result}
+        return
+    if name == "sandbox_run":
+        command = str(args.get("command") or "").strip()
+        yield tool_start_event(name, summary=command[:120])
+        sandboxes = _scratch_sandboxes()
+        if sandboxes is None or getattr(state, "projectId", None):
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "sandbox_unavailable"}
+            return
+        skills = await run_in_threadpool(_scratch_skill_packages, state, command)
+        result = await run_in_threadpool(
+            sandboxes.run, state.sessionId, command, skills=skills, timeout_seconds=args.get("timeout"))
         yield {"type": "control_tool_result", "tool": name, **result}
         return
     if name == "calculate":
