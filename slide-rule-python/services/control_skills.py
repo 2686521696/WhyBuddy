@@ -130,11 +130,17 @@ def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
         f"file=\"examples/…\") 读——没有工作区也能读。\n\n"
         if base else ""
     )
+    # ⚠ 2026-10-06 真机 r43 sr-20261006155721-4Q5VJN23EJ（@ui-ux-pro-max 宠物医院配色）：脚本真跑了、色值来自设计库，
+    #   但主按钮建议「#EA580C 底 + 白字」（3.56:1）、主色「#0D9488 + 白字」（3.74:1）——这份技能把「Contrast 4.5:1」
+    #   列为 CRITICAL 必查项，手里有 calculate / sandbox_run，交付前就是没对。规划档有承诺块（_plan_skill_commitments），
+    #   直接回答的回合没有任何一处提醒「技能自己的必查项要对一遍」。补在正文末尾，所有技能、所有档位同一句。
+    tail = ("\n\n交付前：把这份技能里标为必须 / CRITICAL / 检查清单（checklist）的项逐条对一遍；"
+            "要算的（对比度、合计、比例……）用 calculate 或 sandbox_run 算，别凭印象说「已满足」。")
     return (
         f'<skill name="{_xml_escape(skill.name)}" '
         f'description="{_xml_escape(skill.description)}" '
         f'path="{_xml_escape(skill.path)}"{extra}>\n'
-        f"{lead}{_resolve_dir_placeholders(skill.body, skill.name, base)}\n"
+        f"{lead}{_resolve_dir_placeholders(skill.body, skill.name, base)}{tail}\n"
         f"</skill>"
     )
 

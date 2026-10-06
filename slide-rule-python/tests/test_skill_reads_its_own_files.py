@@ -85,3 +85,11 @@ def test_a_skill_this_turn_cannot_open_is_not_read(harness):
 def test_the_skill_message_says_how_to_read_package_files():
     message = build_skill_message(local_seed_skill_info("internal-comms"))
     assert 'skill(name="internal-comms", file=' in message
+
+
+def test_the_skill_message_ends_with_checking_its_own_must_haves():
+    """⚠ r43：技能把 Contrast 4.5:1 列为 CRITICAL，模型交付了 3.56:1 的白字按钮——正文末尾提醒对一遍必查项、要算的去算。"""
+    message = build_skill_message(local_seed_skill_info("ui-ux-pro-max"))
+    body_end = message.rindex("</skill>")
+    tail = message[body_end - 200:body_end]
+    assert "CRITICAL" in tail and "calculate" in tail and "sandbox_run" in tail
