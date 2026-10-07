@@ -171,6 +171,7 @@ from services.closed_tools import (
 from services.control_skills import (
     SkillInfo,
     build_skill_message,
+    skill_asset_url,
     mentioned_skill_playbooks,
     mentioned_skill_slugs,
     normalize_skill_name,
@@ -1516,8 +1517,9 @@ def _skill_infos_from_cache(state: V5SessionState) -> list:
         path = str(row.get("path") or "")
         if not name or not body or not description:
             continue
+        assets = tuple(str(item) for item in row.get("assets") or () if isinstance(item, str))
         out.append(SkillInfo(
-            name=name, description=description, path=path, body=body, enabled=True,
+            name=name, description=description, path=path, body=body, enabled=True, assets=assets,
         ))
     return out
 
@@ -1545,7 +1547,7 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
         if getattr(info, "name", None) and getattr(info, "body", None):
             by_name.pop(info.name, None)  # 重新打开的排到队尾，先淘汰最旧的
             by_name[info.name] = info
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     total = 0
     # 从最近打开的往回收，撞上限就停——旧的那几份丢了还能再 skill()。
     for info in reversed(list(by_name.values())):
@@ -1559,6 +1561,8 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
             "description": info.description,
             "path": info.path,
             "body": body,
+            # 续跑回合带回的正文也要带着「包里给人看的文件」那句（_carried_skill_messages → build_skill_message）。
+            **({"assets": list(info.assets)} if getattr(info, "assets", ()) else {}),
         })
         total += len(body)
     rows.reverse()
@@ -1632,8 +1636,10 @@ def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[s
     if not slug or not owner:
         return {"ok": False, "error": "skill_file_unavailable"}
     infos, _catalog_error = _skill_turn_catalog(state)
-    if slug not in {getattr(info, "name", "") for info in infos}:
+    info = next((item for item in infos if getattr(item, "name", "") == slug), None)
+    if info is None:
         return {"ok": False, "error": "skill_not_installed"}
+    assets = tuple(getattr(info, "assets", ()) or ())
     try:
         files = installed_skill_files(owner, slug)
     except Exception:
@@ -1645,11 +1651,18 @@ def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[s
     rel = wanted.replace("\\", "/").lstrip("/").removeprefix(f".sliderule/skills/{slug}/")
     while rel.startswith("./"):
         rel = rel[2:]
+    if rel in assets:
+        # ⚠ 2026-10-07 r65（@theme-factory）：PDF / 图片读不出正文，但能给用户看——给链接，别说「没有这份文件」。
+        url = skill_asset_url(slug, rel)
+        return {"ok": True, "file": rel, "assetUrl": url,
+                "skill_message": f"{rel} 是给人看的文件（读不到内容）。要给用户看，就在回复里写 [{rel}]({url})，"
+                                 "用户点开即可。不要凭文件名描述里面是什么。"}
     text = files.get(rel)
     if text is None:
         listed = sorted(path for path in files if not path.startswith("."))[:80]
+        viewable = "；给人看的文件（只能给用户链接）：" + "、".join(assets) if assets else ""
         return {"ok": False, "error": "skill_file_not_found", "file": rel,
-                "human": f"「{slug}」包里没有 {rel}。包里有：" + "、".join(listed)}
+                "human": f"「{slug}」包里没有 {rel}。包里有：" + "、".join(listed) + viewable}
     clipped = len(text) > SKILL_FILE_MAX_CHARS
     return {"ok": True, "file": rel,
             "skill_message": f'<skill_file skill="{_xml_escape_attr(slug)}" path="{_xml_escape_attr(rel)}">\n'

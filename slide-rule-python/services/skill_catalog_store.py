@@ -18,7 +18,9 @@ from typing import Any, Optional
 from services.control_skills import SkillInfo, invoke_skill, normalize_skill_name, parse_skill_md
 from services.identity_store import get_identity_store
 from services.skill_blob_store import blob_exists, blob_get, blob_put
-from services.skill_package_format import skill_md_text, unpack_skill_zip
+from dataclasses import replace
+
+from services.skill_package_format import asset_type, package_assets, skill_md_text, unpack_skill_zip
 
 PACKAGE_TABLE = "wb_skill_package"
 INSTALL_TABLE = "wb_skill_install"
@@ -183,6 +185,29 @@ def seed_readiness() -> dict[str, Any]:
             "officeSkills": local_seed_skill_info("office-skills") is not None}
 
 
+def _asset_names(blob: bytes) -> tuple[str, ...]:
+    """包里给人看的文件名。取不到就当没有——这是增强（§七 fail-open），不许拖垮技能加载。"""
+    try:
+        return tuple(sorted(package_assets(blob)))
+    except Exception:
+        return ()
+
+
+def _with_assets(info: SkillInfo, blob: bytes) -> SkillInfo:
+    names = _asset_names(blob)
+    return replace(info, assets=names) if names else info
+
+
+def local_seed_asset(slug: str, rel: str) -> bytes | None:
+    path = _seed_zip_path(slug)
+    if path is None or not asset_type(rel):
+        return None
+    try:
+        return package_assets(path.read_bytes()).get(rel)
+    except Exception:
+        return None
+
+
 def local_seed_skill_info(slug: str) -> SkillInfo | None:
     """仓库里的种子 zip。不经过 OSS。
 
@@ -201,13 +226,16 @@ def local_seed_skill_info(slug: str) -> SkillInfo | None:
     if path is None:
         return None
     try:
-        files = unpack_skill_zip(path.read_bytes())
+        blob = path.read_bytes()
+        files = unpack_skill_zip(blob)
         body = skill_md_text(files)
         info = parse_skill_md(
             body, path=f".sliderule/skills/{name}/SKILL.md", name=name,
         )
     except Exception:
         return None
+    if info is not None:
+        info = _with_assets(info, blob)
     if info is not None:
         if len(_local_info_cache) >= _LOCAL_INFO_CACHE_MAX:
             _local_info_cache.pop(next(iter(_local_info_cache)), None)
@@ -371,22 +399,44 @@ class SkillCatalogStore:
           沙盒开箱（skill_hydrate.files_for_package）和 file_read 技能文件走这里、没有——沙盒里
           `find -name SKILL.md` 一个没有。兜底挪到这一处，三条路一个口径（§四）。
         """
+        return self._unpack(pkg)[0]
+
+    def _package_blob(self, pkg: dict[str, Any]) -> bytes:
+        blob = blob_get(str(pkg.get("ossKey") or pkg.get("oss_key") or ""))
+        expected = str(pkg.get("sha256") or "")
+        if expected and hashlib.sha256(blob).hexdigest() != expected:
+            raise ValueError("skill_package_checksum_mismatch")
+        return blob
+
+    def _unpack(self, pkg: dict[str, Any]) -> tuple[dict[str, str], bytes | None]:
+        """(文本文件, 包字节)。种子兜底时字节取种子 zip——给人看的文件跟正文出自同一份包。"""
         try:
-            blob = blob_get(str(pkg.get("ossKey") or pkg.get("oss_key") or ""))
-            expected = str(pkg.get("sha256") or "")
-            if expected and hashlib.sha256(blob).hexdigest() != expected:
-                raise ValueError("skill_package_checksum_mismatch")
-            return unpack_skill_zip(blob)
+            blob = self._package_blob(pkg)
+            return unpack_skill_zip(blob), blob
         except Exception:
-            seeded = local_seed_files(str(pkg.get("slug") or ""))
+            slug = str(pkg.get("slug") or "")
+            seeded = local_seed_files(slug)
             if seeded is None:
                 raise
-            return seeded
+            seed_path = _seed_zip_path(slug)
+            return seeded, (seed_path.read_bytes() if seed_path else None)
 
     def skill_info(self, pkg: dict[str, Any]) -> SkillInfo | None:
-        files = self.unpack_package(pkg)
+        files, blob = self._unpack(pkg)
         body = skill_md_text(files)
-        return parse_skill_md(body, path=f".sliderule/skills/{pkg['slug']}/SKILL.md", name=pkg["slug"])
+        info = parse_skill_md(body, path=f".sliderule/skills/{pkg['slug']}/SKILL.md", name=pkg["slug"])
+        return _with_assets(info, blob) if info is not None and blob else info
+
+    def installed_skill_asset(self, owner_id: str, slug: str, rel: str) -> bytes | None:
+        """装着的这份技能包里一份给人看的文件。没装 / 不是这类文件 / 包里没有 → None。"""
+        if not asset_type(rel):
+            return None
+        for pkg in self.list_installed(owner_id):
+            if str(pkg.get("slug") or "") != slug:
+                continue
+            _files, blob = self._unpack(pkg)
+            return package_assets(blob).get(rel) if blob else None
+        return None
 
     def installed_skill_files(self, owner_id: str, slug: str) -> dict[str, str] | None:
         """这个账号装着的这份技能，包里全部文件（相对技能根）。没装 → None；装了但包取不到 → 种子兜底。
@@ -612,6 +662,15 @@ def installed_skill_files(owner_id: str, slug: str) -> dict[str, str] | None:
         raise
     except Exception as exc:
         raise SkillCatalogUnavailable() from exc
+
+
+def skill_asset(owner_id: str, slug: str, rel: str) -> bytes | None:
+    """给人看的文件：这个账号装着的那份包优先，没装就看仓库种子（种子是平台自带、对所有登录用户公开的目录）。"""
+    try:
+        data = get_skill_catalog_store().installed_skill_asset(owner_id, slug, rel)
+    except Exception:
+        data = None
+    return data if data is not None else local_seed_asset(slug, rel)
 
 
 def installed_skill_infos(owner_id: str) -> list[SkillInfo]:

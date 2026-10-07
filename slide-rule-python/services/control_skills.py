@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import textwrap
+from urllib.parse import quote
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -39,6 +40,8 @@ class SkillInfo:
     path: str
     body: str
     enabled: bool = True
+    #: 包里给人看的文件（PDF / 图片，相对技能根）。模型读不了正文，只能给用户链接（skill_asset_url）。
+    assets: tuple[str, ...] = ()
 
 
 def normalize_skill_name(name: str) -> str:
@@ -145,9 +148,25 @@ def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
         f'<skill name="{_xml_escape(skill.name)}" '
         f'description="{_xml_escape(skill.description)}" '
         f'path="{_xml_escape(skill.path)}"{extra}>\n'
-        f"{lead}{_resolve_dir_placeholders(skill.body, skill.name, base)}{tail}\n"
+        f"{lead}{_assets_note(skill)}{_resolve_dir_placeholders(skill.body, skill.name, base)}{tail}\n"
         f"</skill>"
     )
+
+
+def skill_asset_url(slug: str, rel: str) -> str:
+    """包里一份给人看的文件的地址（routes/skill_store 的 /skills/{slug}/files/…）。收尾里 /api/ 开头的链接才可点。"""
+    return f"/api/sliderule/skills/{quote(slug, safe='')}/files/{quote(rel, safe='/')}"
+
+
+def _assets_note(skill: SkillInfo) -> str:
+    """⚠ 2026-10-07 真机 r65（@theme-factory）：第 1 步「把 theme-showcase.pdf 给用户看」，平台上没这份文件、
+    模型也不知道能给——凭主题名字编了一套配色字体给用户确认（skill_package_format.package_assets 头注）。
+    包里有给人看的文件，就在正文前点名、给链接：要「给用户看」就把链接放进回复；别凭文件名描述里面是什么。"""
+    if not skill.assets:
+        return ""
+    links = "、".join(f"[{rel}]({skill_asset_url(skill.name, rel)})" for rel in skill.assets[:20])
+    return (f"包里给人看的文件（PDF / 图片，你读不到内容）：{links}。正文让你把它们给用户看时，就把链接写进回复，"
+            "用户点开即可；不要凭文件名描述里面的内容——要说清楚某一项是什么，读包里对应的文本文件。\n\n")
 
 
 def _resolve_dir_placeholders(body: str, name: str, base: str) -> str:

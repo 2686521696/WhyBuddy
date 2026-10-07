@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Response
 
 from middlewares.current_user import CurrentUser
-from services.skill_catalog_store import get_skill_catalog_store
+from services.control_skills import normalize_skill_name
+from services.skill_catalog_store import get_skill_catalog_store, skill_asset
+from services.skill_package_format import asset_type
 from services.skill_hydrate import files_for_package, try_hydrate_running_project
 
 router = APIRouter(tags=["Skill store"])
@@ -31,6 +33,29 @@ def list_skills(viewer: CurrentUser, projectId: Optional[str] = None) -> dict[st
     # 技能页只要索引。种子只在货架第一次建起来时下，见 get_skill_catalog_store。
     skills = _store().catalog_for_owner(str(viewer.id))
     return {"skills": skills, "projectId": projectId}
+
+
+@router.get("/skills/{slug}/files/{rel:path}")
+def skill_package_asset(slug: str, rel: str, viewer: CurrentUser) -> Response:
+    """技能包里给人看的文件（PDF / 图片），回复里的链接点开就是这里（control_skills.skill_asset_url）。
+
+    ⚠ 2026-10-07 真机 r65（@theme-factory）：第 1 步「把 theme-showcase.pdf 给用户看」——平台上没这份文件，
+      模型凭名字编了主题描述（skill_package_format.package_assets 头注）。只放后缀白名单里的类型、只读、不出文本：
+      文本文件模型用 skill(file=…) 读，不经这里外流。
+    """
+    name = normalize_skill_name(slug)
+    ctype = asset_type(rel)
+    if not name or name != slug or not ctype or ".." in rel.split("/"):
+        raise HTTPException(404, "skill_asset_not_found")
+    data = skill_asset(str(viewer.id), name, rel)
+    if data is None:
+        raise HTTPException(404, "skill_asset_not_found")
+    return Response(content=data, media_type=ctype, headers={
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
+        "Cache-Control": "private, max-age=300",
+    })
 
 
 @router.post("/skills/{skill_id}/install")

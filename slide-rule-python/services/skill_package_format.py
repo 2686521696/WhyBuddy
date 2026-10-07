@@ -18,11 +18,8 @@ SKILL_MD = "skill.md"
 
 
 
-def unpack_skill_zip(blob: bytes) -> dict[str, str]:
-    """解开完整包。路径相对技能根（含 SKILL.md 的那一层）。
-
-    二进制略过。没有 SKILL.md、路径逃逸、超上限 → ValueError。
-    """
+def _entries(blob: bytes) -> tuple[dict[str, bytes], str]:
+    """zip 里的全部文件（防 zip-slip、过上限）与技能根前缀。开箱和取「给人看的文件」共用这一份读法。"""
     if not isinstance(blob, (bytes, bytearray)) or not blob:
         raise ValueError("skill_package_empty")
     if len(blob) > MAX_PACKAGE_BYTES:
@@ -48,7 +45,15 @@ def unpack_skill_zip(blob: bytes) -> dict[str, str]:
             raise ValueError("skill_package_too_many_files")
     if not raw:
         raise ValueError("skill_package_empty")
-    prefix = _skill_root_prefix(raw)
+    return raw, _skill_root_prefix(raw)
+
+
+def unpack_skill_zip(blob: bytes) -> dict[str, str]:
+    """解开完整包。路径相对技能根（含 SKILL.md 的那一层）。
+
+    二进制略过。没有 SKILL.md、路径逃逸、超上限 → ValueError。
+    """
+    raw, prefix = _entries(blob)
     files: dict[str, str] = {}
     for name, data in raw.items():
         rel = name[len(prefix):] if prefix and name.startswith(prefix) else name
@@ -116,3 +121,30 @@ def _looks_text(path: str, data: bytes) -> bool:
     except UnicodeDecodeError:
         return False
     return True
+
+
+#: 包里「给人看」的非文本文件：后缀 → 媒体类型。只放浏览器能安全内联打开的；别的二进制（字体等）照旧不出包。
+ASSET_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".gif": "image/gif", ".webp": "image/webp"}
+
+
+def asset_type(path: str) -> str | None:
+    name = str(path or "").lower()
+    return next((ctype for suffix, ctype in ASSET_TYPES.items() if name.endswith(suffix)), None)
+
+
+def package_assets(blob: bytes) -> dict[str, bytes]:
+    """包里的 PDF / 图片（相对技能根）。文本走 unpack_skill_zip；这里只收文本那边跳过、又能给人看的。
+
+    ⚠ 2026-10-07 真机 r65 sr-20261007093401-3HHZ9TCNXZ（@theme-factory 年会邀请函挑主题）：技能第 1 步「把
+      theme-showcase.pdf 给用户看，让他挑」。开箱只收文本，这份 PDF 在平台上根本不存在——模型没东西可给，
+      就凭主题名字给用户描述了一套「香槟金、暖琥珀、深墨黑、衬线标题」，而 themes/golden-hour.md 写的是
+      芥末黄 #f4a900、赤陶、暖米、巧克力棕、FreeSans 无衬线。用户会照着一份编出来的描述去确认。
+    """
+    raw, prefix = _entries(blob)
+    out: dict[str, bytes] = {}
+    for name, data in raw.items():
+        rel = name[len(prefix):] if prefix and name.startswith(prefix) else name
+        if rel and asset_type(rel) and not _looks_text(rel, data):
+            out[rel] = data
+    return out
