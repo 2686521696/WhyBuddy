@@ -44,7 +44,7 @@ from services.project_tool_contracts import (
     SHELL_EXEC_FOREGROUND_BLOCK_SECONDS,
 )
 from services.deliverable_kind import (
-    OFFICE_START_NOT_APPLICABLE, OFFICE_VERIFY_NOT_APPLICABLE,
+    MAX_DELIVERED_FILES, OFFICE_START_NOT_APPLICABLE, OFFICE_VERIFY_NOT_APPLICABLE,
     WORKSPACE_TEMPLATE_VERSION,
     idle_office_exec_allows_source_write,
     operation_left_on_lease,
@@ -609,10 +609,11 @@ def operation_snapshot(snapshot):
     siblings = saved.get("officeSiblings")
     if isinstance(siblings, dict) and siblings:
         result["officeSiblings"] = {str(k)[:240]: str(v)[:240] for k, v in list(siblings.items())[:8]}
-    for name in ("officeFiles", "officeFilesHeld", "sandboxOnlyEdits"):
+    for name, cap in (("officeFiles", MAX_DELIVERED_FILES), ("officeFilesHeld", MAX_DELIVERED_FILES),
+                      ("sandboxOnlyEdits", 8)):
         files = saved.get(name)
         if isinstance(files, list) and files:
-            result[name] = [str(item)[:240] for item in files[:8] if isinstance(item, str)]
+            result[name] = [str(item)[:240] for item in files[:cap] if isinstance(item, str)]
     for key in ("officeFacts", "officeFactsBefore"):
         measured = saved.get(key)
         if isinstance(measured, dict) and measured:
@@ -625,7 +626,7 @@ def operation_snapshot(snapshot):
     if isinstance(downloads, dict) and downloads:
         result["officeDownloads"] = {
             str(path)[:240]: str(url)[:300]
-            for path, url in list(downloads.items())[:8]
+            for path, url in list(downloads.items())[:MAX_DELIVERED_FILES]
             if isinstance(path, str) and isinstance(url, str) and url.startswith("/api/")
         }
     # 用户原件没放进沙盒时必须让模型看见——否则它会去沙盒里找一份不存在的文件，
@@ -862,7 +863,7 @@ def _download_sentence(result) -> str:
     downloads = result.get("officeDownloads")
     if not isinstance(downloads, dict) or not downloads:
         return ""
-    links = "；".join(f"[{path}]({url})" for path, url in list(downloads.items())[:8])
+    links = "；".join(f"[{path}]({url})" for path, url in list(downloads.items())[:MAX_DELIVERED_FILES])
     return (
         f"给用户的下载链接：{links}。"
         "交付时用这个链接，不要写沙盒里的路径（sandbox:/home/user/…），用户打不开。"
@@ -1083,7 +1084,7 @@ def _command_pointer(result, excerpt="", full_command=None):
         #   写完 xlsx 后自检断言失败，exit 1。收回照旧（worker 头注：失败也可能已写出
         #   文件，fail-open），可回执写的是「办公文件已收回……这就是交付」——一次失败的
         #   运行被说成交付。那一轮模型没上当；下一次脚本在保存中途崩掉就未必。
-        named = ", ".join(str(item) for item in files[:8])
+        named = ", ".join(str(item) for item in files[:MAX_DELIVERED_FILES])
         hint = (
             f"命令失败了，但写出了新版：{named}，已替换库里的旧版。"
             "它可能不完整：修好命令重跑，成功之前别对用户说它是交付。"
@@ -1092,7 +1093,7 @@ def _command_pointer(result, excerpt="", full_command=None):
             + hint
         )
     elif isinstance(files, list) and files:
-        named = ", ".join(str(item) for item in files[:8])
+        named = ", ".join(str(item) for item in files[:MAX_DELIVERED_FILES])
         hint = (
             f"办公文件已收回：{named}。"
             "这就是交付，不要再把文件 base64 进日志或 file_write。"
@@ -1106,13 +1107,13 @@ def _command_pointer(result, excerpt="", full_command=None):
         # 只是在看（unzip -t / ls / python3 -c 读页数）：本来就不产出文件，
         # 「本该重新生成」「不要写占位」那一段对它是噪声（_only_inspects 头注）。
         # 库里有什么、链接在哪，照样说——sr-20260924190011 缺的就是这个。
-        named = ", ".join(str(item) for item in result["officeFilesHeld"][:8])
+        named = ", ".join(str(item) for item in result["officeFilesHeld"][:MAX_DELIVERED_FILES])
         hint = f"库里的办公文件没有变：{named}。" + _download_sentence(result) + hint
     elif isinstance(result.get("officeFilesHeld"), list) and result["officeFilesHeld"]:
         # 库里的旧文件不是这条命令的产出。说成「已收回」会把一次静默失败的
         # 重新生成报成交付（2026-09-24 review）；说成「没有」又会让模型往树里
         # 写占位（sr-20260924190011）。两件事都照实说。
-        named = ", ".join(str(item) for item in result["officeFilesHeld"][:8])
+        named = ", ".join(str(item) for item in result["officeFilesHeld"][:MAX_DELIVERED_FILES])
         hint = (
             "这次命令没有产出新的办公文件。"
             f"之前的命令收回、库里还在的：{named}。"
@@ -2343,7 +2344,7 @@ class ProjectTools:
             if office:
                 # 源码清单里没有 pptx。模型把「files 里没有」读成没交付，
                 # 再往树里写占位（2026-09-24 sr-20260924190011）。
-                result["officeFiles"] = office[:8]
+                result["officeFiles"] = office[:MAX_DELIVERED_FILES]
         return result
 
     def _file_read(self, files, revision, args, project=None):

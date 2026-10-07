@@ -27,6 +27,11 @@ DELIVERABLE_KINDS = frozenset({WEB_APP, OFFICE_FILE})
 TASKS_TEMPLATE_ID = "react-vite-tasks"
 WRONG_ARTIFACT = "project_template_wrong_artifact"
 OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".xlsx"})
+#: 一条命令收回、回执里点名并给链接的交付文件最多几份——跟沙盒收集脚本（project_workspace_artifacts 的 max_files）同一个数。
+#: ⚠ 2026-10-07 真机 r103 sr-20261007203300-V6MJNJDCSG：收集上限从 8 放到 40 之后产物库收齐了 20 份，可回执的
+#:   officeFiles / officeDownloads 还在 [:8]（工作器、回执快照、给模型那句话各一处）——模型说「回执被截断」，
+#:   为拿后 12 份的链接一条条重跑命令，15 分钟耗光。数量收回来了、链接没交给模型，等于没收。
+MAX_DELIVERED_FILES = 40
 #: 纯文本交付物。跟办公文件同一条交付路（产物库 → 下载地址 → 右栏查看器），只是字节是 UTF-8 文本。
 #: ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：模型写了一份 Markdown，
 #:   办公计划只认 .pptx/.docx/.xlsx，它就落回 web-app——建 Vite 工程、开端口、跑浏览器验收（失败），

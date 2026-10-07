@@ -43,6 +43,7 @@ from services.project_manifest import content_hash
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.deliverable_kind import (
+    MAX_DELIVERED_FILES,
     WORKSPACE_TEMPLATE_VERSION,
     is_auto_collected_output,
     is_deliverable_bytes,
@@ -1093,7 +1094,7 @@ class _RuntimeTask:
                 paths.append(path)
                 _RuntimeTask._remember_download(self, path, item.get("artifactId"))
         if paths:
-            self.result["officeFilesHeld"] = paths[:8]
+            self.result["officeFilesHeld"] = paths[:MAX_DELIVERED_FILES]
             return
         self.result["officeScan"] = "failed" if failed else "empty"
 
@@ -1102,7 +1103,7 @@ class _RuntimeTask:
         if not isinstance(path, str) or not isinstance(artifact_id, str) or not artifact_id:
             return
         downloads = dict(self.result.get("officeDownloads") or {})
-        if path not in downloads and len(downloads) < 8:
+        if path not in downloads and len(downloads) < MAX_DELIVERED_FILES:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
 
@@ -1267,7 +1268,7 @@ class _RuntimeTask:
             kept = list(self.result.get(bucket) or [])
             if stored not in kept:
                 kept.append(stored)
-            self.result[bucket] = kept[:8]
+            self.result[bucket] = kept[:MAX_DELIVERED_FILES]
             # 这次新产出的文件，量一下里面到底有什么（office_facts 头注）。
             # 没变的旧文件不量：那不是这条命令的产出，上一次收回时已经量过。
             facts = None if unchanged else office_facts(payload, stored)

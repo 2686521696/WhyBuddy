@@ -52,3 +52,43 @@ def test_working_files_outside_output_are_still_not_delivered(tmp_path):
 
 def test_a_closing_that_only_links_json_is_looked_at():
     assert control._TEXT_LINK_HINT.search("[规格树](output/spec_tree.json)")
+
+
+def test_every_collected_file_reaches_the_model_with_its_link(tmp_path):
+    """收回来还得把链接交给模型：工作器收集 → 回执快照 → 给模型那句话，三处一路走真代码。
+
+    ⚠ 2026-10-07 真机 r103（同一会话，在 output/machine/ 下补 12 份 json/mmd/yaml）：产物库收齐 20 份，
+      回执三处还在 [:8]——模型说「回执被截断」，一条条重跑命令去拿后 12 份的链接，15 分钟耗光
+      （deliverable_kind.MAX_DELIVERED_FILES 头注）。
+    """
+    from types import SimpleNamespace
+
+    from services.project_office_artifacts import ProjectOfficeArtifactStore
+    from services.project_runtime_worker import _RuntimeTask
+    from services.project_store import ProjectStore
+    from services.project_tools import _command_pointer, operation_snapshot
+
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'p.db'}")
+    try:
+        made = store.create_project("s-spec", owner_id="alice", files={"README.md": "workspace"},
+                                    template_version="whybuddy-workspace-1", plan_ref="plan-1")
+        items = [{"path": "output/" + rel, "data": f"# {rel}\n".encode()} for rel in R100_OUTPUT]
+        task = SimpleNamespace(provider=SimpleNamespace(collect_office_files=lambda _h: items), handle=object(),
+                               store=store, owner_id="alice", original=SimpleNamespace(projectId=made.projectId),
+                               result={"command": "python3 gen.py", "exitCode": 0})
+        _RuntimeTask._collect_office_artifacts(task)
+        rows = ProjectOfficeArtifactStore(store).list(made.projectId, owner_id="alice")
+    finally:
+        store.close()
+    assert len(rows) == len(R100_OUTPUT)
+    operation = SimpleNamespace(operationId="pop-1", kind="runtime.exec", status="completed",
+                                expectedRevision="prv-1", cancelRequested=False, result=task.result)
+    hint = _command_pointer(operation_snapshot({"operation": operation, "lastSeq": 3}), "")["hint"]
+    for row in rows:
+        assert f"[{row['path']}](/api/sliderule/projects/{made.projectId}/artifacts/{row['artifactId']})" in hint, row["path"]
+
+
+def test_the_sandbox_cap_and_the_receipt_cap_are_one_number():
+    """§四成对：沙盒脚本是字符串，import 不到常量；数对不上就是又一处「收了没给链接」或「给了链接没收」。"""
+    from services.deliverable_kind import MAX_DELIVERED_FILES
+    assert f"max_files = {MAX_DELIVERED_FILES}\n" in ARTIFACT_IO_SCRIPT
