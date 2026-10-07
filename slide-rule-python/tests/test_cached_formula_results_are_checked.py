@@ -103,3 +103,44 @@ def test_formulas_it_cannot_read_are_skipped_not_guessed():
                     _cell("C1", 1, "C1+1"), _cell("D1", 7, "B1+1"), _cell("E1", 42, "PRODUCT(A1,2)")])
     facts = office_facts(book, "a.xlsx")
     assert facts["formulas"] == 4 and facts["formulasWrong"] == 0
+
+
+# —— 条件统计（2026-10-06 真机 r49 sr-20261007053537-V9SZN2TTQ8，@office-skills 报销记录 Excel）——
+# 夹具 reimbursement_r49.xlsx 是那一轮交付的原样：部门汇总「市场部 记录数」=COUNTIF(...) 存 2、实为 3，合计存 5、实为 6；
+# 右栏预览画 2，Excel 一重算 3。当时这一道只认 SUM 那一撮、文字一律收成 "text"，COUNTIF 量不了就不报。
+R49 = FIXTURES / "reimbursement_r49.xlsx"
+
+
+def test_the_round_r49_workbook_reports_its_wrong_counts():
+    facts = office_facts(R49.read_bytes(), "output/报销记录整理.xlsx")
+    assert facts["formulasWrong"] == 2
+    assert facts["formulasWrongSamples"] == [
+        "02-部门汇总!B2 存的是 2，按公式 COUNTIF('01-报销明细'!$E$2:$E$7,A2) 算是 3",
+        "02-部门汇总!B5 存的是 5，按公式 SUM(B2:B4) 算是 6",
+    ]
+
+
+def test_the_r49_sums_that_agree_are_not_reported():
+    """反向（同一份真文件）：SUMIF 那一列 4,960 / 356.5 / 89 跟按公式算的一致——数得出来也不许乱报。"""
+    with zipfile.ZipFile(R49) as archive:
+        wrong = _xlsx_cached_results_that_disagree(archive, archive.namelist())
+    assert not any("!C" in item for item in wrong)
+
+
+def test_conditional_counts_read_text_cells_and_comparison_criteria():
+    s = ('<c r="A{r}" t="inlineStr"><is><t>{dept}</t></is></c><c r="B{r}"><v>{amt}</v></c>')
+    rows = [("市场部", 1280), ("研发部", 356.5), ("市场部", 2400), ("行政部", 89)]
+    book = _book(明细=[s.format(r=i, dept=d, amt=a) for i, (d, a) in enumerate(rows, 1)],
+                 汇总=[_cell("A1", 9, 'COUNTIF(明细!A1:A4,"市场部")'),                 # 实为 2
+                      _cell("B1", 3680, 'SUMIF(明细!A1:A4,"市场部",明细!B1:B4)'),       # 对
+                      _cell("C1", 1, 'COUNTIFS(明细!A1:A4,"&lt;&gt;市场部",明细!B1:B4,"&gt;100")'),  # XML 里转义，同真文件  # 对（研发部 356.5）
+                      _cell("D1", 4, "COUNTA(明细!A1:A4)")])                           # 对
+    facts = office_facts(book, "a.xlsx")
+    assert facts["formulasWrongSamples"] == ['汇总!A1 存的是 9，按公式 COUNTIF(明细!A1:A4,"市场部") 算是 2']
+
+
+def test_wildcard_criteria_and_text_in_arithmetic_are_skipped():
+    """反向：通配符条件、文字参与四则运算——量不准，不报（fail-open）。"""
+    s = '<c r="A1" t="inlineStr"><is><t>市场部</t></is></c>'
+    book = _book(明细=[s], 汇总=[_cell("A1", 7, 'COUNTIF(明细!A1:A1,"市场*")'), _cell("B1", 7, "明细!A1+1")])
+    assert office_facts(book, "a.xlsx")["formulasWrong"] == 0

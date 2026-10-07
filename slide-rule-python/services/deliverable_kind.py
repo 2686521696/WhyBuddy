@@ -529,11 +529,22 @@ _SS_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _FORMULA_TOKEN = re.compile(r"""\s*(?:
     (?P<ref>(?:(?P<sheet>'(?:[^']|'')+'|[^\W\d][\w.]*)!)?\$?(?P<c1>[A-Z]{1,3})\$?(?P<r1>\d+)(?::\$?(?P<c2>[A-Z]{1,3})\$?(?P<r2>\d+))?(?![\w(]))
+  | (?P<str>"(?:[^"]|"")*")
   | (?P<num>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
   | (?P<func>[A-Z][A-Z0-9.]*)\(
   | (?P<op>[-+*/^(),])
 )""", re.X)
-_SUPPORTED_FUNCS = {"SUM", "AVERAGE", "MIN", "MAX", "COUNT", "ROUND"}
+_SUPPORTED_FUNCS = {"SUM", "AVERAGE", "MIN", "MAX", "COUNT", "ROUND",
+                    "COUNTA", "COUNTIF", "COUNTIFS", "SUMIF", "SUMIFS"}
+#: 条件里的比较符（COUNTIF 的 ">=100"、"<>市场部"）。长的在前。
+_CRITERIA_OPS = ("<>", ">=", "<=", ">", "<", "=")
+
+
+class _Other:
+    """布尔 / 错误值：既不是数也不是文字。"""
+
+
+_OTHER = _Other()
 
 
 class _Unsupported(Exception):
@@ -581,7 +592,14 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
     别的函数、文字参与运算、共享公式、循环一律跳过——量不了不报（fail-open，本仓 §七）。
     """
     parts = _xlsx_sheet_parts(archive)
-    strings_root = None
+    # ⚠ 2026-10-06 真机 r49 sr-20261007053537-V9SZN2TTQ8（@office-skills 报销记录 Excel）：部门汇总「市场部 记录数」
+    #   写的是 =COUNTIF('01-报销明细'!$E$2:$E$7,A2)，存的 2、按公式是 3（合计存 5、实为 6）——右栏预览照存的数画 2，
+    #   用户在 Excel 里一重算变 3，同一份文件两处两个数。这一道当时只认 SUM 那一撮，文字一律收成 "text"，按条件数文字的
+    #   COUNTIF / SUMIF 量不了，就不报（fail-open），模型的「公式缓存检查」也没看出来。现在留住文字本身，认条件统计。
+    shared: list[str] = []
+    if "xl/sharedStrings.xml" in names:
+        for si in ET.fromstring(archive.read("xl/sharedStrings.xml")).iter(_SS_NS + "si"):
+            shared.append("".join(t.text or "" for t in si.iter(_SS_NS + "t")))
     cells: dict[tuple[str, str], tuple[str | None, Any]] = {}
     for sheet, part in list(parts.items())[:20]:
         if part not in names:
@@ -595,23 +613,29 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
             v = c.find(_SS_NS + "v")
             kind = c.attrib.get("t", "n")
             value: Any = None
-            if v is not None and v.text is not None:
-                if kind in ("s", "str", "inlineStr"):
-                    value = "text"
+            if kind == "inlineStr":
+                value = "".join(t.text or "" for t in c.iter(_SS_NS + "t"))
+            elif v is not None and v.text is not None:
+                if kind == "s":
+                    try:
+                        value = shared[int(v.text)]
+                    except (ValueError, IndexError):
+                        value = _OTHER
+                elif kind == "str":
+                    value = v.text
                 elif kind in ("b", "e"):
-                    value = "other"
+                    value = _OTHER
                 else:
                     try:
                         value = float(v.text)
                     except ValueError:
-                        value = "other"
+                        value = _OTHER
             formula = None
             if f is not None:
                 formula = f.text if (f.text and f.attrib.get("t") not in ("array", "dataTable")) else ""
             cells[(sheet, ref)] = (formula, value)
             if len(cells) > 50000:
                 return []
-    del strings_root
     memo: dict[tuple[str, str], Any] = {}
     active: set[tuple[str, str]] = set()
 
@@ -681,10 +705,13 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
         def primary() -> Any:
             if peek("num"):
                 return float(take().group("num"))
+            if peek("str"):
+                return take().group("str")[1:-1].replace('""', '"')
             if peek("ref"):
                 m = take()
                 values = area(m)
-                return values if m.group("c2") else scalar(values[0])
+                # 单格原样交回（文字也行，条件统计要用）；参与四则运算时由 scalar() 把关。
+                return values if m.group("c2") else values[0]
             if peek("func"):
                 name = take().group("func")
                 if name not in _SUPPORTED_FUNCS:
@@ -744,14 +771,71 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
                 left = scalar(left) + right if op == "+" else scalar(left) - right
             return left
 
+        def matches(item: Any, criterion: Any) -> bool:
+            """Excel 条件：数 = 相等；文字可带比较符；不认通配符（量不准就不报）。"""
+            if isinstance(criterion, float):
+                return isinstance(item, float) and item == criterion
+            if not isinstance(criterion, str):
+                raise _Unsupported
+            op, rest = "=", criterion
+            for candidate in _CRITERIA_OPS:
+                if criterion.startswith(candidate):
+                    op, rest = candidate, criterion[len(candidate):]
+                    break
+            if "*" in rest or "?" in rest or "~" in rest:
+                raise _Unsupported
+            try:
+                number: float | None = float(rest)
+            except ValueError:
+                number = None
+            if number is not None:
+                if not isinstance(item, float):
+                    return op == "<>"
+                return {"=": item == number, "<>": item != number, ">": item > number, ">=": item >= number,
+                        "<": item < number, "<=": item <= number}[op]
+            if op not in ("=", "<>"):
+                raise _Unsupported
+            if rest == "":
+                blank = item is None or item == ""
+                return blank if op == "=" else not blank
+            same = isinstance(item, str) and item.casefold() == rest.casefold()
+            return same if op == "=" else not same
+
+        def conditional(name: str, args: list[Any]) -> float:
+            if name == "COUNTA":
+                return float(sum(1 for arg in args for item in (arg if isinstance(arg, list) else [arg])
+                                 if item is not None and item != ""))
+            if name in ("SUMIF", "COUNTIF"):
+                if len(args) not in (2, 3) or not isinstance(args[0], list) or isinstance(args[1], list):
+                    raise _Unsupported
+                if name == "COUNTIF" and len(args) != 2:
+                    raise _Unsupported
+                pairs, sums = [(args[0], args[1])], (args[2] if len(args) == 3 else args[0])
+            else:
+                first = 1 if name == "SUMIFS" else 0
+                rest = args[first:]
+                if len(rest) < 2 or len(rest) % 2 or any(isinstance(rest[i + 1], list) or not isinstance(rest[i], list)
+                                                         for i in range(0, len(rest), 2)):
+                    raise _Unsupported
+                pairs = [(rest[i], rest[i + 1]) for i in range(0, len(rest), 2)]
+                sums = args[0] if name == "SUMIFS" else pairs[0][0]
+            if not isinstance(sums, list) or any(len(rng) != len(sums) for rng, _ in pairs):
+                raise _Unsupported
+            hits = [i for i in range(len(sums)) if all(matches(rng[i], crit) for rng, crit in pairs)]
+            if name.startswith("COUNT"):
+                return float(len(hits))
+            return float(sum(sums[i] for i in hits if isinstance(sums[i], float)))
+
         def call(name: str, args: list[Any]) -> float:
+            if name in ("COUNTA", "COUNTIF", "COUNTIFS", "SUMIF", "SUMIFS"):
+                return conditional(name, args)
             numbers: list[float] = []
             for arg in args:
                 for item in (arg if isinstance(arg, list) else [arg]):
                     if isinstance(item, float):
                         numbers.append(item)
-                    elif item not in (None, "text") or not isinstance(arg, list):
-                        raise _Unsupported
+                    elif not (item is None or isinstance(item, str)) or not isinstance(arg, list):
+                        raise _Unsupported          # 区域里的文字 / 空格跳过（同 Excel）；单独传文字、布尔、错误值不认
             if name == "SUM":
                 return sum(numbers)
             if name == "COUNT":
