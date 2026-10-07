@@ -91,8 +91,22 @@ def test_the_skill_message_ends_with_checking_its_own_must_haves():
     """⚠ r43：技能把 Contrast 4.5:1 列为 CRITICAL，模型交付了 3.56:1 的白字按钮——正文末尾提醒对一遍必查项、要算的去算。"""
     message = build_skill_message(local_seed_skill_info("ui-ux-pro-max"))
     body_end = message.rindex("</skill>")
-    tail = message[body_end - 200:body_end]
+    tail = message[body_end - 400:body_end]
     assert "CRITICAL" in tail and "calculate" in tail and "sandbox_run" in tail
+
+
+def test_a_check_step_written_into_the_workflow_is_covered_too():
+    """⚠ 2026-10-07 r57–r59（@humanizer-zh）：这份技能的检查是「工作流程」第 3 步「对照原文检查改写」，没有
+    必须 / CRITICAL / checklist 任何一个标签；上一版提醒只点名标签，三遍都没对照就交，都改了确定程度、加了原文没有的话。"""
+    from services.control_skills import build_skill_message as build
+    skill = local_seed_skill_info("humanizer-zh")
+    assert "对照原文检查改写" in skill.body
+    for label in ("CRITICAL", "checklist", "必须"):           # 前提：这份技能确实一个标签都不沾
+        assert label not in skill.body
+    message = build(skill)
+    tail = message[message.rindex(skill.body[-60:]) + 60:]  # 正文之后宿主补的那段
+    assert "工作流程" in tail and "对照原文" in tail            # 提醒点到了这种写法……
+    assert "先改再交" in tail                                    # ……而且要求核对出不符就改，不是读一遍了事
 
 
 def test_reading_a_package_file_is_not_opening_another_skill():
