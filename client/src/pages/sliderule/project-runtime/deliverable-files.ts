@@ -132,3 +132,19 @@ export function parseCsv(
   if (rows.length <= maxRows && (cell !== "" || row.length > 0)) pushRow();
   return { rows: rows.slice(0, maxRows), truncated: rows.length > maxRows };
 }
+
+/**
+ * 一轮收回了几份文件时，哪一份是「主交付」：结果卡封面和右栏默认打开的都是它（两处同一个口径）。
+ * 有办公文件或图片就取其中最后收回的；只有文本才取最后一份文本。
+ *
+ * ⚠ 2026-10-07 真机 r88 sr-20261007165549-YHYGJNAB8A（@data-visualization-discipline 四店趋势图）：收回三份——
+ *   两张图表 PNG 和一份 store-sales-h1-check.txt 核验说明。原来两处都取「最后收回的」，模型最后写的是核验说明，
+ *   结果卡封面和右栏默认打开的都成了一段文字，主交付的图表要用户自己点标签才看得到。
+ */
+export function pickMainDeliverable<T>(items: readonly T[], pathOf: (item: T) => string): T | null {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const kind = deliverableKind(pathOf(items[i]));
+    if (kind && !isTextDeliverableKind(kind)) return items[i];
+  }
+  return items.length ? items[items.length - 1] : null;
+}

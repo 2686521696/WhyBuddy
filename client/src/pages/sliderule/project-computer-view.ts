@@ -17,7 +17,7 @@
 
 import { isOfficeFileDeliverable } from "./deliverable-kind";
 import { sourcePathFromActionDetail } from "./project-runtime/preview-selection-bridge";
-import { isDeliverablePath } from "./project-runtime/deliverable-files";
+import { isDeliverablePath, pickMainDeliverable } from "./project-runtime/deliverable-files";
 
 export const COMPUTER_VIEWS = [
   "computer",
@@ -421,7 +421,8 @@ export function hostPreviewChoice(input: {
   if (named && isHtmlPath(named)) return { htmlPath: named, officePath: null };
   if (named && isOfficePath(named)) return { htmlPath: null, officePath: named };
   if (!input.office) return { htmlPath: null, officePath: null };
-  const collected = [...(input.collectedOffice ?? [])].reverse().find(isOfficePath);
+  // 主交付（deliverable-files.pickMainDeliverable 头注）：跟结果卡封面同一个口径。
+  const collected = pickMainDeliverable((input.collectedOffice ?? []).filter(isOfficePath), path => path);
   if (collected) return { htmlPath: null, officePath: collected };
   const written = latestWrittenHtml(input.rows);
   if (written) return { htmlPath: written, officePath: null };

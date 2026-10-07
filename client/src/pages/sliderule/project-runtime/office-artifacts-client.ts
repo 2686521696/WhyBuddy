@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { pickMainDeliverable } from "./deliverable-files";
 
 const BASE = "/api/sliderule";
 
@@ -58,7 +59,8 @@ export function useLatestOfficeArtifact(
   refreshKey?: unknown
 ): OfficeArtifactMeta | null {
   const items = useOfficeArtifacts(projectId, refreshKey);
-  return items.length ? items[items.length - 1] : null;
+  // 主交付（pickMainDeliverable 头注）：有图 / 办公文件就不拿核验说明当封面。
+  return pickMainDeliverable(items, item => item.path);
 }
 
 /** 产物库有没有办公文件。读不到当没有（fail-closed）。 */
