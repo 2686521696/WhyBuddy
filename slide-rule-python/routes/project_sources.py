@@ -13,7 +13,7 @@ from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
 from services.project_office_artifacts import ProjectOfficeArtifactStore
-from services.deliverable_kind import deliverable_suffix
+from services.deliverable_kind import deliverable_suffix, xlsx_preview_bytes
 from services.project_creation import load_authorized_session
 from services.session_uploads import (
     MAX_UPLOAD_BYTES,
@@ -367,6 +367,12 @@ def get_session_upload(session_id: str, viewer: CurrentUser, name: str = ""):
     )
 
 
+def _for_view(data: bytes, suffix: str, view: str | None) -> bytes:
+    """?view=preview：给右栏预览 / 缩略图的字节（xlsx 补上没存的公式结果，deliverable_kind.xlsx_preview_bytes 头注）。
+    不带这个参数的是下载——原件，一个字节不动。"""
+    return xlsx_preview_bytes(data) if view == "preview" and suffix == ".xlsx" else data
+
+
 @router.get("/projects/{project_id}/artifacts")
 def list_office_artifacts(project_id: str, request: Request, response: Response, viewer: CurrentUser):
     response.headers["Cache-Control"] = "no-store"
@@ -377,12 +383,14 @@ def list_office_artifacts(project_id: str, request: Request, response: Response,
 
 
 @router.get("/projects/{project_id}/artifacts/{artifact_id}")
-def download_office_artifact(project_id: str, artifact_id: str, request: Request, viewer: CurrentUser):
+def download_office_artifact(project_id: str, artifact_id: str, request: Request, viewer: CurrentUser,
+                             view: str | None = None):
     with _service(request, viewer) as service:
         service.authority(project_id)
         meta, data = ProjectOfficeArtifactStore(service.store).get_bytes(
             project_id, artifact_id, owner_id=service.owner_id)
         suffix = deliverable_suffix(meta["path"]) or ""
+        data = _for_view(data, suffix, view)
         name = str(meta["path"]).rsplit("/", 1)[-1]
         return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -402,12 +410,13 @@ def list_office_artifact_versions(project_id: str, artifact_id: str, request: Re
 
 @router.get("/projects/{project_id}/artifacts/{artifact_id}/versions/{sha256}")
 def download_office_artifact_version(project_id: str, artifact_id: str, sha256: str, request: Request,
-                                     viewer: CurrentUser):
+                                     viewer: CurrentUser, view: str | None = None):
     with _service(request, viewer) as service:
         service.authority(project_id)
         meta, data = ProjectOfficeArtifactStore(service.store).get_version_bytes(
             project_id, artifact_id, sha256, owner_id=service.owner_id)
         suffix = deliverable_suffix(meta["path"]) or ""
+        data = _for_view(data, suffix, view)
         name = str(meta["path"]).rsplit("/", 1)[-1]
         return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",

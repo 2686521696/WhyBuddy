@@ -127,6 +127,17 @@ export function officeVersionDownloadUrl(projectId: string, artifactId: string, 
   return `${BASE}/projects/${projectId}/artifacts/${artifactId}/versions/${sha256}`;
 }
 
+/**
+ * 给**画**的那一份（右栏预览、卡片缩略图），不是给下载的：`?view=preview`。
+ *
+ * ⚠ 2026-10-07 真机 r55 / r56（报销 Excel 追问）：openpyxl 改过的表，公式的存值全空；@silurus/ooxml 只认存值，
+ *   右栏和缩略图一整列空白，Excel 打开却是对的（会重算）。宿主在这份字节里按公式补上存值
+ *   （Python deliverable_kind.xlsx_preview_bytes）；下载链接照旧是原件。
+ */
+export function officePreviewUrl(downloadUrl: string): string {
+  return `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}view=preview`;
+}
+
 export async function restoreOfficeVersion(projectId: string, artifactId: string, sha256: string): Promise<boolean> {
   const response = await fetch(
     `${BASE}/projects/${projectId}/artifacts/${artifactId}/versions/${sha256}/restore`,

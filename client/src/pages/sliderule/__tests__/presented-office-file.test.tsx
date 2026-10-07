@@ -184,7 +184,7 @@ describe("PresentedOfficeFile", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    const downloads = () => calls.filter(url => url.endsWith("/art-1")).length;
+    const downloads = () => calls.filter(url => url.endsWith("/art-1?view=preview")).length;
     expect(downloads()).toBe(1);
     await act(async () => {
       root!.render(

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   listOfficeArtifacts,
   officeArtifactDownloadUrl,
+  officePreviewUrl,
   officeVersionDownloadUrl,
 } from "./office-artifacts-client";
 import {
@@ -58,9 +59,11 @@ export function PresentedOfficeFile({
           return;
         }
         const response = await fetch(
-          versionSha
-            ? officeVersionDownloadUrl(projectId, match.artifactId, versionSha)
-            : officeArtifactDownloadUrl(projectId, match.artifactId),
+          officePreviewUrl(
+            versionSha
+              ? officeVersionDownloadUrl(projectId, match.artifactId, versionSha)
+              : officeArtifactDownloadUrl(projectId, match.artifactId)
+          ),
           { credentials: "include", cache: "no-store", signal: ac.signal }
         );
         if (!response.ok) throw new Error("missing");

@@ -60,7 +60,7 @@ function stubFetch(files: { artifactId: string; path: string }[]) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).split("?")[0];   // 预览取字节带 ?view=preview（xlsx 补存值）
       if (url.endsWith("/artifacts"))
         return new Response(JSON.stringify({ files: files.map(f => ({ ...f, sha256: "s", sizeBytes: 1 })) }), {
           status: 200,
@@ -122,7 +122,7 @@ describe("收尾那句话里才交出的文件", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = String(input).split("?")[0];   // 预览取字节带 ?view=preview（xlsx 补存值）
         if (url.endsWith("/artifacts"))
           return new Response(JSON.stringify({ files: delivered.map(f => ({ ...f, sha256: "s", sizeBytes: 1 })) }), {
             status: 200, headers: { "content-type": "application/json" },

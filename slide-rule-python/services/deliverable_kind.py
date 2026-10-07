@@ -579,17 +579,11 @@ def _xlsx_sheet_parts(archive: zipfile.ZipFile) -> dict[str, str]:
     return parts
 
 
-def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
-    """存进文件的公式结果，和按公式重算出来的对不上的：「表!格 存的是 X，按公式算是 Y」。
+def _xlsx_evaluator(archive: zipfile.ZipFile, names: list[str]):
+    """读进全部单元格，给出「按公式算这一格」的函数：(cells, cell_value)。量不了的公式 cell_value 抛 _Unsupported。
 
-    ⚠ 2026-09-30 隔离真机第 155 轮（工作室年度预算 Excel）：第 148 轮之后回执教模型「用 XlsxWriter
-      write_formula 把算好的值一起写」，结果从「空白」变成了「错数」——季度汇总 Q4 写的是
-      SUM('月度明细'!D16:D19)（四个季度都按 4 个月切，Q4 落到年度合计行），存的值是 0（XlsxWriter
-      不给值时的默认）；年度合计 580,400 只加了前三季。右栏预览和缩略图照着存的数画，用户看到的是错的，
-      模型的校验只数了「公式在不在」。宿主手里有字节，能核的就核。
-
-    只认最常见的一小撮：单元格、区域、+ - * / ^、SUM / AVERAGE / MIN / MAX / COUNT / ROUND。
-    别的函数、文字参与运算、共享公式、循环一律跳过——量不了不报（fail-open，本仓 §七）。
+    从 _xlsx_cached_results_that_disagree 里拆出来（2026-10-07）：存值核对和预览补值（_xlsx_computed_formula_values）
+    用同一把尺子，别再抄一份算法（§四）。超过 5 万格返回 (None, None)。
     """
     parts = _xlsx_sheet_parts(archive)
     # ⚠ 2026-10-06 真机 r49 sr-20261007053537-V9SZN2TTQ8（@office-skills 报销记录 Excel）：部门汇总「市场部 记录数」
@@ -635,7 +629,7 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
                 formula = f.text if (f.text and f.attrib.get("t") not in ("array", "dataTable")) else ""
             cells[(sheet, ref)] = (formula, value)
             if len(cells) > 50000:
-                return []
+                return None, None
     memo: dict[tuple[str, str], Any] = {}
     active: set[tuple[str, str]] = set()
 
@@ -855,6 +849,25 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
             raise _Unsupported
         return scalar(result)
 
+    return cells, cell_value
+
+
+def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """存进文件的公式结果，和按公式重算出来的对不上的：「表!格 存的是 X，按公式算是 Y」。
+
+    ⚠ 2026-09-30 隔离真机第 155 轮（工作室年度预算 Excel）：第 148 轮之后回执教模型「用 XlsxWriter
+      write_formula 把算好的值一起写」，结果从「空白」变成了「错数」——季度汇总 Q4 写的是
+      SUM('月度明细'!D16:D19)（四个季度都按 4 个月切，Q4 落到年度合计行），存的值是 0（XlsxWriter
+      不给值时的默认）；年度合计 580,400 只加了前三季。右栏预览和缩略图照着存的数画，用户看到的是错的，
+      模型的校验只数了「公式在不在」。宿主手里有字节，能核的就核。
+
+    只认最常见的一小撮：单元格、区域、+ - * / ^、SUM / AVERAGE / MIN / MAX / COUNT / ROUND。
+    别的函数、文字参与运算、共享公式、循环一律跳过——量不了不报（fail-open，本仓 §七）。
+    """
+    cells, cell_value = _xlsx_evaluator(archive, names)
+    if cells is None:
+        return []
+
     def shown(x: float) -> str:
         return f"{x:,.0f}" if abs(x - round(x)) < 1e-9 else f"{x:,.2f}"
 
@@ -869,6 +882,86 @@ def _xlsx_cached_results_that_disagree(archive: zipfile.ZipFile, names: list[str
         if abs(actual - cached) > max(0.005, 1e-6 * abs(actual)):
             found.append(f"{sheet}!{ref} 存的是 {shown(cached)}，按公式 {formula} 算是 {shown(actual)}")
     return found
+
+
+#: 一格拆成（属性, 里面）。⚠ 别叫 _XLSX_CELL——那个名字上面已经有了（整格，office_facts 数公式用），第一版同名把它
+#: 盖了，公式全数成 0。
+_XLSX_CELL_PARTS = re.compile(rb"<c\b([^>]*)>(.*?)</c>", re.S)
+_XLSX_EMPTY_V = re.compile(rb"<v\s*/>|<v>\s*</v>")
+
+
+def xlsx_preview_bytes(data: bytes) -> bytes:
+    """给右栏预览 / 卡片缩略图的那一份：没存结果的公式格，按公式算出来的数写进 <v>。下载的原件不走这里。
+
+    ⚠ 2026-10-07 真机 r55 / r56 sr-20261007062152-HKXEC83K48：openpyxl 改过的报销表，汇总页 12 个公式的 <v> 全空。
+      右栏预览（PresentedOfficeFile）和缩略图（OfficeThumbnail）是浏览器里 @silurus/ooxml 直接画文件字节、只认存的
+      结果——第一版把补算接在 office_preview_payload 上，那条是库里存的 JSON 预览，**不是用户看的这两处**（§一）。
+      预览要的是字节，就在给预览的字节上补；Excel 打开本来就会重算，补的数跟它算的同一套口径（_xlsx_evaluator）。
+    增强项：算不了的格子照旧空着；任何一步出错原样返回（§七 fail-open）。
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(bytes(data))) as archive:
+            names = archive.namelist()
+            computed = _xlsx_computed_formula_values(archive, names)
+            if not computed:
+                return data
+            parts = _xlsx_sheet_parts(archive)
+            patched: dict[str, bytes] = {}
+            for sheet, part in parts.items():
+                wanted = {ref: value for (name, ref), value in computed.items() if name == sheet}
+                if not wanted or part not in names:
+                    continue
+                xml = archive.read(part)
+
+                def fill(match: re.Match, wanted=wanted) -> bytes:
+                    attrs, body = match.group(1), match.group(2)
+                    ref = re.search(rb'\br="([A-Z]{1,3}\d+)"', attrs)
+                    key = ref.group(1).decode() if ref else ""
+                    if key not in wanted or b"<f" not in body:
+                        return match.group(0)
+                    value = _preview_number(wanted[key]).encode()
+                    attrs = re.sub(rb'\st="[^"]*"', b"", attrs)          # 补的是数，别留着 t="str"
+                    if _XLSX_EMPTY_V.search(body):
+                        body = _XLSX_EMPTY_V.sub(b"<v>" + value + b"</v>", body, count=1)
+                    elif b"<v>" not in body:
+                        body = re.sub(rb"(</f>|<f\b[^>]*/>)", lambda m: m.group(1) + b"<v>" + value + b"</v>", body, count=1)
+                    else:
+                        return match.group(0)
+                    return b"<c" + attrs + b">" + body + b"</c>"
+                patched[part] = _XLSX_CELL_PARTS.sub(fill, xml)
+            if not patched:
+                return data
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
+                for info in archive.infolist():
+                    target.writestr(info, patched.get(info.filename, archive.read(info.filename)))
+            return out.getvalue()
+    except Exception:
+        return data
+
+
+def _xlsx_computed_formula_values(archive: zipfile.ZipFile, names: list[str]) -> dict[tuple[str, str], float]:
+    """没存结果的公式格，按公式算出来的数：{(表名, 格): 值}。量不了的不给（预览照旧空着，fail-open）。
+
+    ⚠ 2026-10-07 真机 r55 / r56 sr-20261007062152-HKXEC83K48（报销 Excel 追问）：模型 openpyxl load→改→save，汇总页
+      12 个公式的结果全丢。用户在 Excel 里打开会重算、数是对的；空的只是我们自己的右栏预览和结果卡缩略图——它们照着存的
+      <v> 画。回执每轮都说「交付前补上」，可用户一句「其他不要动」，模型就不碰（指令冲突，它选了用户）。预览是宿主画的，
+      宿主手里有公式和计算器，能算的就自己算出来画，不靠模型每次记得换 XlsxWriter。文件字节一个不动。
+    """
+    cells, cell_value = _xlsx_evaluator(archive, names)
+    if cells is None:
+        return {}
+    out: dict[tuple[str, str], float] = {}
+    for (sheet, ref), (formula, cached) in cells.items():
+        if not formula or cached is not None:
+            continue
+        try:
+            value = cell_value(sheet, ref)
+        except (_Unsupported, RecursionError, OverflowError, ValueError):
+            continue
+        if isinstance(value, float):
+            out[(sheet, ref)] = value
+    return out
 
 
 _DOCX_TOC_FIELD = re.compile(rb'(?:<w:instrText[^>]*>\s*TOC\b|w:instr="\s*TOC\b)')
@@ -992,8 +1085,12 @@ def office_facts_sentence(path: str, facts: Mapping[str, Any]) -> str:
         # ⚠ 第 149 轮（班级成绩 Excel + 「加一列排名」）：第一版这句写着「用户在 Excel 里打开会重算」，
         #   两轮回执都挂上了（20/20、30/30 没结果），模型两轮都读完就收尾、照旧用 openpyxl——那半句
         #   等于告诉它「不用管」。现在只说用户第一眼看到什么、交付前怎么补，不给台阶。
+        # ⚠ 2026-10-07 r55 / r56：右栏预览和缩略图改成画「宿主补过存值」的那份（xlsx_preview_bytes），本平台里不再是空白，
+        #   这句不能再说「用户第一眼看到空白」——宿主不许说假话。但文件本身仍没存结果：用户下载后在手机文件预览、
+        #   邮件附件预览、WPS 只读模式里看到的还是空格子。照实说在哪儿空，补法不变。
         note += (f"，公式 {facts.get('formulas', uncached)} 个里 {uncached} 个没有算好的结果"
-                 "（用户在右侧预览和结果卡缩略图里第一眼看到的这些格子是空白——总分、合计、排名都是空的。"
+                 "（文件里这些格子没存结果：用户下载后在手机文件预览、邮件附件预览、WPS 只读里看到的是空白——"
+                 "总分、合计、排名都是空的；本平台右栏是宿主按公式补算出来画的，不代表文件里有。"
                  "交付前补上：openpyxl 存不了结果；改用 XlsxWriter，"
                  "worksheet.write_formula(单元格, 公式, 格式, 值) 把 Python 算好的值一起写进去，公式照样保留）")
     wrong = int(facts.get("formulasWrong") or 0)
@@ -1293,11 +1390,20 @@ def office_preview_payload(data: bytes, path: Any) -> dict[str, Any] | None:
                     return None
                 strings = _shared_strings(archive)
                 titles = _sheet_names(archive)
+                try:
+                    computed = _xlsx_computed_formula_values(archive, names)   # 增强项：算不了就空着（§七）
+                except Exception:
+                    computed = {}
+                try:
+                    by_part = {part: title for title, part in _xlsx_sheet_parts(archive).items()}
+                except Exception:
+                    by_part = {}
                 sheets = []
                 for index, name in enumerate(files):
                     xml = archive.read(name).decode("utf-8", "replace")
-                    title = titles[index] if index < len(titles) else f"Sheet{index + 1}"
-                    sheets.append({"name": title, "rows": _sheet_rows(xml, strings)})
+                    title = by_part.get(name) or (titles[index] if index < len(titles) else f"Sheet{index + 1}")
+                    filled = {ref: value for (sheet, ref), value in computed.items() if sheet == title}
+                    sheets.append({"name": title, "rows": _sheet_rows(xml, strings, filled)})
                 return {"kind": "workbook", "sheetCount": len(sheets), "sheets": sheets}
     except (zipfile.BadZipFile, KeyError, ValueError, OSError):
         return None
@@ -1370,18 +1476,40 @@ def _shared_strings(archive: zipfile.ZipFile) -> list[str]:
     return strings
 
 
-def _sheet_rows(xml: str, strings: list[str]) -> list[list[str]]:
+_CELL_REF = re.compile(r"^([A-Z]{1,3})(\d+)$")
+PREVIEW_COLUMNS = 12
+PREVIEW_ROWS = 40
+
+
+def _preview_number(value: float) -> str:
+    """补出来的数照「存的结果」那样写：整数不带 .0，其余去掉浮点尾巴。"""
+    rounded = round(value, 10)
+    return str(int(rounded)) if rounded == int(rounded) and abs(rounded) < 1e15 else repr(rounded)
+
+
+def _sheet_rows(xml: str, strings: list[str], computed: dict[str, float] | None = None) -> list[list[str]]:
+    """右栏预览的一张表：每行按**列坐标**放格子；公式没存结果的，用宿主算出来的数补（computed，可空）。
+
+    ⚠ 2026-10-07 真机 r56 sr-20261007062152-HKXEC83K48：日志表新加的一行只有 A6（空）和 E6（文字），原来不看 r 属性、
+      按出现顺序挨着排，E 列那句话画到了 B 列——一行里只要中间缺格，后面全往左挪。
+    """
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
         return []
+    computed = computed or {}
     rows = []
     for row in root.iter():
         if _xml_local(row.tag) != "row":
             continue
-        cells = []
+        cells: list[str] = []
         for cell in list(row):
             if _xml_local(cell.tag) != "c":
+                continue
+            ref = cell.attrib.get("r", "")
+            match = _CELL_REF.match(ref)
+            column = _col_number(match.group(1)) - 1 if match else len(cells)
+            if column >= PREVIEW_COLUMNS:
                 continue
             raw = ""
             for node in cell.iter():
@@ -1394,11 +1522,16 @@ def _sheet_rows(xml: str, strings: list[str]) -> list[list[str]]:
                     raw = strings[int(raw)]
                 except (ValueError, IndexError):
                     raw = ""
-            cells.append(raw)
-            if len(cells) >= 12:
-                break
+            if not raw and ref in computed:
+                raw = _preview_number(computed[ref])
+            while len(cells) < column:
+                cells.append("")
+            if len(cells) == column:
+                cells.append(raw)
+            else:
+                cells[column] = raw
         if any(item.strip() for item in cells):
             rows.append(cells)
-        if len(rows) >= 40:
+        if len(rows) >= PREVIEW_ROWS:
             break
     return rows

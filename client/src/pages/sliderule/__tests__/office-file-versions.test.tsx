@@ -81,7 +81,7 @@ describe("办公文件版本切换", () => {
       select()!.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settle();
-    expect(calls).toContain(`GET /api/sliderule/projects/p1/artifacts/art-doc/versions/${V1}`);
+    expect(calls).toContain(`GET /api/sliderule/projects/p1/artifacts/art-doc/versions/${V1}?view=preview`);   // 预览取的是补过存值的字节
     expect(container?.querySelector('[data-testid="office-old-version-banner"]')?.textContent).toContain("第 1 版（旧版本）");
   });
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { decodeTextDeliverable, deliverableKind, isTextDeliverableKind } from "./deliverable-files";
 import { TextDeliverableView } from "./TextDeliverableView";
-import { listOfficeArtifacts, officeArtifactDownloadUrl } from "./office-artifacts-client";
+import { listOfficeArtifacts, officeArtifactDownloadUrl, officePreviewUrl } from "./office-artifacts-client";
 import { useInViewOnce } from "./useInViewOnce";
 
 /**
@@ -249,7 +249,7 @@ export function OfficeThumbnail({
         if (!match) throw new Error("missing");
         id = match.artifactId;
       }
-      const res = await fetch(officeArtifactDownloadUrl(projectId, id), {
+      const res = await fetch(officePreviewUrl(officeArtifactDownloadUrl(projectId, id)), {
         credentials: "include",
         cache: "no-store",
         signal: ac.signal,
