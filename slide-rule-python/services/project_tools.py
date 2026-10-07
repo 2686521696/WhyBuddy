@@ -1001,8 +1001,14 @@ def _office_facts_sentence(result) -> str:
 _FACT_NAMES = (("slides", "页数"), ("sheets", "工作表"), ("charts", "原生图表"), ("pictures", "图片"),
                ("tables", "原生表格"), ("pivotTables", "数据透视表"),
                ("listDoubleMarked", "带双重记号的列表段落"), ("textInvisible", "和底色同色的文字"),
-               ("formulasWrong", "结果对不上的公式"), ("tocEmpty", "空目录"), ("tocDisordered", "顺序不对的目录"),
+               ("formulasWrong", "结果对不上的公式"), ("formulasUncached", "没有算好结果的公式"),
+               ("tocEmpty", "空目录"), ("tocDisordered", "顺序不对的目录"),
                ("literalNewlines", "字面 \\n 的文字"), ("chartSeriesFlat", "被压成平线的图表系列"))
+
+
+#: 越多越糟的那几项（不是「多了一页 / 一张图」那种中性变化）。
+_DEFECT_FACTS = frozenset({"formulasWrong", "formulasUncached", "listDoubleMarked", "textInvisible", "tocEmpty",
+                           "tocDisordered", "literalNewlines", "chartSeriesFlat"})
 
 
 def _facts_delta(previous, current) -> str:
@@ -1011,8 +1017,15 @@ def _facts_delta(previous, current) -> str:
         return ""
     moved = [f"{name} {previous.get(key, 0)}→{current.get(key, 0)}" for key, name in _FACT_NAMES
              if (key in previous or key in current) and previous.get(key, 0) != current.get(key, 0)]
+    # ⚠ 2026-10-07 真机 r55 sr-20261007062152-HKXEC83K48（报销 Excel 追问：改两格说明，其他不要动）：模型 openpyxl
+    #   load→改两格→save，12 个公式的结果全丢（openpyxl 存不了结果）。回执前半句说「12 个没有算好的结果」，后半句这里却说
+    #   「和上一版比：这些数一个都没变」——清单里没有 formulasUncached。模型信了后半句，收尾「其他单元格、公式及格式均未
+    #   变化」，用户在预览里看到一列空白。毛病类的数比上一版多了，就是这次改出来的，点名。
+    worse = [name for key, name in _FACT_NAMES
+             if key in _DEFECT_FACTS and int(current.get(key, 0) or 0) > int(previous.get(key, 0) or 0)]
     if moved:
-        return "（和上一版比：" + "，".join(moved) + "；其余没变）"
+        regress = ("——" + "、".join(worse) + "是这次改出来的（上一版没有这么多），交付前修好，别说成「没变」") if worse else ""
+        return "（和上一版比：" + "，".join(moved) + "；其余没变" + regress + "）"
     return "（和上一版比：这些数一个都没变——没多出来的东西别说成新增）"
 
 
