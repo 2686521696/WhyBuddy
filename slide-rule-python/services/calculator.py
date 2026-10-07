@@ -107,3 +107,32 @@ def calculate(lines: Any) -> Dict[str, Any]:
         shown = raw.split("=", 1)[0].strip() if label else None   # 标签照模型原样（全角括号不换）
         results.append({"expr": raw, **({"name": shown} if shown else {}), "value": value})
     return {"ok": True, "results": results}
+
+
+SUMMARY_CHARS = 230    # 会话日志一行最多 240 字（control_transcript_log._MAX），留出「共 N 行」
+
+
+def _shown(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def calculation_summary(result: Dict[str, Any]) -> str:
+    """轨迹里那一行：每个算式连同结果，不只第一行算式。
+
+    ⚠ 2026-10-07 真机 r63 sr-20261007092152-4FEMGR7D2N（@kpi-dashboard-design SaaS 经营看板）：回答里摆了 MRR 增长、
+      流失率、CAC、ARPA、LTV/CAC 八个数，轨迹展开只有一行「计算 MRR增长率 = (86.4-79.2)/79.2*100」——没有结果，
+      也看不出其余七个数是这一发算的还是心算的。上一版开场摘要只取第一行算式，结果事件里根本不带摘要。
+      calculate 是同步的：先算完，开场就把「标签 = 结果」逐行写上。
+    """
+    rows = [f"{row.get('name') or row.get('expr')} = {_shown(row.get('value'))}" for row in result.get("results") or []]
+    if not result.get("ok"):
+        rows.append(f"✗ {result.get('error') or '算不出来'}")
+    out = ""
+    for index, row in enumerate(rows):
+        piece = row if not out else f"；{row}"
+        if len(out) + len(piece) > SUMMARY_CHARS:
+            return f"{out}…（共 {len(rows)} 行）"
+        out += piece
+    return out

@@ -79,3 +79,28 @@ def test_a_label_that_is_not_a_name_still_gets_computed():
     assert out["ok"] and [r["value"] for r in out["results"]] == [1366272, 3.76, 45.12]
     assert out["results"][0]["name"] == "三年累计现金流（扣初始投资）"
     assert calculate(["a == 1"])["ok"] is False                      # 比较不是赋值
+
+
+def test_the_trace_shows_every_line_with_its_result(monkeypatch):
+    """⚠ 2026-10-07 真机 r63（@kpi-dashboard-design）：轨迹展开只有「计算 MRR增长率 = (86.4-79.2)/79.2*100」——第一行算式、
+    没有结果，看不出回答里其余七个数是不是这一发算的。走真回合，开场事件经产线的落盘函数，看会话日志里那一行。"""
+    from services.control_transcript_log import tool_transcript_entry
+    _seen, events = _planning_turn(monkeypatch, [
+        llm_tool("calculate", {"lines": R33}, call_id="calc-1"), llm_text("算完了。")])
+    start = next(e for e in events if e.get("type") == "control_tool_start" and e.get("tool") == "calculate")
+    row = tool_transcript_entry(start)["summary"]
+    assert "月贡献 = 3.76" in row and "回本月 = 11.9681" in row and "136.6272" in row   # 每行、带结果
+    assert "12*(1-32%)" not in row                                                     # 反向：不是原样抄算式
+
+
+def test_a_long_calculation_is_cut_with_a_count_not_silently():
+    from services.calculator import calculation_summary
+    from services.control_transcript_log import _MAX
+    summary = calculation_summary(calculate([f"第{i}项 = {i}*1.5" for i in range(1, 41)]))
+    assert len(summary) <= _MAX and summary.endswith("（共 40 行）") and "第1项 = 1.5" in summary
+
+
+def test_a_failed_line_is_in_the_trace():
+    from services.calculator import calculation_summary
+    summary = calculation_summary(calculate(["a = 2*3", "b = a/0"]))
+    assert summary.startswith("a = 6") and "除以 0" in summary

@@ -89,7 +89,7 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.subagent import document_text as subagent_document_text, run_subagent
-from services.calculator import calculate
+from services.calculator import calculate, calculation_summary
 from services.scratch_sandbox import ScratchSandboxes
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
@@ -7044,9 +7044,9 @@ async def _dispatch_tool(
         yield {"type": "control_tool_result", "tool": name, **result}
         return
     if name == "calculate":
-        lines = args.get("lines")
-        yield tool_start_event(name, summary=str((lines or [""])[0] if isinstance(lines, list) else lines or "")[:80])
-        yield {"type": "control_tool_result", "tool": name, **calculate(lines)}
+        result = calculate(args.get("lines"))
+        yield tool_start_event(name, summary=calculation_summary(result))   # 每行带结果，不只第一行算式（r63）
+        yield {"type": "control_tool_result", "tool": name, **result}
         return
     if name in ("remember", "recall"):
         yield {"type": "control_tool_start", "tool": name}
