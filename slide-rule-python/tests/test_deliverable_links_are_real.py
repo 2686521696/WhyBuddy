@@ -177,3 +177,27 @@ def test_a_link_the_host_did_not_give_is_not_judged():
     """反向：不是宿主给的地址（外链），不拿它的文字对格式。"""
     text = "[PDF 版说明](https://example.com/guide.docx)"
     assert rewrite_deliverable_links(text, ROUND131_DOWNLOADS) == text
+
+
+# —— 抄错了 art-id 的 /api/ 链接（2026-10-07 真机 r52 sr-20261007065206-968KDGMNFE，新员工入职须知 Word）——
+# 收尾原文里的链接：真 id 末位 e 被抄掉了。它以 /api/ 开头，原来一律放过，用户点了 404。
+R52_PID = "prj-d122412d222b5090b10300fb777b47d4"
+R52_REAL = f"/api/sliderule/projects/{R52_PID}/artifacts/art-04e96121ed102f16723ad25f9cf3e6234a102f8e"
+R52_TEXT = (f"[下载《新员工入职须知.docx》](/api/sliderule/projects/{R52_PID}/artifacts/"
+            "art-04e96121ed102f16723ad25f9cf3e6234a102f8)\n\n由于环境未安装 LibreOffice，未进行 PDF 或图片渲染检查。")
+
+
+def test_an_artifact_id_copied_with_a_missing_character_is_repaired():
+    out = rewrite_deliverable_links(R52_TEXT, {"output/新员工入职须知.docx": R52_REAL})
+    assert f"]({R52_REAL})" in out and "102f8)" not in out
+
+
+def test_artifact_links_are_not_guessed_when_unsure():
+    """反向：对的不动；别的工程不动；两个都差不多不动；差太多不动。"""
+    other = f"/api/sliderule/projects/{R52_PID}/artifacts/art-04e96121ed102f16723ad25f9cf3e6234a102f8a"
+    assert rewrite_deliverable_links(f"[a]({R52_REAL})", {"output/a.docx": R52_REAL}) == f"[a]({R52_REAL})"
+    foreign = "[a](/api/sliderule/projects/prj-other/artifacts/art-04e96121ed102f16723ad25f9cf3e6234a102f8)"
+    assert rewrite_deliverable_links(foreign, {"output/a.docx": R52_REAL}) == foreign
+    assert rewrite_deliverable_links(R52_TEXT, {"output/a.docx": R52_REAL, "output/b.docx": other}) == R52_TEXT
+    far = f"[a](/api/sliderule/projects/{R52_PID}/artifacts/art-ffffffffff)"
+    assert rewrite_deliverable_links(far, {"output/a.docx": R52_REAL}) == far

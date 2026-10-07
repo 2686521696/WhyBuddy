@@ -477,6 +477,44 @@ def linked_text_deliverables(text: str, files: Mapping[str, str]) -> list[str]:
     return found[:8]
 
 
+_ARTIFACT_URL = re.compile(r"^(/api/sliderule/projects/[^/]+/artifacts/)(art-[0-9a-f]+)$")
+
+
+def _edit_distance(a: str, b: str, cap: int) -> int:
+    """编辑距离，超过 cap 就提前收手（只用来认「抄错一两个字符」）。"""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+        if min(cur) > cap:
+            return cap + 1
+        prev = cur
+    return prev[-1]
+
+
+def _near_known_artifact(target: str, known: set[str]) -> str | None:
+    """同一工程的产物地址、art-id 抄错一两个字符（漏一位 / 多一位 / 错一位）→ 那一个真地址；不唯一或差太多 → None。
+
+    ⚠ 2026-10-07 真机 r52 sr-20261007065206-968KDGMNFE（新员工入职须知 Word）：收尾链接是
+      /api/sliderule/projects/prj-d122…/artifacts/art-04e9…102f8，真 id 是 …102f8e——模型抄掉了最后一位。
+      它以 /api/ 开头，下一句 _USABLE_TARGET 原样放过，用户点了 404。宿主手里有真地址，同一工程里**只有一个**
+      跟它差 ≤3 个字符的才换（id 是 40 位随机十六进制，两个真 id 差 ≤3 位几乎不可能），不唯一就不动，不猜。
+    """
+    m = _ARTIFACT_URL.match(target)
+    if not m:
+        return None
+    prefix, wrong = m.group(1), m.group(2)
+    near = []
+    for url in known:
+        k = _ARTIFACT_URL.match(url)
+        if k and k.group(1) == prefix and _edit_distance(wrong, k.group(2), 3) <= 3:
+            near.append(url)
+    return near[0] if len(near) == 1 else None
+
+
 def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
     """模型给用户的话里，指向办公文件的假地址换成宿主给的真下载地址。
 
@@ -517,6 +555,10 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
             rebuilt = "/" + split.netloc + split.path
             if rebuilt in known:
                 return f"[{label}]({rebuilt})"
+        if target.startswith("/api/") and target not in known:
+            near = _near_known_artifact(target, known)
+            if near:
+                return f"[{label}]({near})"
         if _USABLE_TARGET.match(target):
             return match.group(0)
         # ⚠ 2026-09-27 隔离真机第 68 轮 sr-20260927200602-F9YJD14NHC（门店销售 Excel 追问
