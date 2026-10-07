@@ -768,6 +768,7 @@ class _RuntimeTask:
             self._synced_hashes = ({name: content_hash(text) for name, text in files.items() if isinstance(text, str)}
                                    if skip_install else None)
             self._mount_session_uploads()
+            self._mount_delivered_files()
             if not reused:
                 # ⚠ 2026-09-28 隔离真机第 78 轮 sr-20260928004742-PZZS967DE4（@office-skills 做新品发布会 PPT，追问
                 #   「用 office-skills 自带的校验脚本再检查一遍」）：技能工具描述写着「技能目录在
@@ -1003,6 +1004,54 @@ class _RuntimeTask:
                 self.supervisor._mounted_uploads[sandbox_id] = mounted
         if skipped:
             self.result["uploadsSkipped"] = skipped[:8]
+
+    def _mount_delivered_files(self) -> None:
+        """本工程已经交付过的文件（产物库里的），按原路径放回沙盒——追问要在原文件上改。
+
+        ⚠ 2026-10-07 真机 r53 sr-20261007065206-968KDGMNFE（「新员工入职须知」Word 追问：第一周改成五天、去掉一个冒号、
+          其他不要动）：上一轮是 heredoc 里直接 python 生成的 docx，源码里没有脚本，文件只在产物库。沙盒回收后新起的这台只有
+          源码——模型 find、python-docx 打开、make_manus_page 轮番找不到原件，最后「按原文档结构重新生成」，整份重写：
+          欢迎语、报到流程四条、材料清单都变了，收尾还说「其他内容保持不变」。r35 的 PPT 追问能定点改，是因为生成脚本
+          在源码里。原件在不在沙盒里，不该取决于上一轮恰好怎么生成的。
+
+        同 _mount_session_uploads：按文件 fail-open，放不进去的记进 deliveredSkipped 随回执交给模型（不静默）；
+        同一台沙盒里 sha256 没变的不再重推（不会拿产物库的旧版盖掉沙盒里刚改、还没收回的那份——收回之后 sha 才变）。
+        """
+        try:
+            rows = ProjectOfficeArtifactStore(self.store).list(self.original.projectId, owner_id=self.owner_id)
+        except Exception:
+            logger.warning("delivered file listing failed", exc_info=True)
+            return
+        if not rows:
+            return
+        writer = getattr(self.provider, "write_file_bytes", None)
+        if writer is None:
+            return
+        sandbox_id = str(getattr(self.handle, "sandbox_id", "") or "")
+        with self.supervisor._lock:
+            mounted = dict(self.supervisor._mounted_uploads.get(sandbox_id, {}))
+        skipped: list[str] = []
+        store = ProjectOfficeArtifactStore(self.store)
+        for row in rows:
+            path, sha = str(row.get("path") or ""), str(row.get("sha256") or "")
+            key = "delivered:" + path
+            if not path or (sandbox_id and mounted.get(key) == sha):
+                continue
+            try:
+                _meta, data = store.get_bytes(self.original.projectId, str(row["artifactId"]), owner_id=self.owner_id)
+                writer(self.handle, path, data)
+            except Exception:
+                logger.warning("delivered file mount failed path=%s", path, exc_info=True)
+                skipped.append(path)
+                continue
+            mounted[key] = sha
+        if sandbox_id:
+            with self.supervisor._lock:
+                if len(self.supervisor._mounted_uploads) >= 64 and sandbox_id not in self.supervisor._mounted_uploads:
+                    self.supervisor._mounted_uploads.pop(next(iter(self.supervisor._mounted_uploads)))
+                self.supervisor._mounted_uploads[sandbox_id] = mounted
+        if skipped:
+            self.result["deliveredSkipped"] = skipped[:8]
 
     def _office_scan_is_a_command_fact(self) -> bool:
         # 用类上的函数调用：收集测试把 SimpleNamespace 当 self 传进来，

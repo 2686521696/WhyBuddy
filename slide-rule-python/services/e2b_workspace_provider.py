@@ -629,6 +629,20 @@ class E2BWorkspaceProvider:
         except Exception as exc:
             raise WorkspaceProviderError("session_upload_mount_failed") from exc
 
+    def write_file_bytes(self, handle: WorkspaceHandle, path: str, data: bytes) -> None:
+        """二进制文件写回工作区里的相对路径（output/报告.docx）。给「已交付的文件放回沙盒」用（worker 头注）。"""
+        rel = str(path or "").replace("\\", "/")
+        parts = rel.split("/")
+        if (not rel or len(rel) > 240 or rel.startswith("/") or re.search(r"[:\x00-\x1f\x7f]", rel)
+                or any(part in ("", ".", "..") for part in parts)):
+            raise ValueError("artifact_path_invalid")
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            raise ValueError("artifact_bytes_invalid")
+        try:
+            self._sandbox(handle).files.write(f"{PROJECT_ROOT}/{rel}", bytes(data))
+        except Exception as exc:
+            raise WorkspaceProviderError("artifact_mount_failed") from exc
+
     def _artifact_io(self, handle, action, **values):
         try:
             payload = json.dumps({"action": action, "root": PROJECT_ROOT, **values})
