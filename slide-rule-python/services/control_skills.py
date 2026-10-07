@@ -42,8 +42,6 @@ class SkillInfo:
     enabled: bool = True
     #: 包里给人看的文件（PDF / 图片，相对技能根）。模型读不了正文，只能给用户链接（skill_asset_url）。
     assets: tuple[str, ...] = ()
-    #: 包里的其它文本文件（相对技能根，不含 SKILL.md / LICENSE）。没有沙盒时模型看不到目录，靠这份清单知道能读什么。
-    files: tuple[str, ...] = ()
 
 
 def normalize_skill_name(name: str) -> str:
@@ -157,7 +155,7 @@ def build_skill_message(skill: SkillInfo, args: str | None = None) -> str:
         f'<skill name="{_xml_escape(skill.name)}" '
         f'description="{_xml_escape(skill.description)}" '
         f'path="{_xml_escape(skill.path)}"{extra}>\n'
-        f"{lead}{_files_note(skill)}{_assets_note(skill)}{_resolve_dir_placeholders(skill.body, skill.name, base)}{tail}\n"
+        f"{lead}{_assets_note(skill)}{_resolve_dir_placeholders(skill.body, skill.name, base)}{tail}\n"
         f"</skill>"
     )
 
@@ -167,21 +165,11 @@ def skill_asset_url(slug: str, rel: str) -> str:
     return f"/api/sliderule/skills/{quote(slug, safe='')}/files/{quote(rel, safe='/')}"
 
 
-#: 回执里列多少个文件：再多就只报数目（office-skills 包里有 100 份，大半是 .xsd）。
-MAX_LISTED_FILES = 30
-
-
-def _files_note(skill: SkillInfo) -> str:
-    """⚠ 2026-10-07 真机 r94–r96（@avoid-ai-writing 同一段 LinkedIn 帖子跑三遍）：技能第 2、3 步写明「扫
-    references/pattern-catalog.md」「对 references/word-tiers.md 的分级表」，三遍都一份没读、凭印象改，改完还留着
-    「excited to share」「important milestone」。Claude Code 里模型能 ls 技能目录、看见有哪些文件；这里没有沙盒时
-    它看不见包里有什么，只能先猜一个名字去读。把清单摆出来——等于给它「能看目录」这件事。"""
-    if not skill.files:
-        return ""
-    shown = list(skill.files[:MAX_LISTED_FILES])
-    more = f" 等 {len(skill.files)} 个" if len(skill.files) > len(shown) else ""
-    return (f"包里还有这些文件：{'、'.join(shown)}{more}。正文提到它们（要你读、对照、照着扫）时，"
-            f"用 skill(name=\"{_xml_escape(skill.name)}\", file=\"路径\") 读进来再做，别凭印象。\n\n")
+# ⚠ 2026-10-07 试过、无效、已撤回——别再试同一招：真机 r94–r96（@avoid-ai-writing 同一段 LinkedIn 帖子）三遍都没读
+#   references/pattern-catalog.md / word-tiers.md（技能第 2、3 步要求扫它们）。猜是对话档没有沙盒、模型看不见包里有什么，
+#   于是在回执正文前列出包里的文件清单 + 「正文提到它们时用 skill(name, file) 读进来再做」（cb9e36e）。再跑三遍（r97–r99，
+#   确认都是新代码、清单在回执里）：仍然 0/3 读——跟改之前 0/3 没差别。清单摆在眼前也不读，这是模型对技能步骤的遵循度，
+#   不是编排缺了什么（同 34c87c4 的结论）。
 
 
 def _assets_note(skill: SkillInfo) -> str:

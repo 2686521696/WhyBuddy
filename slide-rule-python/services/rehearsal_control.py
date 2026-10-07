@@ -1521,9 +1521,8 @@ def _skill_infos_from_cache(state: V5SessionState) -> list:
         if not name or not body or not description:
             continue
         assets = tuple(str(item) for item in row.get("assets") or () if isinstance(item, str))
-        listed = tuple(str(item) for item in row.get("files") or () if isinstance(item, str))
         out.append(SkillInfo(
-            name=name, description=description, path=path, body=body, enabled=True, assets=assets, files=listed,
+            name=name, description=description, path=path, body=body, enabled=True, assets=assets,
         ))
     return out
 
@@ -1567,7 +1566,6 @@ def _remember_skill_infos(state: V5SessionState, infos: list) -> None:
             "body": body,
             # 续跑回合带回的正文也要带着「包里给人看的文件」那句（_carried_skill_messages → build_skill_message）。
             **({"assets": list(info.assets)} if getattr(info, "assets", ()) else {}),
-            **({"files": list(info.files)} if getattr(info, "files", ()) else {}),
         })
         total += len(body)
     rows.reverse()

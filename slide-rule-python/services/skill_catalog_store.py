@@ -193,18 +193,9 @@ def _asset_names(blob: bytes) -> tuple[str, ...]:
         return ()
 
 
-_NOT_LISTED = {"skill.md", "license", "license.txt", "license.md"}
-
-
-def _text_file_names(files: dict[str, str]) -> tuple[str, ...]:
-    """包里的其它文本文件（control_skills._files_note 头注）。"""
-    return tuple(sorted(path for path in files if path.lower() not in _NOT_LISTED and not path.startswith(".")))
-
-
-def _with_assets(info: SkillInfo, blob: bytes, files: dict[str, str] | None = None) -> SkillInfo:
+def _with_assets(info: SkillInfo, blob: bytes) -> SkillInfo:
     names = _asset_names(blob)
-    listed = _text_file_names(files) if files else ()
-    return replace(info, assets=names or info.assets, files=listed or info.files)
+    return replace(info, assets=names) if names else info
 
 
 def local_seed_asset(slug: str, rel: str) -> bytes | None:
@@ -244,7 +235,7 @@ def local_seed_skill_info(slug: str) -> SkillInfo | None:
     except Exception:
         return None
     if info is not None:
-        info = _with_assets(info, blob, files)
+        info = _with_assets(info, blob)
     if info is not None:
         if len(_local_info_cache) >= _LOCAL_INFO_CACHE_MAX:
             _local_info_cache.pop(next(iter(_local_info_cache)), None)
@@ -434,7 +425,7 @@ class SkillCatalogStore:
         files, blob = self._unpack(pkg)
         body = skill_md_text(files)
         info = parse_skill_md(body, path=f".sliderule/skills/{pkg['slug']}/SKILL.md", name=pkg["slug"])
-        return _with_assets(info, blob, files) if info is not None and blob else info
+        return _with_assets(info, blob) if info is not None and blob else info
 
     def installed_skill_asset(self, owner_id: str, slug: str, rel: str) -> bytes | None:
         """装着的这份技能包里一份给人看的文件。没装 / 不是这类文件 / 包里没有 → None。"""
