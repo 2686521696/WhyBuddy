@@ -15,7 +15,7 @@
  */
 
 export const OFFICE_DELIVERABLE_EXTENSIONS = [".pptx", ".docx", ".xlsx"] as const;
-export const TEXT_DELIVERABLE_EXTENSIONS = [".md", ".txt", ".csv"] as const;
+export const TEXT_DELIVERABLE_EXTENSIONS = [".md", ".txt", ".csv", ".json", ".mmd", ".yaml", ".yml"] as const;
 export const IMAGE_DELIVERABLE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"] as const;
 
 export type OfficeDeliverableKind = "pptx" | "docx" | "xlsx";
@@ -30,6 +30,11 @@ const KIND_BY_EXTENSION: Record<string, DeliverableKind> = {
   ".md": "markdown",
   ".txt": "text",
   ".csv": "csv",
+  // 2026-10-07 r100（@sliderule SPEC 包）：机读交付按纯文本看（等宽、原样）。
+  ".json": "text",
+  ".mmd": "text",
+  ".yaml": "text",
+  ".yml": "text",
   ".png": "image",
   ".jpg": "image",
   ".jpeg": "image",

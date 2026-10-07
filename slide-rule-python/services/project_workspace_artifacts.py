@@ -182,7 +182,12 @@ elif action == "collect-office":
     suffix = (".pptx", ".docx", ".xlsx")
     # Text deliverables (deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS) only under output/: elsewhere a .md is
     # a README, source, or a skill's working file — those are delivered only when the reply links them.
-    text_suffix, text_dir, text_cap = (".md", ".txt", ".csv"), "output/", 2097152
+    text_suffix, text_dir, text_cap = (".md", ".txt", ".csv", ".json", ".mmd", ".yaml", ".yml"), "output/", 2097152
+    # ⚠ 2026-10-07 真机 r100 sr-20261007203300-V6MJNJDCSG（@sliderule 小区共享工具借还 SPEC）：交付写了 19 份进 output/，
+    #   收回来 8 份——下面原来是 `len(files) >= 8` 就不再收（09-30 只收办公文件时定的，每份可到 8MB），总索引
+    #   spec-package.md 排在第 9 份之后静静丢了；spec_tree.json / traceability_matrix.json 是 .json，后缀不认。
+    #   字节总量另有 16MB 的闸，份数放到 40。
+    max_files = 40
     # Image deliverables (deliverable_kind.IMAGE_DELIVERABLE_EXTENSIONS) also only under output/: a chart the skill
     # rendered for the user. Images elsewhere are assets / screenshots / test fixtures. Host re-checks the header.
     image_suffix = (".png", ".jpg", ".jpeg", ".gif", ".webp")
@@ -204,7 +209,7 @@ elif action == "collect-office":
                 lower = name.lower()
                 is_text = lower.endswith(text_suffix) and prefix.startswith(text_dir)
                 is_image = lower.endswith(image_suffix) and prefix.startswith(text_dir)
-                if not (lower.endswith(suffix) or is_text or is_image) or len(files) >= 8: continue
+                if not (lower.endswith(suffix) or is_text or is_image) or len(files) >= max_files: continue
                 try: data = regular(fd, name, text_cap if is_text else cap)
                 except ValueError: continue
                 if is_text:

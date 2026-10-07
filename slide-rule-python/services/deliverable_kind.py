@@ -31,7 +31,9 @@ OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".xlsx"})
 #: ⚠ 2026-10-04 真机 @doc-coauthoring 团队周会制度 sr-20261004174725-J5XFTG8673：模型写了一份 Markdown，
 #:   办公计划只认 .pptx/.docx/.xlsx，它就落回 web-app——建 Vite 工程、开端口、跑浏览器验收（失败），
 #:   收尾给的是 `/home/user/workspace/…md`，用户点不开。交付是「把文件交给用户」，不该绑在「做网页」上。
-TEXT_DELIVERABLE_EXTENSIONS = frozenset({".md", ".txt", ".csv"})
+TEXT_DELIVERABLE_EXTENSIONS = frozenset({".md", ".txt", ".csv", ".json", ".mmd", ".yaml", ".yml"})
+#: ⚠ 2026-10-07 真机 r100（@sliderule SPEC 包）：spec_tree.json、traceability_matrix.json、checks_ledger.json、
+#:   state-flow.mmd 是 SPEC 包的机读交付，收尾说「已写入 output/」，用户一份都拿不到——后缀不在清单里。
 #: 图片交付物（图表、导出的幻灯片页、设计稿）。同一条交付路，字节按文件头认，不认后缀。SVG 不收：它是能带脚本的 XML。
 #: ⚠ 2026-10-07 真机 r85 sr-20261007155747-HMKAPNJ7WK（@data-visualization-discipline 四店销售趋势图）：模型画了
 #:   output/门店上半年销售额趋势.png 和遮字测试图，看过、改过、再看过——收尾给用户的两个链接都是 404：
@@ -59,7 +61,7 @@ WORKSPACE_README = (
     "命令输出在 project_logs / shell_view（带 operationId），不进源码树。"
     "办公文件（.pptx / .docx / .xlsx）不进源码树。"
     # ⚠ 2026-10-04：文本交付物（TEXT_DELIVERABLE_EXTENSIONS 头注）。只陈述收回规则，不写成命令。
-    "output/ 下的 .md / .txt / .csv 和图片（.png / .jpg / .gif / .webp）收回成交付文件；"
+    "output/ 下的 .md / .txt / .csv / .json / .mmd / .yaml 和图片（.png / .jpg / .gif / .webp）收回成交付文件；"
     "别处的（README、INSTRUCT.md、LOG.md）是工作文件，不算交付。"
 )
 #: 办公计划建成的电脑。不进 CreateArguments.templateId——模型仍可传

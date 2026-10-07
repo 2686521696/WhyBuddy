@@ -1894,7 +1894,8 @@ def stamp_control_plan_kind(state: V5SessionState) -> bool:
     return changed
 
 
-_TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv)\s*>?\)", re.IGNORECASE)
+# 跟 deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS 同一份后缀（§四）：只链了 .json 的收尾原来连源码树都不去看。
+_TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv|json|mmd|ya?ml)\s*>?\)", re.IGNORECASE)
 
 
 class _StoreWorkspace:
@@ -2403,7 +2404,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 #   这句只列了 .pptx / .docx / .xlsx，它就选了 web-app——建 Vite 工程、跑浏览器验收（失败），
                 #   用户拿到一个点不开的沙盒路径。交给用户的是文件，就不是网页。
                 "deliverableKind 缺省 web-app（交付的是能打开的网页 / 应用）。"
-                "交给用户的是文件——.pptx / .docx / .xlsx，或 .md / .txt / .csv 这类文本，或 .png / .jpg 图片（图表、导出的页面图）——"
+                "交给用户的是文件——.pptx / .docx / .xlsx，或 .md / .txt / .csv / .json 这类文本，或 .png / .jpg 图片（图表、导出的页面图）——"
                 "用 office-file：不建网页、不跑浏览器验收；文本和图片放进 output/ 才算交出，"
                 "收尾那句话里用 [文件名](路径) 链接它，宿主换成下载地址。"
             ),
