@@ -192,6 +192,10 @@ def complete_with_provider_failure(completion, events):
     return out
 
 
+_SAVE_ATTEMPTS = 3
+_SAVE_BACKOFF_SECONDS = 0.5
+
+
 class RunCheckpoint:
     def __init__(self, service, record):
         self.service, self.record = service, record
@@ -225,17 +229,42 @@ class RunCheckpoint:
             raise ControlRunStopped("control_run_access_revoked") from exc
 
     async def save(self, checkpoint):
-        await asyncio.to_thread(self.guard)
-        try:
-            await asyncio.to_thread(self.service.store.save_checkpoint,
-                self.record["runId"], self.service.worker_id,
-                self.record["generation"], checkpoint)
-        except ControlRunConflict as exc:
-            raise ControlRunStopped("control_lease_lost") from exc
-        except ControlRunUnavailable as exc:
-            raise ControlRunStopped("control_checkpoint_unavailable") from exc
-        except Exception as exc:
-            raise ControlRunStopped("control_checkpoint_unavailable") from exc
+        """存一份检查点。存储暂时不可用就退避重试，跟采样期间的 guard 一样（control_checkpoint._guard_sampling）。
+
+        ⚠ 2026-10-07 真机 r108 ctr-cf9f46ef249455f783c441362cbf6f1d（@kpi-dashboard-design 咖啡豆订阅看板）：模型把三个
+          流失率口径拆对了（48/400、48/412、48/460），子代理独立复核也回来了（seq 22）——紧接着这一步存档失败，整轮
+          interrupted，黄条「控制面未返回结果」。检查点约 200KB，远不到 8MB；同一时段这台机器直连共享库也吃过一次
+          db-api http 500。09-19 那次只把**采样期间**的 guard 改成抖动重试，存档这一步还是一次失败就掐死，
+          而且什么都不记——这次连原因都只能推断。
+        真正的停（租约换手 ControlRunConflict / 被取消 / 换了 worker）照旧立刻停，不重试；超限这类确定性错误也不重试。
+        """
+        for attempt in range(_SAVE_ATTEMPTS):
+            try:
+                await asyncio.to_thread(self.guard)
+                await asyncio.to_thread(self.service.store.save_checkpoint,
+                    self.record["runId"], self.service.worker_id,
+                    self.record["generation"], checkpoint)
+                break
+            except ControlRunStopped as exc:
+                if exc.reason != "control_checkpoint_unavailable" or attempt + 1 >= _SAVE_ATTEMPTS:
+                    log.warning("control checkpoint save stopped run=%s attempt=%d reason=%s",
+                                self.record.get("runId"), attempt + 1, exc.reason)
+                    raise
+                log.warning("control checkpoint guard unavailable run=%s attempt=%d, retrying",
+                            self.record.get("runId"), attempt + 1, exc_info=exc.__cause__)
+            except ControlRunConflict as exc:
+                raise ControlRunStopped("control_lease_lost") from exc
+            except (ValueError, TypeError) as exc:
+                log.warning("control checkpoint rejected run=%s: %s", self.record.get("runId"), exc)
+                raise ControlRunStopped("control_checkpoint_unavailable") from exc
+            except Exception as exc:
+                if attempt + 1 >= _SAVE_ATTEMPTS:
+                    log.warning("control checkpoint save failed run=%s after %d attempts",
+                                self.record.get("runId"), attempt + 1, exc_info=True)
+                    raise ControlRunStopped("control_checkpoint_unavailable") from exc
+                log.warning("control checkpoint save failed run=%s attempt=%d, retrying",
+                            self.record.get("runId"), attempt + 1, exc_info=True)
+            await asyncio.sleep(_SAVE_BACKOFF_SECONDS * (attempt + 1))
         self.checkpoint = copy.deepcopy(checkpoint)
 
 
