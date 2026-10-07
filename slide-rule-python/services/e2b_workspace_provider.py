@@ -60,8 +60,14 @@ CONSOLE_ORPHAN_GRACE = 3.0
 # it to the client — it is protocol, not something the user typed.
 _CONSOLE_OSC = re.compile(rb"\x1b\]777;wb;(\d+)\x07")
 _CONSOLE_OSC_HEAD = b"\x1b]777;wb;"
+# ⚠ 2026-10-07 真机 r84 sr-20261007100837-9EX8Q6WH7W（@verification-before-completion 修分账函数）：收尾前照技能跑
+#   `git diff -- split_bill.py tests/test_split_bill.py && git status --short`，控制台是真 PTY（TERM=xterm-256color），
+#   diff 超过一屏（32 行），git 起了 less（控制台里是 `\x1b[?1h\x1b=`）等人按 q——这条命令只能等 900 秒超时，
+#   模型一次次 shell_wait，用户看着「等待命令」转。没有人在这个终端前按键：分页器一律换成 cat。
+#   放在这一行而不是 pty.create 的 envs：这行在 rc 文件之后敲，谁也盖不掉；判据也是原样送这一行。
 _CONSOLE_SETUP = (
     b"stty -echo; "
+    b"export PAGER=cat GIT_PAGER=cat MANPAGER=cat SYSTEMD_PAGER=; "
     b"PROMPT_COMMAND='printf \"\\033]777;wb;%s\\007\" \"$?\"'; "
     b"PS1='\\u@\\h:\\w\\$ '; "
     b"stty echo\n"
