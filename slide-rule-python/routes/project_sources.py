@@ -274,6 +274,12 @@ _OFFICE_TYPES = {
     ".md": "text/markdown; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
     ".csv": "text/csv; charset=utf-8",
+    # ⚠ 2026-10-07 真机 r104：.json / .mmd / .yaml 加进交付清单后这里没跟上，12 份全是 application/octet-stream，
+    #   兜底文件名（_office_disposition）也丢了后缀。判据钉着：交付清单里的后缀这里都得有。
+    ".json": "application/json; charset=utf-8",
+    ".mmd": "text/plain; charset=utf-8",
+    ".yaml": "application/yaml; charset=utf-8",
+    ".yml": "application/yaml; charset=utf-8",
     # 图片交付物（deliverable_kind.IMAGE_DELIVERABLE_EXTENSIONS）。同样 attachment + nosniff；右栏取字节自己画。
     ".png": "image/png",
     ".jpg": "image/jpeg",

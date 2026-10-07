@@ -92,3 +92,12 @@ def test_the_sandbox_cap_and_the_receipt_cap_are_one_number():
     """§四成对：沙盒脚本是字符串，import 不到常量；数对不上就是又一处「收了没给链接」或「给了链接没收」。"""
     from services.deliverable_kind import MAX_DELIVERED_FILES
     assert f"max_files = {MAX_DELIVERED_FILES}\n" in ARTIFACT_IO_SCRIPT
+
+
+def test_every_deliverable_suffix_downloads_with_its_own_type():
+    """§四生成侧/消费侧：交付清单加了后缀、下载路由的类型表没跟上，就是 octet-stream + 兜底名丢后缀（r104）。"""
+    from routes.project_sources import _OFFICE_TYPES, _office_disposition
+    from services.deliverable_kind import IMAGE_DELIVERABLE_EXTENSIONS, OFFICE_EXTENSIONS, TEXT_DELIVERABLE_EXTENSIONS
+    every = OFFICE_EXTENSIONS | TEXT_DELIVERABLE_EXTENSIONS | IMAGE_DELIVERABLE_EXTENSIONS
+    assert every - set(_OFFICE_TYPES) == set()
+    assert 'filename="office-file.json"' in _office_disposition("spec_tree.json", ".json")
