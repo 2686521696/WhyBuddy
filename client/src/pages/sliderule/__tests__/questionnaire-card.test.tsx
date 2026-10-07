@@ -175,3 +175,34 @@ describe("卡面抄 Cursor 文件卡", () => {
     expect(src).not.toContain("bg-emerald-50");
   });
 });
+
+// ⚠ 2026-10-07 真机 r74 sr-20261007095028-3014GBNNDM（@theme-factory）：模型照技能第 1 步把展示 PDF 的链接写进题面，
+//   题面按纯文本画——用户看到方括号和地址，点不开。下面是那一发的题面原文（含模型自己加的空格）。
+describe("题面里的链接", () => {
+  const R74 =
+    "请先查看 [主题展示册]( /api/sliderule/skills/theme-factory/files/theme-showcase.pdf )，你希望年会邀请函采用哪个主题？";
+  const card = (question: string) =>
+    renderToStaticMarkup(
+      <QuestionnaireCard questions={[{ id: "q1", question, options: [{ label: "Golden Hour" }] }]} onSubmit={() => {}} />
+    );
+
+  it("真机那句题面：展示册是一个能点开的链接，新标签打开", () => {
+    const out = card(R74);
+    expect(out).toContain('href="/api/sliderule/skills/theme-factory/files/theme-showcase.pdf"');
+    expect(out).toContain('target="_blank"');
+    expect(out).not.toContain("](");                       // 反向：不再露出 markdown 原文
+    expect(out).toContain("你希望年会邀请函采用哪个主题？");
+  });
+
+  it("反向：沙盒路径、空地址不变成可点的链接", () => {
+    const out = card("看这里 [结果](/home/user/workspace/a.pdf) 和 [坏的](sandbox:/x)");
+    expect(out).not.toContain("<a ");
+    expect(out).toContain("结果");
+  });
+
+  it("没有链接的题面原样一行字，不多出段落", () => {
+    const out = card("患者怎么登录？");
+    expect(out).toContain("患者怎么登录？");
+    expect(out).not.toMatch(/<p[^>]*><p/);
+  });
+});
