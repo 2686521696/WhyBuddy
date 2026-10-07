@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
 import { hostname } from "node:os";
+import { randomBytes } from "node:crypto";
 import dotenv from "dotenv";
 import Dockerode from "dockerode";
 
@@ -80,9 +81,35 @@ export function pythonStdioEnv(env = process.env) {
  *   被线上工作器领走（跑的是线上代码），本地工作器也能领走线上真实用户的单。分组之后各领各的。
  *   组名带机器名：几台开发机连同一个库也互不抢。显式设了 SLIDERULE_WORKER_POOL 就用设的。
  */
-export function devWorkerPoolEnv(env = process.env, host = hostname()) {
+/*
+ * ⚠ 2026-10-07：组名只带机器名不够——云端容器的机器名一律是 `vm`，几个容器（连着同一个库）全进了
+ *   `dev-vm`，别的容器里跑着旧代码的工作器一直在领这边的单（真机 r26/r28/r37/r48/r50/r68/r69 都是被
+ *   control-36e9… 领走的，测的是旧代码，结论全不作数）。再带一段这份检出自己的随机 id：同一份检出重启
+ *   不变（排着的单不丢），新克隆一份就是新组。
+ *   同一天还发现：调用处传的是 sharedDevEnv（只挑了几样的子集，里面没有 SLIDERULE_WORKER_POOL），
+ *   「显式设了就用设的」从来没生效过；单测自己把显式值喂进函数，所以是绿的（CLAUDE.md §一之二）。
+ */
+export function devCheckoutId(dir = resolve(__projectRoot, ".agent-loop")) {
+  const file = resolve(dir, "dev-worker-pool-id");
+  try {
+    const saved = readFileSync(file, "utf8").trim();
+    if (/^[0-9a-f]{8}$/.test(saved)) return saved;
+  } catch {
+    // 第一次起：下面生成一份
+  }
+  const id = randomBytes(4).toString("hex");
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, `${id}\n`);
+  } catch {
+    // 写不了就只管这一次；下次起来换一组（排着的单会留在旧组里，宁可等不到也别被别人领走）
+  }
+  return id;
+}
+
+export function devWorkerPoolEnv(env = process.env, host = hostname(), checkoutId = devCheckoutId()) {
   const explicit = String(env.SLIDERULE_WORKER_POOL ?? "").trim();
-  return { SLIDERULE_WORKER_POOL: explicit || `dev-${host}` };
+  return { SLIDERULE_WORKER_POOL: explicit || `dev-${host}-${checkoutId}` };
 }
 
 export function buildPythonUvicornArgs(pythonDir, pythonPort, env = process.env) {
@@ -705,7 +732,7 @@ function startPythonBackend(sharedDevEnv) {
   const pythonEnv = {
     ...sharedDevEnv,
     ...pythonStdioEnv(sharedDevEnv),
-    ...devWorkerPoolEnv(sharedDevEnv),
+    ...devWorkerPoolEnv(process.env),   // 显式值在 process.env（含 .env），不在 sharedDevEnv 子集里
     AGENT_LOOP_RUNS_DIR:
       process.env.AGENT_LOOP_RUNS_DIR ??
       resolve(__projectRoot, ".agent-loop", "runs"),

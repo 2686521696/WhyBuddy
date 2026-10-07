@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildPythonUvicornArgs, collectLlmBypassHosts, devWorkerPoolEnv, hostnameFromMaybeUrl, pythonStdioEnv } from "./dev-all.mjs";
+import { buildPythonUvicornArgs, collectLlmBypassHosts, devCheckoutId, devWorkerPoolEnv, hostnameFromMaybeUrl, pythonStdioEnv } from "./dev-all.mjs";
 
 function sourceWithoutComments(src) {
   return src
@@ -100,9 +101,22 @@ test("dev:all and dev:sliderule actually pass pythonStdioEnv to the child", () =
 
 // 2026-10-04：本地连线上库时，本地测试的执行阶段被线上工作器领走。本地起的 Python 必须进本地分组。
 test("devWorkerPoolEnv puts local python in its own pool, explicit value wins", () => {
-  assert.equal(devWorkerPoolEnv({}, "box1").SLIDERULE_WORKER_POOL, "dev-box1");
-  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "  " }, "box1").SLIDERULE_WORKER_POOL, "dev-box1");
-  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "team-a" }, "box1").SLIDERULE_WORKER_POOL, "team-a");
+  assert.equal(devWorkerPoolEnv({}, "box1", "0a1b2c3d").SLIDERULE_WORKER_POOL, "dev-box1-0a1b2c3d");
+  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "  " }, "box1", "0a1b2c3d").SLIDERULE_WORKER_POOL, "dev-box1-0a1b2c3d");
+  assert.equal(devWorkerPoolEnv({ SLIDERULE_WORKER_POOL: "team-a" }, "box1", "0a1b2c3d").SLIDERULE_WORKER_POOL, "team-a");
+});
+
+// ⚠ 2026-10-07：云端容器的机器名一律是 `vm`。只带机器名时两个容器同组，别的容器里的旧代码工作器领走了这边的单。
+test("two containers that are both called vm do not share a pool", () => {
+  const a = devWorkerPoolEnv({}, "vm", devCheckoutId(mkdtempSync(join(tmpdir(), "pool-a-"))));
+  const b = devWorkerPoolEnv({}, "vm", devCheckoutId(mkdtempSync(join(tmpdir(), "pool-b-"))));
+  assert.notEqual(a.SLIDERULE_WORKER_POOL, b.SLIDERULE_WORKER_POOL);
+  assert.match(a.SLIDERULE_WORKER_POOL, /^dev-vm-[0-9a-f]{8}$/);
+});
+
+test("one checkout keeps its pool across restarts (queued runs are not orphaned)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pool-keep-"));
+  assert.equal(devCheckoutId(dir), devCheckoutId(dir));
 });
 
 test("dev:all and dev:sliderule actually pass devWorkerPoolEnv to the python child", () => {
@@ -115,6 +129,8 @@ test("dev:all and dev:sliderule actually pass devWorkerPoolEnv to the python chi
   const pyStart = allSrc.indexOf("function startPythonBackend");
   const pyFn = allSrc.slice(pyStart, allSrc.indexOf("async function main()"));
   assert.match(pyFn, /\.\.\.devWorkerPoolEnv\(/, "dev:all python joins the shared default pool");
+  // ⚠ 2026-10-07：传的曾是 sharedDevEnv（只挑了几样的子集，没有 SLIDERULE_WORKER_POOL）——显式组名从没生效过。
+  assert.match(pyFn, /\.\.\.devWorkerPoolEnv\(process\.env\)/, "explicit pool from the real environment reaches the python child");
   assert.match(slideruleSrc, /\.\.\.devWorkerPoolEnv\(/, "dev:sliderule python joins the shared default pool");
 });
 
