@@ -45,8 +45,15 @@ class SkillInfo:
 
 
 def normalize_skill_name(name: str) -> str:
+    # ⚠ 2026-10-07 全量扫描 24 份种子：systematic-debugging 正文写「Use the `superpowers:verification-before-completion`
+    #   skill before claiming success」——Claude Code 的插件命名空间写法。verification-before-completion 明明装着，
+    #   「:」被换成「-」成了 superpowers-verification-before-completion，skill_not_found：技能里点名另一份技能那一步
+    #   静静断掉。技能名只许 a-z0-9-，冒号前只能是命名空间，按 Claude Code 的认法取冒号后那一段。
+    raw = (name or "").strip()
+    if ":" in raw:
+        raw = raw.rsplit(":", 1)[1]
     out: list[str] = []
-    for ch in (name or "").strip().lower():
+    for ch in raw.lower():
         mapped = ch if ("a" <= ch <= "z" or "0" <= ch <= "9") else "-"
         if mapped == "-" and out and out[-1] == "-":
             continue
