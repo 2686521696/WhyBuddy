@@ -183,6 +183,10 @@ elif action == "collect-office":
     # Text deliverables (deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS) only under output/: elsewhere a .md is
     # a README, source, or a skill's working file — those are delivered only when the reply links them.
     text_suffix, text_dir, text_cap = (".md", ".txt", ".csv"), "output/", 2097152
+    # Image deliverables (deliverable_kind.IMAGE_DELIVERABLE_EXTENSIONS) also only under output/: a chart the skill
+    # rendered for the user. Images elsewhere are assets / screenshots / test fixtures. Host re-checks the header.
+    image_suffix = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+    image_magic = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"RIFF")
     cap = 8388608
     files, total = [], 0
     def visit(fd, prefix="", depth=0):
@@ -199,13 +203,16 @@ elif action == "collect-office":
             elif stat.S_ISREG(mode):
                 lower = name.lower()
                 is_text = lower.endswith(text_suffix) and prefix.startswith(text_dir)
-                if not (lower.endswith(suffix) or is_text) or len(files) >= 8: continue
+                is_image = lower.endswith(image_suffix) and prefix.startswith(text_dir)
+                if not (lower.endswith(suffix) or is_text or is_image) or len(files) >= 8: continue
                 try: data = regular(fd, name, text_cap if is_text else cap)
                 except ValueError: continue
                 if is_text:
                     if not data or b"\x00" in data: continue
                     try: data.decode("utf-8-sig")
                     except UnicodeDecodeError: continue
+                elif is_image:
+                    if not data.startswith(image_magic): continue
                 elif not data.startswith(b"PK\x03\x04"): continue
                 if total + len(data) > 16777216: continue
                 total += len(data)

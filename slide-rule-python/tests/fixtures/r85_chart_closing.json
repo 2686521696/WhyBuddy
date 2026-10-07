@@ -1,0 +1,9 @@
+{
+ "session": "sr-20261007155747-HMKAPNJ7WK",
+ "projectId": "prj-ff506bd19057527ba2cbf3cb6aeb9767",
+ "closing": "已完成并通过验收。\n\n交付物：\n\n- [主图：门店上半年销售额趋势.png](/api/sliderule/projects/prj-ff506bd19057527ba2cbf3cb6aeb9767/artifacts/门店上半年销售额趋势.png)\n- [遮字测试图：门店上半年销售额趋势-遮字测试.png](/api/sliderule/projects/prj-ff506bd19057527ba2cbf3cb6aeb9767/artifacts/门店上半年销售额趋势-遮字测试.png)\n- [验收记录：门店上半年销售额趋势-验收.md](/api/sliderule/projects/prj-ff506bd19057527ba2cbf3cb6aeb9767/artifacts/art-6e8755d869f9cc0ce0815150742756d41639d414)\n\n完成内容：\n\n- 用四系列折线图呈现 1–6 月销售额，纵轴从 0 开始，月份等距。\n- 浦东使用强调色和加粗线条，主图明确标注“浦东店增长最快”。\n- 实际渲染并查看了主图和遮字测试图。\n- 遮字后仍能看出：有一条线从较低位持续陡升至最高位，起终点跨度明显大于其他门店，能够支持“增长最快”的几何结论。\n- 完成 9 条交付前自检，并记录了独立读图复核结果。\n- 独立读图者确认几何关系成立，但也指出：遮掉名称和图例后无法恢复门店名称。这符合遮字测试的职责边界，主图中的颜色映射和端点标注负责“这条线是浦东”的身份解码。",
+ "images": [
+  "output/门店上半年销售额趋势.png",
+  "output/门店上半年销售额趋势-遮字测试.png"
+ ]
+}

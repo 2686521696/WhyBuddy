@@ -29,7 +29,7 @@ from services.deliverable_kind import (
     OFFICE_FILE,
     WORKSPACE_README,
     deliverable_suffix,
-    is_auto_collected_text,
+    is_auto_collected_output,
     is_deliverable_bytes,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, linked_text_deliverables
@@ -68,11 +68,11 @@ def test_text_bytes_are_deliverable_and_disguised_binary_is_not():
 
 
 def test_only_output_dir_text_is_collected_automatically():
-    assert is_auto_collected_text("output/report.md")
+    assert is_auto_collected_output("output/report.md")
     # 反向：工作区 README、源码里的说明、技能的中间件都不是交付
-    assert not is_auto_collected_text("README.md")
-    assert not is_auto_collected_text("docs/notes.md")
-    assert not is_auto_collected_text("bridge/output.csv")
+    assert not is_auto_collected_output("README.md")
+    assert not is_auto_collected_output("docs/notes.md")
+    assert not is_auto_collected_output("bridge/output.csv")
 
 
 # —— 二、产物库 ——

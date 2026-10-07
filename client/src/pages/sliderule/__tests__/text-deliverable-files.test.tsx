@@ -18,6 +18,7 @@ import { officeFileTabs } from "../project-computer-view";
 import {
   OFFICE_DELIVERABLE_EXTENSIONS,
   TEXT_DELIVERABLE_EXTENSIONS,
+  IMAGE_DELIVERABLE_EXTENSIONS,
   deliverableKind,
   parseCsv,
 } from "../project-runtime/deliverable-files";
@@ -166,6 +167,7 @@ describe("deliverable-files", () => {
     };
     expect(set("OFFICE_EXTENSIONS")).toEqual([...OFFICE_DELIVERABLE_EXTENSIONS].sort());
     expect(set("TEXT_DELIVERABLE_EXTENSIONS")).toEqual([...TEXT_DELIVERABLE_EXTENSIONS].sort());
+    expect(set("IMAGE_DELIVERABLE_EXTENSIONS")).toEqual([...IMAGE_DELIVERABLE_EXTENSIONS].sort());
   });
 
   it("认后缀：交付物认得出，别的不认", () => {

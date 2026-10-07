@@ -32,8 +32,16 @@ OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".xlsx"})
 #:   办公计划只认 .pptx/.docx/.xlsx，它就落回 web-app——建 Vite 工程、开端口、跑浏览器验收（失败），
 #:   收尾给的是 `/home/user/workspace/…md`，用户点不开。交付是「把文件交给用户」，不该绑在「做网页」上。
 TEXT_DELIVERABLE_EXTENSIONS = frozenset({".md", ".txt", ".csv"})
-DELIVERABLE_EXTENSIONS = OFFICE_EXTENSIONS | TEXT_DELIVERABLE_EXTENSIONS
+#: 图片交付物（图表、导出的幻灯片页、设计稿）。同一条交付路，字节按文件头认，不认后缀。SVG 不收：它是能带脚本的 XML。
+#: ⚠ 2026-10-07 真机 r85 sr-20261007155747-HMKAPNJ7WK（@data-visualization-discipline 四店销售趋势图）：模型画了
+#:   output/门店上半年销售额趋势.png 和遮字测试图，看过、改过、再看过——收尾给用户的两个链接都是 404：
+#:   产物库只收办公文件和文本，图一张没收。技能做出来的东西到不了用户手里。
+IMAGE_DELIVERABLE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+#: output/ 下自动收回的（文本 + 图片）。办公文件哪儿都收，不在这里。
+AUTO_COLLECTED_EXTENSIONS = TEXT_DELIVERABLE_EXTENSIONS | IMAGE_DELIVERABLE_EXTENSIONS
+DELIVERABLE_EXTENSIONS = OFFICE_EXTENSIONS | AUTO_COLLECTED_EXTENSIONS
 MAX_TEXT_DELIVERABLE_BYTES = 2 * 1024 * 1024
+MAX_IMAGE_DELIVERABLE_BYTES = 8 * 1024 * 1024
 #: 文本交付物要从沙盒自动收的目录。别处的 .md 是说明、源码、技能中间件——只有显式链接才算交付。
 TEXT_DELIVERABLE_DIR = "output"
 OFFICE_ZIP_MAGIC = b"PK\x03\x04"
@@ -51,7 +59,8 @@ WORKSPACE_README = (
     "命令输出在 project_logs / shell_view（带 operationId），不进源码树。"
     "办公文件（.pptx / .docx / .xlsx）不进源码树。"
     # ⚠ 2026-10-04：文本交付物（TEXT_DELIVERABLE_EXTENSIONS 头注）。只陈述收回规则，不写成命令。
-    "output/ 下的 .md / .txt / .csv 收回成交付文件；别处的（README、INSTRUCT.md、LOG.md）是工作文件，不算交付。"
+    "output/ 下的 .md / .txt / .csv 和图片（.png / .jpg / .gif / .webp）收回成交付文件；"
+    "别处的（README、INSTRUCT.md、LOG.md）是工作文件，不算交付。"
 )
 #: 办公计划建成的电脑。不进 CreateArguments.templateId——模型仍可传
 #: react-vite*，host 按批准计划覆盖。
@@ -232,21 +241,42 @@ def is_text_deliverable_bytes(data: Any) -> bool:
     return True
 
 
+_IMAGE_MAGIC = {".png": (b"\x89PNG\r\n\x1a\n",), ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
+                ".gif": (b"GIF87a", b"GIF89a")}
+
+
+def is_image_deliverable_bytes(path: Any, data: Any) -> bool:
+    """文件头跟后缀对得上、不超上限。改个 .png 后缀的文本不算图。"""
+    if not isinstance(data, (bytes, bytearray)) or not 1 <= len(data) <= MAX_IMAGE_DELIVERABLE_BYTES:
+        return False
+    head = bytes(data[:16])
+    suffix = deliverable_suffix(path)
+    if suffix == ".webp":
+        return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+    return any(head.startswith(magic) for magic in _IMAGE_MAGIC.get(suffix or "", ()))
+
+
 def is_deliverable_bytes(path: Any, data: Any) -> bool:
-    """这份字节配得上它的后缀：办公文件是 zip 包，文本是 UTF-8。"""
+    """这份字节配得上它的后缀：办公文件是 zip 包，文本是 UTF-8，图片的文件头对得上。"""
     suffix = deliverable_suffix(path)
     if suffix in OFFICE_EXTENSIONS:
         return is_office_zip_bytes(data)
     if suffix in TEXT_DELIVERABLE_EXTENSIONS:
         return is_text_deliverable_bytes(data)
+    if suffix in IMAGE_DELIVERABLE_EXTENSIONS:
+        return is_image_deliverable_bytes(path, data)
     return False
 
 
-def is_auto_collected_text(path: Any) -> bool:
-    """沙盒里自动收的文本交付物：只认 output/ 下的（office-skills 的约定：output/ 只放给用户的最终产物）。"""
+def is_auto_collected_output(path: Any) -> bool:
+    """沙盒里自动收的交付物（文本 + 图片）：只认 output/ 下的（office-skills 的约定：output/ 只放给用户的最终产物）。
+
+    ⚠ 2026-10-07 原名 is_auto_collected_text，只认文本；图片交付物加进来时改名，四处调用（沙盒里的收集脚本、
+      worker 收回、收尾链接认领、写入算不算产出）一起改——只改一处就是一半不生效（CLAUDE.md §四）。
+    """
     rel = str(path or "").replace("\\", "/").lstrip("/")
     return (rel.split("/", 1)[0] == TEXT_DELIVERABLE_DIR and "/" in rel
-            and deliverable_suffix(rel) in TEXT_DELIVERABLE_EXTENSIONS)
+            and deliverable_suffix(rel) in AUTO_COLLECTED_EXTENSIONS)
 
 
 _CHART_PART = re.compile(r"^(?:ppt|word|xl)/charts/chart\d+\.xml$")

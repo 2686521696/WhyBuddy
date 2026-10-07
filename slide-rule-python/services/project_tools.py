@@ -48,7 +48,7 @@ from services.deliverable_kind import (
     WORKSPACE_TEMPLATE_VERSION,
     idle_office_exec_allows_source_write,
     operation_left_on_lease,
-    deliverable_suffix, is_auto_collected_text, is_office_artifact_path, is_office_file_plan,
+    deliverable_suffix, is_auto_collected_output, is_office_artifact_path, is_office_file_plan,
     office_facts_sentence,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, decode_office_write
@@ -966,8 +966,8 @@ def _only_inspects(command) -> bool:
     for token in tokens:
         if pending:
             writes, pending = pending.startswith(">"), ""
-            # output/ 下的 .md / .txt / .csv 也是交付物（deliverable_kind.is_auto_collected_text），写进去不算只在看。
-            if writes and (token.lower().endswith((".pptx", ".docx", ".xlsx")) or is_auto_collected_text(token)):
+            # output/ 下的 .md / .txt / .csv 也是交付物（deliverable_kind.is_auto_collected_output），写进去不算只在看。
+            if writes and (token.lower().endswith((".pptx", ".docx", ".xlsx")) or is_auto_collected_output(token)):
                 return False
             continue
         if token in _SHELL_OPERATORS:

@@ -44,7 +44,7 @@ from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.deliverable_kind import (
     WORKSPACE_TEMPLATE_VERSION,
-    is_auto_collected_text,
+    is_auto_collected_output,
     is_deliverable_bytes,
     is_office_artifact_path,
     is_office_zip_bytes,
@@ -1189,11 +1189,11 @@ class _RuntimeTask:
             if not isinstance(data, (bytes, bytearray)):
                 continue
             payload = bytes(data)
-            # 办公文件哪儿都收；文本交付物只在办公工作区里收 output/ 下的（deliverable_kind.is_auto_collected_text 头注）。
+            # 办公文件哪儿都收；文本交付物只在办公工作区里收 output/ 下的（deliverable_kind.is_auto_collected_output 头注）。
             # ⚠ 网页工程不收文本：画廊（ProjectStore 会话索引）见到任何一份产物就把工程标成「文件」，
             #   网页工程往 output/ 写个 notes.md 就会被改判成一张文件卡。
             if not ((is_office_artifact_path(path) and is_office_zip_bytes(payload))
-                    or (report_miss and is_auto_collected_text(path) and is_deliverable_bytes(path, payload))):
+                    or (report_miss and is_auto_collected_output(path) and is_deliverable_bytes(path, payload))):
                 continue
             # ⚠ 2026-10-01 隔离真机第 174 轮 sr-20261001034539-SHFWQM6FET（上传「销售团队季度业绩.xlsx」，要一份 Word 报告）：
             #   第一条命令只是 load_workbook 读了一眼上传的表，回执就说「办公文件已收回：销售团队季度业绩.xlsx。这就是交付」，

@@ -8,9 +8,11 @@ import {
 import {
   decodeTextDeliverable,
   deliverableKind,
+  isImageDeliverableKind,
   isTextDeliverableKind,
   type OfficeDeliverableKind,
 } from "./deliverable-files";
+import { ImageDeliverableView } from "./ImageDeliverableView";
 import { TextDeliverableView } from "./TextDeliverableView";
 
 type OfficeKind = OfficeDeliverableKind;
@@ -91,6 +93,9 @@ export function PresentedOfficeFile({
         <TextDeliverableView kind={kind} text={decodeTextDeliverable(bytes)} />
       </div>
     );
+  }
+  if (isImageDeliverableKind(kind)) {
+    return <ImageDeliverableView bytes={bytes} path={path} />;
   }
   return (
     <OfficeOoxmlView

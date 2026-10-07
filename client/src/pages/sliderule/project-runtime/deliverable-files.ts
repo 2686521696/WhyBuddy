@@ -7,16 +7,21 @@
  *   PresentedOfficeFile 的 officeKind、OfficeThumbnail 的 endsWith）——漏一处，.md 进了库也在那一处被静默滤掉。
  *   所以收成这一份。
  *
- * ⚠ 成对物：Python `services/deliverable_kind.py` 的 OFFICE_EXTENSIONS / TEXT_DELIVERABLE_EXTENSIONS。
+ * ⚠ 2026-10-07 真机 r85 sr-20261007155747-HMKAPNJ7WK（@data-visualization-discipline 四店趋势图）：图片交付物
+ *   （deliverable_kind.IMAGE_DELIVERABLE_EXTENSIONS）进了产物库，这里不认就会在右栏 / 缩略图被静默滤掉——同一份清单加上。
+ *
+ * ⚠ 成对物：Python `services/deliverable_kind.py` 的 OFFICE_EXTENSIONS / TEXT_DELIVERABLE_EXTENSIONS / IMAGE_DELIVERABLE_EXTENSIONS。
  *   判据 __tests__/deliverable-files.test.ts 直接读那份 Python 源码比对，改一边要改另一边。
  */
 
 export const OFFICE_DELIVERABLE_EXTENSIONS = [".pptx", ".docx", ".xlsx"] as const;
 export const TEXT_DELIVERABLE_EXTENSIONS = [".md", ".txt", ".csv"] as const;
+export const IMAGE_DELIVERABLE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"] as const;
 
 export type OfficeDeliverableKind = "pptx" | "docx" | "xlsx";
 export type TextDeliverableKind = "markdown" | "text" | "csv";
-export type DeliverableKind = OfficeDeliverableKind | TextDeliverableKind;
+export type ImageDeliverableKind = "image";
+export type DeliverableKind = OfficeDeliverableKind | TextDeliverableKind | ImageDeliverableKind;
 
 const KIND_BY_EXTENSION: Record<string, DeliverableKind> = {
   ".pptx": "pptx",
@@ -25,6 +30,19 @@ const KIND_BY_EXTENSION: Record<string, DeliverableKind> = {
   ".md": "markdown",
   ".txt": "text",
   ".csv": "csv",
+  ".png": "image",
+  ".jpg": "image",
+  ".jpeg": "image",
+  ".gif": "image",
+  ".webp": "image",
+};
+
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
 };
 
 /** 文件名的后缀（小写，带点）；跟 Python deliverable_suffix 一样，光一个「.md」不算。 */
@@ -44,6 +62,15 @@ export function isDeliverablePath(path: string | null | undefined): boolean {
 
 export function isTextDeliverableKind(kind: DeliverableKind | null): kind is TextDeliverableKind {
   return kind === "markdown" || kind === "text" || kind === "csv";
+}
+
+export function isImageDeliverableKind(kind: DeliverableKind | null): kind is ImageDeliverableKind {
+  return kind === "image";
+}
+
+/** 图片交付物的媒体类型（拼 Blob 用）；不是图片返回空串。 */
+export function imageMimeOf(path: string | null | undefined): string {
+  return IMAGE_MIME[extensionOf(String(path || ""))] ?? "";
 }
 
 /** 文本交付物的字节 → 字符串。UTF-8，去掉 BOM（Python 端按 utf-8-sig 收的）。 */

@@ -26,7 +26,7 @@ from services.deliverable_kind import (
     OFFICE_FILE_NOT_TEXT,
     TEXT_DELIVERABLE_EXTENSIONS,
     deliverable_suffix,
-    is_auto_collected_text,
+    is_auto_collected_output,
     is_deliverable_bytes,
     is_office_zip_bytes,
     office_artifact_suffix,
@@ -470,7 +470,7 @@ def linked_text_deliverables(text: str, files: Mapping[str, str]) -> list[str]:
         #   收尾链了 office-skills 的工作说明 `[INSTRUCT.md](…)`，上一版把它收进产物库——办公目标的完工闸
         #   （has_any）就此亮了，这一轮判成 completed。假绿灯（§七）。交付物只认 output/（跟沙盒自动收同一条规矩）；
         #   INSTRUCT.md / LOG.md / README.md 是工作文件，链了也不是交付。
-        if hit is not None and not is_auto_collected_text(hit):
+        if hit is not None and not is_auto_collected_output(hit):
             hit = None
         if hit is not None and hit not in found:
             found.append(hit)
@@ -538,6 +538,9 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
             by_name.setdefault(name, url)
 
     known = set(by_name.values())
+    # 同名的每一份都留着（by_name 只留第一份）：按文件名认产物地址时，不唯一就不认。
+    path_of_name = {url: Path(str(path)).name for path, url in downloads.items()
+                    if isinstance(url, str) and url.startswith("/api/")}
     path_of = {url: str(path) for path, url in downloads.items() if isinstance(url, str) and url.startswith("/api/")}
 
     def swap(match: re.Match) -> str:
@@ -559,6 +562,14 @@ def rewrite_deliverable_links(text: str, downloads: Mapping[str, str]) -> str:
             near = _near_known_artifact(target, known)
             if near:
                 return f"[{label}]({near})"
+            # ⚠ 2026-10-07 真机 r85 sr-20261007155747-HMKAPNJ7WK（@data-visualization-discipline 四店趋势图）：收尾写
+            #   `/api/sliderule/projects/prj-…/artifacts/门店上半年销售额趋势.png`——最后一段是文件名不是 art-id。它以 /api/
+            #   开头，下一句原样放过，用户点了 404。产物库里同名的只有一份才换成那份的真地址，不唯一不猜。
+            if "/artifacts/" in target:
+                tail = unquote(target.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1])
+                same = [url for url, name in path_of_name.items() if name == tail]
+                if not tail.startswith("art-") and len(same) == 1:
+                    return f"[{label}]({same[0]})"
         if _USABLE_TARGET.match(target):
             return match.group(0)
         # ⚠ 2026-09-27 隔离真机第 68 轮 sr-20260927200602-F9YJD14NHC（门店销售 Excel 追问

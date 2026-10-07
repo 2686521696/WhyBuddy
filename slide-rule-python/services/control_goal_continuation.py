@@ -150,8 +150,8 @@ BLOCKER_TEXT: Dict[str, str] = {
     "project_not_created": "还没有建工程",
     # ⚠ 2026-10-04：文本交付物也走这道闸（deliverable_kind.TEXT_DELIVERABLE_EXTENSIONS）。只列办公三种，
     #   写 Markdown 的模型读了会以为自己该改成 .docx。把交出的两条路说出来。
-    "office_file_not_found": ("还没有交出任何文件（.pptx / .docx / .xlsx，或 .md / .txt / .csv；"
-                              "文本文件放进 output/ 才算交出）"),
+    "office_file_not_found": ("还没有交出任何文件（.pptx / .docx / .xlsx，或 .md / .txt / .csv，或 .png / .jpg 图片；"
+                              "文本和图片放进 output/ 才算交出）"),
     "project_plan_approval_required": "计划还没有批准",
     "project_verification_required": "还没有对当前版本做独立浏览器验收（project_verify）；改过代码后，旧版本的验收不算",
     "project_current_business_verification_required": "当前版本的独立浏览器验收没有通过",

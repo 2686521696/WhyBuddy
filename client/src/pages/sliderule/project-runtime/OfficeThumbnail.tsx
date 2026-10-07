@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { decodeTextDeliverable, deliverableKind, isTextDeliverableKind } from "./deliverable-files";
+import { decodeTextDeliverable, deliverableKind, isImageDeliverableKind, isTextDeliverableKind } from "./deliverable-files";
+import { ImageDeliverableView } from "./ImageDeliverableView";
 import { TextDeliverableView } from "./TextDeliverableView";
 import { listOfficeArtifacts, officeArtifactDownloadUrl, officePreviewUrl } from "./office-artifacts-client";
 import { useInViewOnce } from "./useInViewOnce";
@@ -221,6 +222,8 @@ export function OfficeThumbnail({
   // 文本交付物（.md / .txt / .csv）不上 canvas：取到字就排版开头一段（deliverable-files 头注）。
   const textKind = deliverableKind(path);
   const [text, setText] = useState<string | null>(null);
+  // 图片交付物同理：不上 canvas，取到字节直接画（ImageDeliverableView）。
+  const [imageBytes, setImageBytes] = useState<ArrayBuffer | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
   const drawnRef = useRef(onDrawn);
   drawnRef.current = onDrawn;
@@ -232,7 +235,7 @@ export function OfficeThumbnail({
   useEffect(() => {
     const el = canvas.current;
     // 文本交付物不画 canvas（下面只渲染一个 div），没有 canvas 也得取字。
-    if ((!el && !isTextDeliverableKind(textKind)) || !inView) return;
+    if ((!el && !isTextDeliverableKind(textKind) && !isImageDeliverableKind(textKind)) || !inView) return;
     const ac = new AbortController();
     let disposer: { destroy?: () => void } | null = null;
     setState("loading");
@@ -263,6 +266,12 @@ export function OfficeThumbnail({
       if (ac.signal.aborted) return;
       if (isTextDeliverableKind(textKind)) {
         setText(decodeTextDeliverable(bytes));
+        setState("ok");
+        drawnRef.current?.(true);
+        return;
+      }
+      if (isImageDeliverableKind(textKind)) {
+        setImageBytes(bytes);
         setState("ok");
         drawnRef.current?.(true);
         return;
@@ -347,6 +356,20 @@ export function OfficeThumbnail({
   }, [projectId, path, refreshKey, fit, inView, artifactId]);
 
   if (state === "failed") return null;
+  if (isImageDeliverableKind(textKind)) {
+    return (
+      <div
+        ref={frame}
+        className={fit === "content" ? "flex h-full w-full overflow-hidden" : "flex max-h-64 w-full overflow-hidden"}
+        data-testid="turn-result-office-thumb"
+        data-state={state}
+        data-office-path={path}
+        data-fit={fit}
+      >
+        {imageBytes ? <ImageDeliverableView bytes={imageBytes} path={path} compact /> : null}
+      </div>
+    );
+  }
   if (isTextDeliverableKind(textKind)) {
     return (
       <div

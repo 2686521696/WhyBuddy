@@ -274,6 +274,12 @@ _OFFICE_TYPES = {
     ".md": "text/markdown; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
     ".csv": "text/csv; charset=utf-8",
+    # 图片交付物（deliverable_kind.IMAGE_DELIVERABLE_EXTENSIONS）。同样 attachment + nosniff；右栏取字节自己画。
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
 }
 
 
