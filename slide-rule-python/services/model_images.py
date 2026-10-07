@@ -79,25 +79,34 @@ def end(token: Any) -> None:
         _PENDING.set(None)
 
 
+def prepare(data: Any, label: str) -> tuple[Dict[str, Any], Optional[Dict[str, str]]]:
+    """校验并整理一张图：(给工具回执用的摘要, 待附的图或 None)。主循环（attach）和子代理（services/subagent）共用。"""
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        return {"ok": False, "error": "image_empty"}, None
+    if len(data) > MAX_IMAGE_BYTES:
+        return {"ok": False, "error": "image_too_large", "bytes": len(data)}, None
+    mime = sniff(bytes(data))
+    if mime is None:
+        return {"ok": False, "error": "not_an_image",
+                "human": "这不是 PNG / JPEG / GIF / WEBP 图片。PDF、PPTX 先转成图片（比如每页导出 PNG）再看。"}, None
+    shown, shown_mime, size = _shrink(bytes(data), mime)
+    image = {"label": str(label or "图片")[:200],
+             "url": f"data:{shown_mime};base64," + base64.b64encode(shown).decode("ascii")}
+    summary = {"ok": True, "mime": mime, "bytes": len(data), **({"width": size[0], "height": size[1]} if size else {}),
+               "note": "图附在你下一次思考的消息里，只给这一次：看完把看到的写下来；要再看就再调一次。"}
+    return summary, image
+
+
 def attach(data: Any, label: str) -> Dict[str, Any]:
     """交一张图，下一次问模型时附上。返回给工具回执用的摘要（不含图本身）。"""
     pending = _PENDING.get()
     if pending is None:
         return {"ok": False, "error": "image_viewer_unavailable"}
-    if not isinstance(data, (bytes, bytearray)) or not data:
-        return {"ok": False, "error": "image_empty"}
-    if len(data) > MAX_IMAGE_BYTES:
-        return {"ok": False, "error": "image_too_large", "bytes": len(data)}
-    mime = sniff(bytes(data))
-    if mime is None:
-        return {"ok": False, "error": "not_an_image",
-                "human": "这不是 PNG / JPEG / GIF / WEBP 图片。PDF、PPTX 先转成图片（比如每页导出 PNG）再看。"}
-    shown, shown_mime, size = _shrink(bytes(data), mime)
-    pending.append({"label": str(label or "图片")[:200],
-                    "url": f"data:{shown_mime};base64," + base64.b64encode(shown).decode("ascii")})
-    del pending[:-MAX_PENDING]
-    return {"ok": True, "mime": mime, "bytes": len(data), **({"width": size[0], "height": size[1]} if size else {}),
-            "note": "图附在你下一次思考的消息里，只给这一次：看完把看到的写下来；要再看就再调一次。"}
+    summary, image = prepare(data, label)
+    if image is not None:
+        pending.append(image)
+        del pending[:-MAX_PENDING]
+    return summary
 
 
 def take() -> List[Dict[str, str]]:

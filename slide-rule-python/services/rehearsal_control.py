@@ -1900,8 +1900,9 @@ _TEXT_LINK_HINT = re.compile(r"\.(?:md|txt|csv)\s*>?\)", re.IGNORECASE)
 class _StoreWorkspace:
     """子代理看得见的工作区：源码树 + 产物库（交付文件）。只读，按需读字节。"""
 
-    def __init__(self, store, project_id: str, owner: str):
+    def __init__(self, store, project_id: str, owner: str, sandbox_reader=None):
         self.store, self.project_id, self.owner = store, project_id, owner
+        self.sandbox_reader = sandbox_reader
         self.files = store.read_files(project_id, owner_id=owner)
         self.artifacts = ProjectOfficeArtifactStore(store)
         self.delivered = {row["path"]: row["artifactId"]
@@ -1931,6 +1932,25 @@ class _StoreWorkspace:
         self.cache[rel] = text
         return text
 
+    def read_image(self, path: str):
+        """看图用的原字节：先找已交付的（产物库），再去工程沙盒里读（services/subagent.VIEW_IMAGE_TOOL 头注）。读不到 → None。"""
+        rel = str(path or "")
+        for prefix in ("sandbox:", "/home/user/workspace/", "/home/user/", "./"):
+            if rel.startswith(prefix):
+                rel = rel[len(prefix):]
+        rel = rel.lstrip("/")
+        if rel in self.delivered:
+            try:
+                return self.artifacts.get_bytes(self.project_id, self.delivered[rel], owner_id=self.owner)[1]
+            except Exception:  # noqa: BLE001
+                pass
+        if self.sandbox_reader is None:
+            return None
+        try:
+            return self.sandbox_reader(rel)
+        except Exception:  # noqa: BLE001 — 读不到就说读不到
+            return None
+
 
 def _subagent_workspace(state: V5SessionState):
     tools = _PROJECT_TOOLS.get()
@@ -1939,7 +1959,11 @@ def _subagent_workspace(state: V5SessionState):
     if not project_id or store is None or not owner:
         return None
     try:
-        return _StoreWorkspace(store, project_id, owner)
+        sandboxes = _scratch_sandboxes()
+        reader = (None if sandboxes is None else
+                  lambda rel: read_project_file(sandboxes.provider, project_id, rel,
+                                                max_bytes=model_images.MAX_IMAGE_BYTES))
+        return _StoreWorkspace(store, project_id, owner, sandbox_reader=reader)
     except Exception:  # noqa: BLE001
         return None
 

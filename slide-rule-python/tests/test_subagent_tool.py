@@ -31,7 +31,9 @@ PROMPT = ("你是刚入职的员工，第一次读 output/远程办公制度.doc
 
 
 def _is_subagent_call(kwargs):
-    return {t["function"]["name"] for t in kwargs.get("tools") or []} == SUB_TOOL_NAMES
+    # 子代理的工具：三件只读 + 工作区能读图时的 view_image（services/subagent.subagent_tools）
+    names = {t["function"]["name"] for t in kwargs.get("tools") or []}
+    return SUB_TOOL_NAMES <= names <= SUB_TOOL_NAMES | {"view_image"}
 
 
 def _run(env, monkeypatch, sub_script, *, files=None, put_file=True):
