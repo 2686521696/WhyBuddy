@@ -73,6 +73,18 @@ class ScratchSandboxes:
         self._handles[session_id] = handle
         return handle, created
 
+    def read_file(self, session_id: str, path: str, *, max_bytes: int) -> bytes:
+        """这个会话的临时沙盒里的一份文件。没起过沙盒就说没有——只为读一个文件不起新沙盒。"""
+        with self._lock:
+            handle = self._handles.get(session_id)
+            if handle is None:
+                found = self.provider.find_workspaces(workspace_id=WORKSPACE_PREFIX + session_id)
+                if not found:
+                    raise FileNotFoundError(path)
+                handle = self.provider.connect(found[0], timeout_seconds=SANDBOX_TIMEOUT_SECONDS)
+                self._handles[session_id] = handle
+        return self.provider.read_file_bytes(handle, path, max_bytes=max_bytes)
+
     def run(self, session_id: str, command: str, *, skills: Mapping[str, Mapping[str, str]],
             timeout_seconds: Optional[int] = None) -> Dict[str, Any]:
         command = str(command or "").strip()
@@ -112,3 +124,12 @@ class ScratchSandboxes:
         return {"ok": result.exit_code == 0, "exitCode": result.exit_code, "stdout": stdout, "stderr": stderr,
                 "command": command[:240], **({"outputTruncated": True} if cut_out or cut_err else {}),
                 **({"sandboxStarted": True} if created else {})}
+
+
+def read_project_file(provider: Any, project_id: str, path: str, *, max_bytes: int) -> bytes:
+    """工程沙盒里的一份文件（工作区 id 是 ws-<projectId>，project_store 开租约时这么定的）。只读，没在跑就说没有。"""
+    found = provider.find_workspaces(workspace_id="ws-" + str(project_id))
+    if not found:
+        raise FileNotFoundError(path)
+    handle = provider.connect(found[0], timeout_seconds=SANDBOX_TIMEOUT_SECONDS)
+    return provider.read_file_bytes(handle, path, max_bytes=max_bytes)

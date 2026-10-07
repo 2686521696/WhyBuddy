@@ -75,6 +75,7 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "calculate",
     # 对话档临时沙盒（2026-10-06，services/scratch_sandbox）。READ：沙盒是一次性的，不碰工程、不造五系统模型。
     "sandbox_run",
+    "view_image",
     # 子代理（2026-10-05，services/subagent，对标 Claude Code Task）。READ：只读工作区、不造五系统模型。
     "subagent",
     # 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。

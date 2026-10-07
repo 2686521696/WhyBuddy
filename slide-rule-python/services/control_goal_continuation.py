@@ -441,6 +441,7 @@ READ_ONLY_TOOLS = frozenset({
     "calculate",
     # 对话档临时沙盒：一次性沙盒里的命令，重跑无副作用（services/scratch_sandbox）。
     "sandbox_run",
+    "view_image",
 })
 
 

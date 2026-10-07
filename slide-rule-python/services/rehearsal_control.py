@@ -90,7 +90,8 @@ from services.archetype_legal import (
 )
 from services.subagent import document_text as subagent_document_text, run_subagent
 from services.calculator import calculate, calculation_summary
-from services.scratch_sandbox import ScratchSandboxes
+from services import model_images
+from services.scratch_sandbox import ScratchSandboxes, read_project_file
 from services.project_office_artifacts import (
     ProjectOfficeArtifactStore,
     office_artifact_download_url,
@@ -1290,6 +1291,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 没工作区就没处可读（_subagent_workspace 返回 None）：跟工程工具同一条件，建了工程才摆出来。
     # 对话档临时沙盒（services/scratch_sandbox）：只在没有工程时摆——有工程用 shell_exec；没配 E2B 就不摆。
     "sandbox_run": lambda st: not getattr(st, "projectId", None) and _scratch_sandboxes() is not None,
+    # 有工程读工程沙盒，没工程读对话档临时沙盒——两处都要能起沙盒提供方。
+    "view_image": lambda st: _scratch_sandboxes() is not None,
     "subagent": lambda st: (plan_execution_authorized(st) and _PROJECT_TOOLS.get() is not None
                             and bool(getattr(st, "projectId", None))),
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
@@ -1617,6 +1620,29 @@ def _scratch_skill_packages(state: V5SessionState, command: str) -> Dict[str, Di
 
 
 SKILL_FILE_MAX_CHARS = 40_000
+
+
+def _view_workspace_image(state: V5SessionState, path: str) -> Dict[str, Any]:
+    """view_image：从工程沙盒（有工程）或对话档临时沙盒读一张图，交给 model_images 附到下一次问模型。"""
+    if not path:
+        return {"ok": False, "error": "path_required"}
+    sandboxes = _scratch_sandboxes()
+    if sandboxes is None:
+        return {"ok": False, "error": "sandbox_unavailable"}
+    project_id = getattr(state, "projectId", None)
+    try:
+        if project_id:
+            data = read_project_file(sandboxes.provider, project_id, path, max_bytes=model_images.MAX_IMAGE_BYTES)
+        else:
+            data = sandboxes.read_file(state.sessionId, path, max_bytes=model_images.MAX_IMAGE_BYTES)
+    except FileNotFoundError:
+        return {"ok": False, "error": "file_not_found",
+                "human": f"工作区里没有 {path}（路径相对工作区根，如 output/chart.png；先确认文件真的生成了）。"}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        return {"ok": False, "error": "workspace_read_failed"}
+    return model_images.attach(data, path)
 
 
 def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[str, Any]:
@@ -2468,6 +2494,24 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                     "timeout": {"type": "integer", "minimum": 1, "maximum": 120, "description": "秒，缺省 60"},
                 },
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_image",
+            "description": (
+                "看一张工作区里的图片（PNG / JPEG / GIF / WEBP）：渲染出来的图表、导出的幻灯片页、截图。"
+                "技能要你「渲染出来看 / 截图核对 / 转成图片检查」时用它——没看过就别说「已检查」。"
+                "PDF、PPTX 先转成图片再看。图只在你下一次思考时附上，看完把看到的写下来；要再看就再调一次。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "工作区里的相对路径，如 output/slide-1.png"},
+                },
+                "required": ["path"],
             },
         },
     },
@@ -4908,6 +4952,7 @@ async def _run_control_turn_serial(
     project_token = _PROJECT_TOOLS.set(project_tools)
     # 编辑回执里「和这一轮开始时比的净改动」量的起点（project_tools._net_change_since_turn_start）。
     turn_start_token = TURN_START_REVISION.set(getattr(state, "projectRevision", None))
+    images_token = model_images.begin()   # 这一回合 view_image / 截图待附给模型的图（services/model_images）
     activate_charter_for_run(state, payload)
     try:
         # 抄 grok 第二层重试预算：**一个回合一份，中途永不清零**。
@@ -4942,6 +4987,7 @@ async def _run_control_turn_serial(
         _CONTROL_PAYLOAD.reset(token)
         _PROJECT_TOOLS.reset(project_token)
         TURN_START_REVISION.reset(turn_start_token)
+        model_images.end(images_token)
 
 
 def _open_question_gaps(state: V5SessionState) -> List[str]:
@@ -5762,9 +5808,21 @@ async def _control_llm_loop(
                 # 单发读超时跟着 budget profile 走：对话档 75 秒、工程档 v2 600 秒。
                 # 读完整份源码再想怎么改，45/120 秒都不够（见 ControlBudget
                 # .max_request_seconds 头注，以及 2026-09-15 团长工作台 120.9s）。
-                result = await owned_model_sample(_invoke_control_llm(
-                    messages, tools=offered,
-                    timeout_ms=loop_budget.request_timeout_ms()))
+                # 待看的图只拼进这一次请求，不进 messages（检查点会把 messages 整份落库，services/model_images 头注）。
+                images = model_images.take()
+                request = messages + [model_images.image_message(images)] if images else messages
+                try:
+                    result = await owned_model_sample(_invoke_control_llm(
+                        request, tools=offered,
+                        timeout_ms=loop_budget.request_timeout_ms()))
+                except LlmError as exc:
+                    # 这一发的模型收不了图（换到纯文本兜底模型、网关拒了 image_url）：去掉图重问一次，照实告诉它没看到。
+                    # 增强类（§七）：看图失败不许把整回合拖垮；没带图的失败照旧往外抛。
+                    if not images or getattr(exc, "transient", True):
+                        raise
+                    result = await owned_model_sample(_invoke_control_llm(
+                        messages + [model_images.refused_message(images)], tools=offered,
+                        timeout_ms=loop_budget.request_timeout_ms()))
                 await run_in_threadpool(guard_control_run)
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             capped = await _maybe_over_cap()
@@ -7055,6 +7113,12 @@ async def _dispatch_tool(
         result = await run_in_threadpool(
             sandboxes.run, state.sessionId, command, skills=skills, timeout_seconds=args.get("timeout"))
         yield {"type": "control_tool_result", "tool": name, **result}
+        return
+    if name == "view_image":
+        path = str(args.get("path") or "").strip()
+        yield tool_start_event(name, summary=path[:120])
+        yield {"type": "control_tool_result", "tool": name, "path": path,
+               **await run_in_threadpool(_view_workspace_image, state, path)}
         return
     if name == "calculate":
         result = calculate(args.get("lines"))

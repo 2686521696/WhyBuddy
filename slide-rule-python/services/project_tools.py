@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 from pydantic import ValidationError
 
+from services import model_images
 from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference, verification_with_current_authority
@@ -1772,6 +1773,11 @@ class ProjectTools:
             data = bytes(raw)
         if not isinstance(data, (bytes, bytearray)) or not data:
             return
+        if source == "browser_view":
+            # ⚠ 2026-10-07 全量扫描：这张截图原来只落成结果卡缩略图，模型自己一眼都没看过——技能要的「渲染出来看」
+            #   在这里断掉（services/model_images 头注）。同一张也交给模型，下一次思考时附上。
+            seen = model_images.attach(bytes(data), "browser_view 截图")
+            result["screenshotForModel"] = seen.get("note") if seen.get("ok") else seen.get("error")
         try:
             self.store.put_preview_snapshot(
                 project.projectId,

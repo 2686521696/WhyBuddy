@@ -110,6 +110,8 @@ const READ_TOOLS = new Set([
   "grep",
   "list_dir",
   "glob",
+  // 看图（services/model_images）：读工作区里的一张图给模型看，算「读」。
+  "view_image",
 ]);
 const CREATE_TOOLS = new Set(["project_create"]);
 const PREVIEW_TOOLS = new Set([

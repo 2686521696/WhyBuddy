@@ -649,6 +649,24 @@ class E2BWorkspaceProvider:
         except Exception as exc:
             raise WorkspaceProviderError("artifact_mount_failed") from exc
 
+    def read_file_bytes(self, handle: WorkspaceHandle, path: str, *, max_bytes: int) -> bytes:
+        """工作区里相对路径的一份文件，原样字节（给模型看图用，services/model_images 头注）。只读。"""
+        rel = str(path or "").replace("\\", "/").removeprefix(PROJECT_ROOT + "/")
+        parts = rel.split("/")
+        if (not rel or len(rel) > 240 or rel.startswith("/") or re.search(r"[:\x00-\x1f\x7f]", rel)
+                or any(part in ("", ".", "..") for part in parts)):
+            raise ValueError("workspace_path_invalid")
+        try:
+            data = self._sandbox(handle).files.read(f"{PROJECT_ROOT}/{rel}", format="bytes")
+        except Exception as exc:
+            if any(kind.__name__ == "NotFoundException" for kind in type(exc).__mro__):
+                raise FileNotFoundError(rel) from exc
+            raise WorkspaceProviderError("workspace_read_failed") from exc
+        data = bytes(data or b"")
+        if len(data) > max_bytes:
+            raise ValueError("workspace_file_too_large")
+        return data
+
     def _artifact_io(self, handle, action, **values):
         try:
             payload = json.dumps({"action": action, "root": PROJECT_ROOT, **values})

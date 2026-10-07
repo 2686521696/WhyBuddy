@@ -46,6 +46,8 @@ export const CLOSED_TOOLS = [
   "calculate",
   // 对话档临时沙盒 2026-10-06 加（services/scratch_sandbox；没有工程时跑技能脚本）。
   "sandbox_run",
+  // 看图 2026-10-07 加（services/model_images；技能要「渲染出来看」时用）。
+  "view_image",
   // 加载磁盘技能。skill 是英文常用词，文本抠名必须忽略。
   "skill",
   "rehearse",
@@ -171,7 +173,8 @@ export function isProjectWorkbenchTool(name: unknown): boolean {
     tool === "subagent" ||
     // 2026-10-06 r33：算数（services/calculator）。不进白名单 = 算过也看不见，照旧像心算。
     tool === "calculate" ||
-    tool === "sandbox_run"
+    tool === "sandbox_run" ||
+    tool === "view_image"
   );
 }
 
