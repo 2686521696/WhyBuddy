@@ -42,7 +42,7 @@ _REPO_SKILLS = Path(__file__).resolve().parents[2] / "skills"
 # 自家 SPEC 包不当「写应用」日常默认——目录里标清楚。
 _SLIDERULE_SEED = {
     "slug": "sliderule",
-    "name": "SlideRule 出 SPEC",
+    "name": "sliderule",
     "description": (
         "一句话进、可评审的 SPEC 包出。带闸脚本。这是出规格的包，"
         "不是日常「写应用」的默认技能。"
@@ -549,7 +549,11 @@ class SkillCatalogStore:
         return {
             "id": str(row.get("id") or ""),
             "slug": str(row.get("slug") or ""),
-            "name": str(row.get("name") or ""),
+            # ⚠ 2026-10-07 用户截图（技能页）：卡片标题是「用数据讲清楚」「图表该怎么画」「中文去 AI 腔」这类别名，
+            #   不是技能自己的名字——用户 @ 的、模型 skill() 认的、包里 SKILL.md 写的都是 data-storytelling 这种原名，
+            #   页面上却对不上号。名字一律用技能自己的（slug 即 SKILL.md frontmatter 的 name，种子 24 份逐一核过），
+            #   中文说明留在 description。在读的这一处改：线上库里旧行的 name 列不随版本重写，改种子清单管不到它们。
+            "name": str(row.get("slug") or row.get("name") or ""),
             "description": str(row.get("description") or ""),
             "version": str(row.get("version") or ""),
             "ossKey": str(row.get("oss_key") or ""),

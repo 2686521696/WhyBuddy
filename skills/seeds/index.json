@@ -2,7 +2,7 @@
   "packages": [
     {
       "slug": "frontend-design",
-      "name": "Anthropic 前端界面设计",
+      "name": "frontend-design",
       "description": "做有辨识度的前端界面，躲开千篇一律的 AI 审美。",
       "version": "1.0.0",
       "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     },
     {
       "slug": "theme-factory",
-      "name": "Anthropic 主题样式生成",
+      "name": "theme-factory",
       "description": "给幻灯片、文档、报告套现成主题，也能现做一套。",
       "version": "1.0.0",
       "license": "Apache-2.0",
@@ -22,7 +22,7 @@
     },
     {
       "slug": "doc-coauthoring",
-      "name": "Anthropic 文档协作写作",
+      "name": "doc-coauthoring",
       "description": "带着用户一步步写文档、提案、规格和决策记录。",
       "version": "1.0.0",
       "license": "Apache-2.0",
@@ -32,7 +32,7 @@
     },
     {
       "slug": "internal-comms",
-      "name": "Anthropic 内部沟通写作",
+      "name": "internal-comms",
       "description": "按公司常用格式写状态汇报、事故说明和 FAQ。",
       "version": "1.0.0",
       "license": "Apache-2.0",
@@ -42,7 +42,7 @@
     },
     {
       "slug": "office-skills",
-      "name": "Office 出文件",
+      "name": "office-skills",
       "description": "做 Word、Excel、PPT、PDF：建、改、出表，不靠单独装一套 Office。",
       "version": "1.0.0",
       "license": "MIT",
@@ -52,7 +52,7 @@
     },
     {
       "slug": "pptx-slide-specification",
-      "name": "演示文稿规格",
+      "name": "pptx-slide-specification",
       "description": "先把每一页写清，再画 PPT，别一上来堆标题加条目。",
       "version": "1.0.0",
       "license": "MIT",
@@ -62,7 +62,7 @@
     },
     {
       "slug": "pptx-deck-context",
-      "name": "演示文稿上下文",
+      "name": "pptx-deck-context",
       "description": "听众、时长、场合先钉住，再决定讲什么。",
       "version": "1.0.0",
       "license": "MIT",
@@ -72,7 +72,7 @@
     },
     {
       "slug": "pptx-quality-gates",
-      "name": "演示文稿验收",
+      "name": "pptx-quality-gates",
       "description": "页数、字号、对比，交差前过一遍。",
       "version": "1.0.0",
       "license": "MIT",
@@ -82,7 +82,7 @@
     },
     {
       "slug": "accessibility",
-      "name": "WCAG 无障碍检查",
+      "name": "accessibility",
       "description": "按 WCAG 2.2 查对比、键盘、读屏。有 Lighthouse 就用量，没有就看源码。",
       "version": "1.0.0",
       "license": "MIT",
@@ -92,7 +92,7 @@
     },
     {
       "slug": "systematic-debugging",
-      "name": "系统排查",
+      "name": "systematic-debugging",
       "description": "出 bug 先查根因，再动手改。不许猜着补。",
       "version": "1.0.0",
       "license": "MIT",
@@ -102,7 +102,7 @@
     },
     {
       "slug": "verification-before-completion",
-      "name": "交差先对证据",
+      "name": "verification-before-completion",
       "description": "说做完之前，先把验证命令跑一遍，拿输出再说。",
       "version": "1.0.0",
       "license": "MIT",
@@ -112,7 +112,7 @@
     },
     {
       "slug": "responsive-design",
-      "name": "自适应布局",
+      "name": "responsive-design",
       "description": "用 Grid、Flex 和容器查询把页面铺开。",
       "version": "1.0.0",
       "license": "MIT",
@@ -122,7 +122,7 @@
     },
     {
       "slug": "interaction-design",
-      "name": "交互与动效",
+      "name": "interaction-design",
       "description": "做微交互、动画和手势，别为动而动。",
       "version": "1.0.0",
       "license": "MIT",
@@ -132,7 +132,7 @@
     },
     {
       "slug": "visual-design-foundations",
-      "name": "视觉基础",
+      "name": "visual-design-foundations",
       "description": "字号、颜色、间距和层次先摆正。",
       "version": "1.0.0",
       "license": "MIT",
@@ -142,7 +142,7 @@
     },
     {
       "slug": "avoid-ai-writing",
-      "name": "去掉 AI 腔",
+      "name": "avoid-ai-writing",
       "description": "把机翻腔改成人话，能只标就只标。",
       "version": "1.0.0",
       "license": "MIT",
@@ -152,7 +152,7 @@
     },
     {
       "slug": "kpi-dashboard-design",
-      "name": "指标看板设计",
+      "name": "kpi-dashboard-design",
       "description": "看板要能下钻，数字要能采取行动。",
       "version": "1.0.0",
       "license": "MIT",
@@ -162,7 +162,7 @@
     },
     {
       "slug": "data-storytelling",
-      "name": "用数据讲清楚",
+      "name": "data-storytelling",
       "description": "把洞察写成别人能听懂的故事。",
       "version": "1.0.0",
       "license": "MIT",
@@ -172,7 +172,7 @@
     },
     {
       "slug": "postmortem-writing",
-      "name": "复盘怎么写",
+      "name": "postmortem-writing",
       "description": "不追责，写清根因和下一步。",
       "version": "1.0.0",
       "license": "MIT",
@@ -182,7 +182,7 @@
     },
     {
       "slug": "humanizer-zh",
-      "name": "中文去 AI 腔",
+      "name": "humanizer-zh",
       "description": "润色中文报告、方案、文案里的空话套话和模板腔，保留事实、数字和原本的确定程度。",
       "version": "1.0.0",
       "license": "MIT",
@@ -197,7 +197,7 @@
     },
     {
       "slug": "ui-ux-pro-max",
-      "name": "UI/UX 设计数据库",
+      "name": "ui-ux-pro-max",
       "description": "本地可检索的配色、版式、字体搭配、图表与交互规范；python 脚本直接出一套设计系统，不联网。",
       "version": "1.0.0",
       "license": "MIT",
@@ -216,7 +216,7 @@
     },
     {
       "slug": "financial-analyst",
-      "name": "财务分析",
+      "name": "financial-analyst",
       "description": "财务比率、预算差异、滚动预测、DCF 估值；自带标准库脚本，算完再写进 Excel / Word。",
       "version": "1.0.0",
       "license": "MIT",
@@ -227,7 +227,7 @@
     },
     {
       "slug": "copywriting",
-      "name": "页面文案",
+      "name": "copywriting",
       "description": "着陆页、产品页、定价页的转化文案：先问清页面目的、读者和顾虑，再写标题、卖点和行动按钮。",
       "version": "1.0.0",
       "license": "MIT",
@@ -241,7 +241,7 @@
     },
     {
       "slug": "data-visualization-discipline",
-      "name": "图表该怎么画",
+      "name": "data-visualization-discipline",
       "description": "画图表、看板之前先判断：想让读者得出什么结论、用均值还是中位数、能不能聚合、堆叠还是分组。",
       "version": "1.0.0",
       "license": "MIT",

@@ -7,7 +7,7 @@ vi.mock("@/lib/skill-store-client", () => ({
     {
       id: "sliderule",
       slug: "sliderule",
-      name: "SlideRule 出 SPEC",
+      name: "sliderule",
       description: "出规格，不是写应用默认技能。",
       version: "1.0.0",
       license: "MIT",
@@ -23,7 +23,7 @@ const SAMPLE = [
   {
     id: "sliderule",
     slug: "sliderule",
-    name: "SlideRule 出 SPEC",
+    name: "sliderule",
     description: "出规格，不是写应用默认技能。",
     version: "1.0.0",
     category: "规格",
@@ -32,7 +32,7 @@ const SAMPLE = [
   {
     id: "office-skills",
     slug: "office-skills",
-    name: "Office 出文件",
+    name: "office-skills",
     description: "做 Word、Excel、PPT、PDF。",
     version: "1.0.0",
     category: "办公",
