@@ -4471,6 +4471,23 @@ def _goal_brief(goal: str) -> str:
             "数据和要求以那条为准）")
 
 
+_WEEKDAYS = "一二三四五六日"
+
+
+def _today_fact(now: Optional[datetime] = None) -> str:
+    """今天是哪天（北京时间）。
+
+    ⚠ 2026-10-07 真机 r89 sr-20261007172019-AE820JF286（@postmortem-writing 10 月 6 日订单服务事故复盘）：正文写得很好，
+      交付文件名却是 order-service-incident-postmortem-2024-10-06.md——用户只说了「昨天（10月6日）」，系统提示里一个字的
+      日期都没有，模型拿训练数据里的年份补上了。Claude Code 每一回合都在环境信息里写「Today's date」；写复盘、通知、
+      周报、合同落款的技能都要用到它，这里补同一件事实。
+    """
+    from zoneinfo import ZoneInfo
+    current = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Asia/Shanghai"))
+    return (f"今天是 {current:%Y-%m-%d}（星期{_WEEKDAYS[current.weekday()]}，北京时间）。"
+            "用户说「昨天」「上周」「10月6日」没写年份时，按这个日期推算，别用别的年份。")
+
+
 def _system_prompt(state: V5SessionState) -> str:
     """给控制面模型的那一句。抄 grok：complete the request，不是答题手册。
 
@@ -4488,7 +4505,7 @@ def _system_prompt(state: V5SessionState) -> str:
     from services.product_charter import charter_prompt_block
 
     extra = charter_prompt_block()
-    facts: List[str] = []
+    facts: List[str] = [_today_fact()]
     interview = [
         str(row.get("text") or "")
         for row in (getattr(state, "controlTranscript", None) or [])
