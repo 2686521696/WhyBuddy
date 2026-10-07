@@ -1,3 +1,4 @@
+import { questionnaireOutcomeText } from "./questionnaire-labels";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
 import type { TurnStep, UiTurn } from "./types";
@@ -132,6 +133,9 @@ function sameRestoredTurn(a: string, b: string): boolean {
 }
 
 function transcriptUserAnswer(row: Record<string, unknown>): string {
+  // 「别再问了」「你自己定」：气泡跟实时同一句（questionnaire-labels 头注）；日志行的 text 是写给模型的回喂。
+  const byOutcome = questionnaireOutcomeText(row.outcome);
+  if (byOutcome) return byOutcome;
   const answers = row.answers;
   if (answers && typeof answers === "object" && !Array.isArray(answers)) {
     const parts = Object.values(answers).flatMap(value =>

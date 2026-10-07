@@ -29,6 +29,7 @@ import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { narrationTurnIdFor, stampTurnNarration } from "./turn-narration";
 import { deriveTurnsFromState } from "./derive-persisted-turn";
+import { questionnaireOutcomeText, SKIP_INTERVIEW_TEXT } from "./questionnaire-labels";
 import {
   saveActiveRun,
   loadActiveRun,
@@ -689,10 +690,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             .join("、")}`
         );
         human = parts.length ? parts.join("；") : "（没有选）";
-      } else if (result.outcome === "cancelled") {
-        human = "这些我不答，你自己定";
       } else {
-        human = "别再问了，直接开始";
+        human = questionnaireOutcomeText(result.outcome) || SKIP_INTERVIEW_TEXT;
       }
       const toolAnswer: QueuedToolAnswer = {
         kind: "ask_user",
