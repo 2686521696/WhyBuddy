@@ -157,16 +157,28 @@ async def run_subagent(ask: Ask, workspace: Workspace, prompt: str, files: Optio
     """跑一个子代理到它交回结论（或用完轮数）。ask(messages, tools) 是控制面问模型的那一发。"""
     attached: Dict[str, str] = {}
     missing: List[str] = []
+    images: List[Dict[str, str]] = []          # 这一轮要附给它看的图：只拼进下一次请求，不进 messages（model_images 头注）
+    can_view = callable(getattr(workspace, "read_image", None))
     for path in (files or [])[:5]:
         text = workspace.read_text(str(path))
-        if text is None:
-            missing.append(str(path))
-        else:
+        if text is not None:
             attached[str(path)] = text
+            continue
+        # ⚠ 2026-10-07 真机 r93（r88 会话追问「派子代理只看遮字图」）：主代理把那张 PNG 放进 files 预先附上，这里只按
+        #   正文读——读不出来记成 filesMissing；子代理随后自己 view_image 看到了。回执里同一张图既在 filesRead 又在
+        #   filesMissing，主代理会以为它没看到。图片按图附上，第一次就给它看。
+        image = None
+        if can_view:
+            data = workspace.read_image(str(path))
+            _summary, image = model_images.prepare(data, str(path)) if data is not None else ({}, None)
+        if image is not None:
+            images.append(image)
+            attached[str(path)] = "（这是一张图片，已附在下面给你看。）"
+        else:
+            missing.append(str(path))
     messages = subagent_messages(prompt, attached)
     read: List[str] = list(attached)
     tools = subagent_tools(workspace)
-    images: List[Dict[str, str]] = []          # 这一轮要附给它看的图：只拼进下一次请求，不进 messages（model_images 头注）
     for round_index in range(1, MAX_ROUNDS + 1):
         request = messages + [model_images.image_message(images)] if images else messages
         try:

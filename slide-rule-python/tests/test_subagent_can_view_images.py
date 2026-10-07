@@ -96,3 +96,37 @@ def test_a_model_that_cannot_take_images_is_told(env, monkeypatch):
     assert _images(sub_calls[1]) and not _images(sub_calls[2])
     assert "没能给你看" in json.dumps(sub_calls[2][-1], ensure_ascii=False)
     assert back.get("ok") is True
+
+
+def test_an_image_named_up_front_is_shown_not_reported_missing(env, monkeypatch):
+    """r93：主代理把图放进 files 预先附上——第一次就带着图，不进 filesMissing。"""
+    project = create_session_project(env.project, env.state.sessionId, owner_id=env.owner, approval_ref=env.ref,
+                                     template_id="react-vite")
+    ProjectOfficeArtifactStore(env.project).put(project.projectId, owner_id=env.owner, path=MASKED, data=_png())
+    monkeypatch.setattr(control, "_scratch_sandboxes", lambda: None)
+    sub_calls, main_calls = [], []
+    main = iter([llm_tool("subagent", {"description": "独立复核", "prompt": PROMPT, "files": [MASKED]}, call_id="call-sub"),
+                 llm_text("好。")])
+    sub = iter([llm_text("浅灰底，一张图。")])
+
+    async def model(messages, **kwargs):
+        names = {t["function"]["name"] for t in kwargs.get("tools") or []}
+        if names <= {"read_file", "list_files", "search_files", "view_image"} and "read_file" in names:
+            sub_calls.append(json.loads(json.dumps(messages, ensure_ascii=False)))
+            return next(sub)
+        main_calls.append(json.loads(json.dumps(messages, ensure_ascii=False)))
+        return next(main)
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+    record = env.store.submit(env.state.sessionId, env.owner, "sub-img-up", six_fields(env.state.sessionId, "复核"))
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            return await settled(service, record["runId"])
+        finally:
+            await service.shutdown()
+    asyncio.run(run())
+    assert len(_images(sub_calls[0])) == 1
+    back = json.loads(next(m for m in main_calls[-1] if m.get("tool_call_id") == "call-sub")["content"])
+    assert MASKED in back["filesRead"] and MASKED not in back.get("filesMissing", [])
