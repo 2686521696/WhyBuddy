@@ -14,7 +14,9 @@ import pytest
 from services.project_creation import load_project_template
 from services.project_tools import command_receipt_from, operation_snapshot
 
-R105_COMMAND = "npm test"          # 那一轮原样
+# 真机操作记录里存的原样（r106 pop-c9ccf518af5041838b6051742f2b8fa3）：模型传 `npm test`，托管安装器只存一个词。
+#   第一版判据喂 "npm test"，全绿，真机一次没生效。
+R105_COMMAND = "test"
 R105_LOG = "✔ successive button actions advance the displayed count (1.356849ms)\nℹ tests 2\nℹ pass 2\nℹ fail 0\n"
 SAYS = "工程模板自带的、一字没改"
 
@@ -72,6 +74,11 @@ def test_tests_written_for_the_change_get_no_such_line(change):
     else:
         files["tests/signup.test.mjs"] = "import test from 'node:test';\ntest('tokens', () => {});\n"
     assert SAYS not in _hint(R105_COMMAND, files)
+
+
+def test_a_raw_test_command_counts_too():
+    """不走托管安装器的写法（cd … && npx vitest / node --test）也认。"""
+    assert SAYS in _hint("cd /home/user/workspace && node --test tests/*.test.mjs", _r105_tree())
 
 
 def test_the_tasks_template_counts_too():

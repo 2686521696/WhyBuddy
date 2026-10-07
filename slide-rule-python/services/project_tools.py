@@ -1268,7 +1268,12 @@ def _template_tests_sentence(store, operation_id, owner, command) -> str:
       绿灯本身是真的，错在没人告诉模型它绿的是什么（CLAUDE.md §三「接口返回 200 ≠ 它真的做了事」）。
     增强类（§七 fail-open）：读不到源码、认不出命令都当没有。
     """
-    if not isinstance(command, str) or not _TEST_RUN.search(command) or store is None or not owner:
+    # ⚠ 第一版只认 `npm test` 这类字面——真机 r106（同一会话，pop-c9ccf518af5041838b6051742f2b8fa3）模型传的是
+    #   `npm test`，可它走托管安装器（project_runtime_worker.PROJECT_COMMANDS），操作记录里存的命令就一个词 `test`。
+    #   判据喂的是我拼的 "npm test"，单测全绿，真机一次没说（CLAUDE.md §一之二）。
+    if not isinstance(command, str) or store is None or not owner:
+        return ""
+    if command.strip() != "test" and not _TEST_RUN.search(command):
         return ""
     try:
         operation = store.get_operation(operation_id, owner_id=owner)
