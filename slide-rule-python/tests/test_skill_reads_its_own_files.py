@@ -93,3 +93,17 @@ def test_the_skill_message_ends_with_checking_its_own_must_haves():
     body_end = message.rindex("</skill>")
     tail = message[body_end - 200:body_end]
     assert "CRITICAL" in tail and "calculate" in tail and "sandbox_run" in tail
+
+
+def test_reading_a_package_file_is_not_opening_another_skill():
+    """⚠ 2026-10-07 真机 r52（没 @ 技能，新员工入职须知 Word）：skill(office-skills, file=resources/docx.md) 的开场摘要
+    「office-skills · resources/docx.md」被当成技能名，计划 openedSkills 里多出 office-skills-resources-docx-md。
+    喂那一场写计划前的 controlTranscript 原样行（fixtures/r52_skill_file_read_transcript.json）。"""
+    from pathlib import Path
+    from models.v5_state import V5SessionState
+    rows = json.loads((Path(__file__).parent / "fixtures" / "r52_skill_file_read_transcript.json").read_text("utf-8"))["rows"]
+    assert any(r.get("tool") == "skill" and " · " in str(r.get("summary")) for r in rows)   # 前提：真机那一场确实读过包里文件
+    state = V5SessionState(sessionId="sr-r52", ownerId="alice", goal={"text": "入职须知"}, controlTranscript=rows)
+    expected = {"office-skills"}            # 夹具截到第一次写计划之前：那时只开了 office-skills（另一份在写计划之后才开）
+    assert control._skills_opened_since_user_turn(state) == expected
+    assert control._skills_loaded_this_turn(state) == expected

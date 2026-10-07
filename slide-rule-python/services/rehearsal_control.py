@@ -761,6 +761,19 @@ def _recall_note_fits(query: str, task: str, note: str) -> bool:
     return False
 
 
+def _opened_skill_slug(summary: Any) -> str:
+    """轨迹里一行 skill 开场 → 打开的技能 slug。读包里文件（skill(file=…)，摘要「名字 · 路径」）不是打开技能 → ""。
+
+    ⚠ 2026-10-07 真机 r52 sr-20261007065206-968KDGMNFE（没 @ 技能，「新员工入职须知 Word」）：模型 skill(office-skills,
+      file=resources/docx.md)，开场摘要「office-skills · resources/docx.md」被这里规范化成 office-skills-resources-docx-md，
+      进了计划的 openedSkills——一个不存在的技能名，后面带技能、技能承诺都拿它当技能。读文件不是开技能。
+    """
+    text = str(summary or "")
+    if " · " in text:
+        return ""
+    return normalize_skill_name(text)
+
+
 def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
     """本回合已经成功加载过的技能 slug。
 
@@ -780,7 +793,7 @@ def _skills_loaded_this_turn(state: V5SessionState) -> set[str]:
             pending = ""
             continue
         if kind == "tool_start" and row.get("tool") == "skill":
-            pending = normalize_skill_name(str(row.get("summary") or ""))
+            pending = _opened_skill_slug(row.get("summary"))
             continue
         if kind == "tool_result" and row.get("tool") == "skill":
             slug = pending
@@ -801,7 +814,7 @@ def _skills_opened_since_user_turn(state: V5SessionState) -> set[str]:
         if kind == "turn":
             opened, pending = set(), ""
         elif kind == "tool_start" and row.get("tool") == "skill":
-            pending = normalize_skill_name(str(row.get("summary") or ""))
+            pending = _opened_skill_slug(row.get("summary"))
         elif kind == "tool_result" and row.get("tool") == "skill":
             if pending and row.get("ok") is not False:
                 opened.add(pending)
