@@ -25,7 +25,9 @@ from services import model_images
 from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference, verification_with_current_authority
-from services.project_creation import create_session_project, load_authorized_session, sync_session_project
+from services.project_creation import (
+    create_session_project, load_authorized_session, load_project_template, sync_session_project,
+)
 from services.project_manifest import (
     canonical_json, content_hash, file_content_matches, file_name_matches,
     file_tree_matches, kernel_str_replace_changes, kernel_write_changes,
@@ -1236,7 +1238,50 @@ def command_receipt_from(adapter, operation_id):
     unlocked = _lockfile_out_of_sync_sentence(store, operation_id, owner, snap.get("errorCode"))
     if unlocked and isinstance(receipt, dict):
         receipt["hint"] = unlocked + str(receipt.get("hint") or "")
+    stock = _template_tests_sentence(store, operation_id, owner, command or snap.get("command"))
+    if stock and isinstance(receipt, dict):
+        receipt["hint"] = stock + str(receipt.get("hint") or "")
     return receipt
+
+
+_TEST_RUN = re.compile(r"(?:^|[\s;&|(])(?:(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b|node\s+--test\b|npx\s+vitest\b|vitest\b)")
+_TEST_FILE = re.compile(r"(?:^|/)(?:tests?|__tests__)/|\.(?:test|spec)\.[cm]?[jt]sx?$")
+
+
+def _stock_test_bodies() -> set[str]:
+    bodies: set[str] = set()
+    for template_id in ("react-vite", "react-vite-tasks"):
+        try:
+            files, _version = load_project_template(template_id)
+        except Exception:
+            continue
+        bodies.update(body for name, body in files.items() if _TEST_FILE.search(name))
+    return bodies
+
+
+def _template_tests_sentence(store, operation_id, owner, command) -> str:
+    """跑的测试全是模板自带、一字没改的：照实说它测的是模板，不是这次的改动。
+
+    ⚠ 2026-10-07 真机 r105 sr-20261007220722-0PQCTHFM8K（@visual-design-foundations 读书会报名页 token）：模型把
+      react-vite 模板的 index.html 换成静态报名页，tests/counter.test.mjs 一字没动——测的是模板的 increment()。
+      收尾「核验结果：npm test：2 项通过」，跟对比度 14.26:1 并排当证据。两条测试测的是一个页面上已经不存在的计数器。
+      绿灯本身是真的，错在没人告诉模型它绿的是什么（CLAUDE.md §三「接口返回 200 ≠ 它真的做了事」）。
+    增强类（§七 fail-open）：读不到源码、认不出命令都当没有。
+    """
+    if not isinstance(command, str) or not _TEST_RUN.search(command) or store is None or not owner:
+        return ""
+    try:
+        operation = store.get_operation(operation_id, owner_id=owner)
+        files = store.read_files(operation.projectId, operation.expectedRevision, owner_id=owner)
+    except Exception:
+        return ""
+    tests = sorted(name for name in files if _TEST_FILE.search(name))
+    stock = _stock_test_bodies()
+    if not tests or not stock or any(files[name] not in stock for name in tests):
+        return ""
+    named = "、".join(tests[:8])
+    return (f"这次跑的测试（{named}）是工程模板自带的、一字没改，测的是模板原来的示例代码，不是这次的改动。"
+            "它通过不能算这次改动的验证；要拿测试作证据，先写测这次改动的测试。")
 
 
 _LOCK_OUT_OF_SYNC = re.compile(r"can only install packages when your package\.json and package-lock\.json")
