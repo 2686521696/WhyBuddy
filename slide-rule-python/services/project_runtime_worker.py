@@ -63,6 +63,8 @@ from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, Work
 from services.skill_hydrate import hydrate_owner_into
 
 logger = logging.getLogger(__name__)
+#: 身份库连续查不到多久才停掉正在跑的运行时（_RuntimeTask._authorize_actor 头注）。
+_ACTOR_UNAVAILABLE_GRACE_SECONDS = 60
 TERMINAL = {"completed", "cancelled", "failed"}
 PROJECT_COMMANDS = {"check", "build", "test"}
 
@@ -485,7 +487,34 @@ class _RuntimeTask:
             raise _Shutdown()
         if self.runtime.expiresAt is not None and time.time() >= self.runtime.expiresAt:
             raise _Expired()
-        authorize_project_actor(self.owner_id)
+        self._authorize_actor()
+
+    def _authorize_actor(self):
+        """每一轮都确认账号还有权限。查不到（身份库抖动）给一个宽限窗口，吊销照旧当场停。
+
+        ⚠ 2026-10-08 用户本机打开 sr-20261007224601-HQHS3XKPBX（@interaction-design 播客收藏按钮）的预览：自动唤醒的
+          runtime.start pop-5e230d6f…、点「重新打开」的 pop-1c16d922…，两次都 failed / project_actor_unavailable——后一次
+          Vite 已经 ready、预览授权也发了，三分多钟后被掐。右栏「预览页面没有回应」。同一晚这台网关反复回 db-api http 500。
+          check() 每轮（最快 0.12s）查一次身份库，09-16 只修了「查到空」（复查一次），「查库抛错」这条一次就杀。
+          连续不可用不到 _ACTOR_UNAVAILABLE_GRACE_SECONDS 只记日志、这一轮放过；超过还是停（fail-closed 不变）。
+          浏览器每次进预览，网关那一侧另有独立的 authorize（routes/project_preview），不受这里影响。
+        """
+        try:
+            authorize_project_actor(self.owner_id)
+        except PermissionError as exc:
+            if str(exc) != "project_actor_unavailable":
+                raise
+            now = time.time()
+            since = getattr(self, "_actor_unavailable_since", None) or now
+            self._actor_unavailable_since = since
+            if now - since >= _ACTOR_UNAVAILABLE_GRACE_SECONDS:
+                logger.warning("project actor lookup unavailable for %.0fs, stopping runtime owner=%s",
+                               now - since, self.owner_id)
+                raise
+            logger.warning("project actor lookup unavailable (%.0fs so far), keeping runtime owner=%s",
+                           now - since, self.owner_id)
+            return
+        self._actor_unavailable_since = None
 
     def sleep(self, *, tight=False):
         # Console typing is ~50 cps. A 2s poll turns that into a jump. 120ms

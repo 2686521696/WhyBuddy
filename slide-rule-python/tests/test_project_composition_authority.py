@@ -192,6 +192,10 @@ def test_identity_lookup_outage_denies_preview_without_leaking_and_cleans_runtim
     audience, browser = grant(world, operation)
     def unavailable(_owner):
         raise RuntimeError("private-database-connection-token")
+    # 持续查不到才清运行时（2026-10-08 起给 60 秒宽限，project_runtime_worker._authorize_actor 头注）；
+    # 这里钉的是「持续故障照样拒绝、照样清理、不漏凭据」，把宽限调小来验。
+    from services import project_runtime_worker
+    monkeypatch.setattr(project_runtime_worker, "_ACTOR_UNAVAILABLE_GRACE_SECONDS", 0.5)
     monkeypatch.setattr(world.accounts, "get_by_id_for_auth", unavailable)
     denied = authority(world, "authorize", {"role": "browser", "token": browser["token"], "audience": audience})
     assert denied.status_code == 403

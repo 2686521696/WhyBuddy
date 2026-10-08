@@ -168,3 +168,69 @@ def test_查到的用户仍然走缓存(monkeypatch):
     store.get_by_id_for_auth("owner-2")
     assert hits["n"] == 1, "命中的用户没走缓存，5 秒 TTL 那套让步白做了"
     identity_store.invalidate_auth_cache()
+
+
+# ── 运行时每轮的那道检查：查库抛错给宽限，不是一次就杀 ─────────────────────────
+#
+# ⚠ 2026-10-08 用户本机预览 pop-5e230d6f… / pop-1c16d922…（sr-20261007224601-HQHS3XKPBX）：两次都
+#   failed / project_actor_unavailable，后一次 Vite 已 ready、预览授权已发（project_runtime_worker._authorize_actor 头注）。
+#   走真的 _RuntimeTask.check 那一段；身份库换成按脚本出错的替身。
+
+from services import project_runtime_worker as worker
+
+
+def _task(owner="owner-1"):
+    """真 check() 要的几样：心跳、操作没被取消、没在关机、没过期。"""
+    task = SimpleNamespace(
+        owner_id=owner,
+        heartbeat=SimpleNamespace(check=lambda: None),
+        operation=lambda: SimpleNamespace(cancelRequested=False),
+        supervisor=SimpleNamespace(_stop=SimpleNamespace(is_set=lambda: False)),
+        runtime=SimpleNamespace(expiresAt=None),
+    )
+    task._authorize_actor = lambda: worker._RuntimeTask._authorize_actor(task)
+    return task
+
+
+def _check(task):
+    worker._RuntimeTask.check(task)
+
+
+def test_身份库抖一下不再掐掉正在跑的预览(internal_rollout, monkeypatch, caplog):
+    script = iter([RuntimeError("db-api http 500"), RuntimeError("db-api http 500"), None])
+
+    def lookup(owner):
+        step = next(script)
+        if step is not None:
+            raise step
+        return _user(owner)
+    monkeypatch.setattr(project_actor_access, "get_identity_store",
+        lambda: SimpleNamespace(get_by_id_for_auth=lookup, get_by_id=lookup))
+    task = _task()
+    with caplog.at_level(logging.WARNING):
+        _check(task); _check(task); _check(task)               # 两轮查不到、第三轮好了——运行时一直活着
+    assert task._actor_unavailable_since is None
+    assert "keeping runtime" in caplog.text
+
+
+def test_一直查不到超过宽限还是停(internal_rollout, monkeypatch):
+    """反向：不是无限放行——fail-closed 照旧，只是不再一次就杀。"""
+    def boom(owner):
+        raise RuntimeError("db-api http 500")
+    monkeypatch.setattr(project_actor_access, "get_identity_store",
+        lambda: SimpleNamespace(get_by_id_for_auth=boom, get_by_id=boom))
+    clock = [1000.0]
+    monkeypatch.setattr(worker.time, "time", lambda: clock[0])
+    task = _task()
+    _check(task)
+    clock[0] += worker._ACTOR_UNAVAILABLE_GRACE_SECONDS
+    with pytest.raises(PermissionError, match="project_actor_unavailable"):
+        _check(task)
+
+
+def test_真吊销照旧当场停_不吃宽限(internal_rollout, monkeypatch):
+    """反向：宽限只给「查不到」，不给「查到了、没权限」（2026-09-13 那条性质）。"""
+    disabled = _user("owner-1", is_active=False)
+    _store(monkeypatch, auth_returns=lambda o, n: disabled, by_id_returns=lambda o, n: disabled)
+    with pytest.raises(PermissionError, match="project_actor_access_revoked"):
+        _check(_task())
