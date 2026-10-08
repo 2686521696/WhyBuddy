@@ -8,7 +8,6 @@ import {
   latestPlanDeliverableKind,
   planDeliverableKind,
   planWrittenHasDeliverableKind,
-  projectTemplateForDeliverable,
 } from "../deliverable-kind";
 import { chapterTitleForRows } from "../session-story";
 import {
@@ -35,12 +34,6 @@ describe("deliverableKind 缺省网页，办公文件另算", () => {
       ])
     ).toBe(OFFICE_FILE);
     expect(latestPlanDeliverableKind([])).toBe(WEB_APP);
-  });
-
-  it("办公文件前端仍可 POST react-vite，存量网页会话仍默认 tasks", () => {
-    expect(projectTemplateForDeliverable(OFFICE_FILE)).toBe("react-vite");
-    expect(projectTemplateForDeliverable(WEB_APP)).toBe("react-vite-tasks");
-    expect(projectTemplateForDeliverable(undefined)).toBe("react-vite-tasks");
   });
 
   it("plan_written 缺键不是合同，有 office-file / web-app 才算", () => {
@@ -105,13 +98,7 @@ describe("办公文件不把 Vite 预览叫醒当交差", () => {
     expect(shouldAutoOpenPreview(open)).toBe(true);
   });
 
-  it("自动创建和预览叫醒都读交付物类别，不许再写死 tasks", () => {
-    const hook = readFileSync(
-      resolve(__dirname, "../useSlideRuleSession.ts"),
-      "utf8"
-    ).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    expect(hook).toMatch(/projectTemplateForDeliverable/);
-    expect(hook).toMatch(/latestPlanDeliverableKind/);
+  it("预览叫醒读交付物类别（自动创建不挑模板，见 project-entry-session 的真钩子判据）", () => {
     const surface = readFileSync(
       resolve(__dirname, "../project-runtime/SandboxPreviewSurface.tsx"),
       "utf8"

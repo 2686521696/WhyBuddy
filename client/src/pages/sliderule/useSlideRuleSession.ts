@@ -7,10 +7,6 @@ import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { controlStopLine } from "./control-stop";
 import { visiblePlanTodo, visibleSkillStages } from "./plan-todo-dock";
-import {
-  latestPlanDeliverableKind,
-  projectTemplateForDeliverable,
-} from "./deliverable-kind";
 import { projectCreateFailureText } from "./project-create-error";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
@@ -3384,9 +3380,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const createProjectFromApprovedPlan = useCallback(async (templateId?: "react-vite" | "react-vite-tasks") => {
     if (isRunningRef.current || projectCreationRef.current) return false;
     const state = sessionStateRef.current;
-    const chosenTemplate = templateId ?? projectTemplateForDeliverable(
-      latestPlanDeliverableKind(state.controlTranscript as Array<Record<string, unknown>> | undefined)
-    );
     const sid = state.sessionId || sessionId;
     if (!sessionHydrated || sid !== projectEntrySessionRef.current) return false;
     if (state.runtimeKind === "project") return Boolean(state.projectId && state.projectRevision);
@@ -3408,7 +3401,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalRef, templateId: chosenTemplate }),
+        // ⚠ 2026-10-08 真机 sr-20261008144247-5MEAE5TMRS（读书打卡）：前端这里按交付类别把**每个**网页计划都
+        //   写成 react-vite-tasks。批准一落、自动创建先于模型的 project_create 把工程建成任务清单模板，
+        //   模型那句 project_create(react-vite) 只拿回已有工程——验收锁在任务清单套件（登录、增改筛任务），
+        //   读书打卡写得再好也交不了，两次独立验收都卡在「登录/API 超时」。2026-09-25 模型那半已改成
+        //   「react-vite 才是默认」，这一半没改。模板缺省只在服务端一处（CreateProjectRequest），这里不替它挑。
+        body: JSON.stringify(templateId ? { approvalRef, templateId } : { approvalRef }),
       });
       if (!response.ok) {
         let detail = "工程创建未完成，请刷新状态后重试。";

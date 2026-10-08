@@ -49,9 +49,3 @@ export function isOfficeFileDeliverable(kind: string | undefined | null): boolea
   return kind === OFFICE_FILE;
 }
 
-/** 办公文件前端仍可 POST react-vite；host 按批准计划覆盖成空工作区。 */
-export function projectTemplateForDeliverable(
-  kind: string | undefined | null
-): "react-vite" | "react-vite-tasks" {
-  return isOfficeFileDeliverable(kind) ? "react-vite" : "react-vite-tasks";
-}

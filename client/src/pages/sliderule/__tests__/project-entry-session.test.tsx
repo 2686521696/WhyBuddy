@@ -7,6 +7,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createHash, webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialSessionState } from "@/lib/sliderule-runtime";
@@ -500,14 +502,13 @@ describe("approved project entry through the session hook", () => {
     expect(result).toBe(true);
     expect(posts).toEqual([{ sid: SID, body: {
       approvalRef: `${PLAN.planId}:${PLAN.revision}:${createHash("sha256").update(PLAN.planContent, "utf8").digest("hex")}`,
-      templateId: "react-vite-tasks",
     } }]);
     expect(current.sessionState).toMatchObject({ sessionId: SID, runtimeKind: "project", projectId: PROJECT.projectId, projectRevision: PROJECT.currentRevision });
     expect(container.textContent).toBe("project");
     expect(current.canCreateProject).toBe(false);
   });
 
-  it("办公文件计划 POST react-vite，不再默认任务清单", async () => {
+  it("办公文件计划不带模板，服务端按批准计划覆盖成办公工作区", async () => {
     const office = approvedState();
     office.controlTranscript = office.controlTranscript!.map(row =>
       row.kind === "plan_written" ? { ...row, deliverableKind: "office-file" } : row
@@ -515,7 +516,32 @@ describe("approved project entry through the session hook", () => {
     saved.set(SID, office);
     await mount();
     await act(async () => { await current.createProjectFromApprovedPlan(); });
-    expect(posts[0]?.body.templateId).toBe("react-vite");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.body).not.toHaveProperty("templateId");
+  });
+
+  // ⚠ 2026-10-08 真机 sr-20261008144247-5MEAE5TMRS（读书打卡）：批准一落，前端自动创建抢在模型前面，
+  //   把每个网页计划都建成 react-vite-tasks——验收锁在任务清单套件，读书打卡永远交不了。
+  //   计划行照真机那一发的形状：write_plan 落的 plan_written 带 deliverableKind: "web-app"。
+  it("网页计划自动创建不替服务端挑模板，更不挑任务清单", async () => {
+    const web = approvedState();
+    web.controlTranscript = web.controlTranscript!.map(row =>
+      row.kind === "plan_written" ? { ...row, deliverableKind: "web-app" } : row
+    );
+    saved.set(SID, web);
+    await mount();
+    await act(async () => { await current.createProjectFromApprovedPlan(); });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.body).not.toHaveProperty("templateId");
+    // 上面那一发就是自动创建真正发的那一发：工作台不带参数叫它（带了参数，这条判据就测错了对象）。
+    const page = readFileSync(resolve(__dirname, "../../SlideRule.tsx"), "utf-8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
+    expect(page).toContain("onCreateProject: () => void createProjectFromApprovedPlan(),");
+  });
+
+  it("调用方明说要哪个模板，照传", async () => {
+    await mount();
+    await act(async () => { await current.createProjectFromApprovedPlan("react-vite-tasks"); });
+    expect(posts[0]?.body.templateId).toBe("react-vite-tasks");
   });
 
   it.each([
