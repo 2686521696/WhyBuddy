@@ -307,3 +307,106 @@ def test_without_a_dsn_stdout_is_untouched(inbox):
     before = sys.stdout
     init_error_reporting("python", env={})
     assert sys.stdout is before
+
+
+# ── 后台扫描循环：一次断网成一条问题，不是每一跳一条（2026-10-08）──────────────────────────────
+# ⚠ 接上之后的头一条真问题：用户本机连共享库网关 TLS 断了 36 秒，控制回合扫描循环每 1.5 秒报一次，25 个事件；
+#   断 30 分钟就是一千多个。成对那条（工程运行时扫描）反过来，断一天也没有一条问题（OutageLog 头注）。
+
+def _real_scan_failure():
+    """真机那一条事件的异常链原样：TLS 断 → 工程库不可用 → 控制回合库不可用。"""
+    import httpx
+
+    from services.control_run_store import ControlRunUnavailable
+    from services.project_store import ProjectStoreUnavailable
+    try:
+        try:
+            try:
+                raise httpx.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)")
+            except httpx.ConnectError as exc:
+                raise ProjectStoreUnavailable("project_store_unavailable") from exc
+        except ProjectStoreUnavailable as exc:
+            raise ControlRunUnavailable("control_run_store_unavailable") from exc
+    except ControlRunUnavailable as exc:
+        return exc
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_36_second_blip_is_a_warning_not_25_issues(inbox):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    clock = _Clock()
+    outage = error_reporting.OutageLog(PRODUCER, "control run scan", clock=clock)
+    for _ in range(25):                                   # 真机：08:38:28 → 08:39:04，每 1.5 秒一跳
+        outage.failed(_real_scan_failure())
+        clock.now += 1.5
+    outage.ok()
+    _flush()
+    assert inbox.events == []
+    warned = [e["body"] for e in inbox.logs if e["level"] == "warn"]
+    assert len(warned) == 1 and "control run scan unavailable: ControlRunUnavailable" in warned[0], warned
+
+
+def test_a_real_outage_is_one_issue_with_the_whole_chain_then_a_recovery_line(inbox):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    clock = _Clock()
+    outage = error_reporting.OutageLog(PRODUCER, "control run scan", clock=clock)
+    for _ in range(200):                                  # 5 分钟
+        outage.failed(_real_scan_failure())
+        clock.now += 1.5
+    outage.ok()
+    _flush()
+    [event] = inbox.events
+    assert event["logentry"]["message"] == "%s unavailable for over %ds"
+    types = [v["type"] for v in event["exception"]["values"]]
+    assert {"ConnectError", "ProjectStoreUnavailable", "ControlRunUnavailable"} <= set(types), types
+    assert any("recovered after" in e["body"] and "200 failed scans" in e["body"] for e in inbox.logs)
+
+
+def test_the_runtime_scan_loop_reports_a_long_outage_once(inbox, monkeypatch, tmp_path):
+    """真 ProjectRuntimeSupervisor._scan_loop、真工程库，只让扫描那一查一直失败；拨钟过一分钟 → 恰好一条问题（原来是零条）。"""
+    import threading
+    from types import SimpleNamespace
+
+    from services.project_runtime_worker import ProjectRuntimeSupervisor
+    from services.project_store import ProjectStore
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    clock = _Clock()
+    monkeypatch.setattr(error_reporting, "time", SimpleNamespace(monotonic=clock))
+    calls, enough = [], threading.Event()
+    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'runtime.db'}")
+
+    def down(limit):
+        calls.append(1)
+        clock.now += 1.5
+        if len(calls) >= 80:
+            enough.set()
+        raise _real_scan_failure()
+
+    monkeypatch.setattr(store, "list_runnable_operations", down)
+    supervisor = ProjectRuntimeSupervisor(store, lambda: None, authorizer=lambda *a: None, poll_interval=0.01)
+    supervisor.start()
+    try:
+        assert enough.wait(10)
+    finally:
+        supervisor.shutdown(timeout=5)
+    _flush()
+    assert len(inbox.events) == 1, [e.get("logentry") for e in inbox.events]
+    assert inbox.events[0]["logentry"]["params"][0] == "project runtime scan"
+
+
+def test_the_control_scan_loop_uses_it_too():
+    """§四 成对：控制回合那条循环也接上了，没有再逐跳 log.exception。"""
+    import inspect
+
+    from services import control_run_service
+    src = inspect.getsource(control_run_service.ControlRunService._scan)
+    code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+    assert "outage.failed(exc)" in code and "outage.ok()" in code
+    assert "log.exception" not in code

@@ -26,7 +26,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
-from services.error_reporting import reporting_scope
+from services.error_reporting import OutageLog, reporting_scope
 from services.project_actor_access import authorize_project_actor
 from services.project_application_runtime import checkpoint_application_data, restore_application_data
 from services.project_browser_verification import (
@@ -357,6 +357,8 @@ class ProjectRuntimeSupervisor:
             return operation
 
     def _scan_loop(self) -> None:
+        # 原来每一跳一行 WARNING、不带调用栈：断一整天 Sentry 里也没有一条问题（OutageLog 头注，跟控制回合那条循环成对）。
+        outage = OutageLog(logger, "project runtime scan")
         while not self._stop.is_set():
             try:
                 with self._lock:
@@ -373,8 +375,9 @@ class ProjectRuntimeSupervisor:
                                 args=(operation, owner_id), name="project-operation", daemon=True)
                             self._workers[operation.operationId] = worker
                             worker.start()
+                outage.ok()
             except Exception as exc:
-                logger.warning("project runtime scan unavailable: %s", type(exc).__name__)
+                outage.failed(exc)
             self._wake.wait(self.poll_interval)
             self._wake.clear()
 

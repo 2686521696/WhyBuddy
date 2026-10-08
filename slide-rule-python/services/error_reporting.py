@@ -30,6 +30,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
@@ -155,6 +156,45 @@ class _StdoutForwarder:
 
     def __getattr__(self, name):                      # flush / fileno / isatty / encoding … 原样转给里面那个
         return getattr(self._inner, name)
+
+
+class OutageLog:
+    """后台轮询循环（每一两秒扫一次）的失败：按「出事 / 持续 / 恢复」三个时刻各记一次，不按每一跳记。
+
+    ⚠ 2026-10-08 接上 Sentry 后头一条真问题：用户本机（DESKTOP-57LOSN8）连共享库的网关 TLS 断了 36 秒
+      （SSL: UNEXPECTED_EOF），控制回合的扫描循环每 1.5 秒 log.exception 一次——25 个事件，自己好了。
+      断 30 分钟就是一千多个，一次事故吃掉免费额度（每月 5000）的四分之一。成对的另一处（工程运行时的扫描循环）
+      正好相反：每一跳一行 WARNING、不带调用栈，断一整天 Sentry 里也不会有一条问题。两处同一个病：没区分「抖一下」
+      和「真断了」。
+    现在：头一次失败记 WARNING（进日志和面包屑，不成问题）；连着失败超过 escalate_after 秒（跟控制回合
+    「身份库抖一下不算吊销」同一个 60 秒）才记**一次** ERROR，带调用栈，成一条问题；恢复时记一行用了多久。
+    不是线程安全的：一个循环一个实例，只在那个循环里调。
+    """
+
+    def __init__(self, logger, what: str, *, escalate_after: float = 60.0, clock=None):
+        self._log, self._what, self._after = logger, what, escalate_after
+        self._clock = clock or (lambda: time.monotonic())             # 调用时才取：判据能拨钟
+        self.since: Optional[float] = None
+        self.failures = 0
+        self.escalated = False
+
+    def failed(self, exc: BaseException) -> None:
+        now = self._clock()
+        if self.since is None:
+            self.since, self.failures, self.escalated = now, 0, False
+            self._log.warning("%s unavailable: %s: %s", self._what, type(exc).__name__, str(exc)[:200])
+        self.failures += 1
+        if not self.escalated and now - self.since >= self._after:
+            self.escalated = True
+            self._log.error("%s unavailable for over %ds", self._what, int(self._after), exc_info=exc)
+
+    def ok(self) -> None:
+        if self.since is None:
+            return
+        level = logging.WARNING if self.escalated else logging.INFO
+        self._log.log(level, "%s recovered after %.0fs (%d failed scans)", self._what,
+                      self._clock() - self.since, self.failures)
+        self.since, self.failures, self.escalated = None, 0, False
 
 
 def _emit_tagged_line(line: str, tag: str) -> None:

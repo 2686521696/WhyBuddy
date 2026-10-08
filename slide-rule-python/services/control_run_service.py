@@ -16,7 +16,7 @@ from contextlib import aclosing
 from types import SimpleNamespace
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
-from services.error_reporting import reporting_scope
+from services.error_reporting import OutageLog, reporting_scope
 from services.control_run_store import (
     ControlRunConflict, ControlRunNotFound, ControlRunStore, ControlRunUnavailable,
     TERMINAL,
@@ -533,6 +533,7 @@ class ControlRunService:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
 
     async def _scan(self):
+        outage = OutageLog(log, "control run scan")       # 抖一下记 WARNING，断满一分钟才成一条问题（OutageLog 头注）
         while not self._stopping:
             self._wake.clear()
             try:
@@ -561,8 +562,9 @@ class ControlRunService:
                             available -= 1
                         if available <= 0:
                             break
-            except Exception:
-                log.exception("control run scan failed")
+                outage.ok()
+            except Exception as exc:
+                outage.failed(exc)
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
             except asyncio.TimeoutError:
