@@ -1,0 +1,163 @@
+{
+ "roundTodos": [
+  {
+   "id": "t1",
+   "content": "读取 DOCX 规范并确定文档结构与样式",
+   "status": "in_progress"
+  },
+  {
+   "id": "t2",
+   "content": "起草采购审批应用产品与技术方案正文",
+   "status": "pending"
+  },
+  {
+   "id": "t3",
+   "content": "生成 DOCX 交付文件并设置正式排版",
+   "status": "pending"
+  },
+  {
+   "id": "t4",
+   "content": "执行结构化核验与独立读者自检",
+   "status": "pending"
+  },
+  {
+   "id": "t5",
+   "content": "修正发现的问题并完成最终核验",
+   "status": "pending"
+  }
+ ],
+ "roundTable": [
+  {
+   "skill": "ui-ux-pro-max",
+   "stage": "Workflow",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "ui-ux-pro-max",
+   "stage": "Example Workflow",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Workflow router",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Intake checklist",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Verification checklist",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 1: Context Gathering",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 2: Refinement & Structure",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 3: Reader Testing",
+   "status": "missing",
+   "todoIds": []
+  }
+ ],
+ "titledTodos": [
+  {
+   "id": "t1",
+   "content": "读取 DOCX 规范并确定文档结构与样式",
+   "status": "in_progress"
+  },
+  {
+   "id": "t2",
+   "content": "起草采购审批应用产品与技术方案正文",
+   "status": "pending"
+  },
+  {
+   "id": "t3",
+   "content": "生成 DOCX 交付文件并设置正式排版",
+   "status": "pending"
+  },
+  {
+   "id": "t4",
+   "content": "执行结构化核验与独立读者自检",
+   "status": "pending"
+  },
+  {
+   "id": "t5",
+   "content": "修正发现的问题并完成最终核验",
+   "status": "pending"
+  },
+  {
+   "id": "s3",
+   "content": "Stage 3: Reader Testing：独立读者检查",
+   "status": "in_progress"
+  }
+ ],
+ "titledTable": [
+  {
+   "skill": "ui-ux-pro-max",
+   "stage": "Workflow",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "ui-ux-pro-max",
+   "stage": "Example Workflow",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Workflow router",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Intake checklist",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "office-skills",
+   "stage": "Verification checklist",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 1: Context Gathering",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 2: Refinement & Structure",
+   "status": "missing",
+   "todoIds": []
+  },
+  {
+   "skill": "doc-coauthoring",
+   "stage": "Stage 3: Reader Testing",
+   "status": "in_progress",
+   "todoIds": [
+    "s3"
+   ]
+  }
+ ]
+}

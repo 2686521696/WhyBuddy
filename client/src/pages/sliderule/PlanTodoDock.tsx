@@ -18,10 +18,15 @@ import { Check, ChevronRight, Loader2 } from "lucide-react";
 import {
   planTodoCompleted,
   planTodoProgress,
+  skillStageLabel,
+  skillStageStatusLabel,
+  stagesForTodo,
   visiblePlanTodo,
+  visibleSkillStages,
   type PlanTodoAction,
   type PlanTodoItem,
   type PlanTodoStatus,
+  type SkillStage,
 } from "./plan-todo-dock";
 import { dispatchInspectAction } from "./project-computer-view";
 import { isMotionReduced } from "./user-prefs";
@@ -86,15 +91,31 @@ function TodoStatusMark({
   );
 }
 
+/** 待办上那段技能步骤的小标签（2026-10-08，plan-todo-dock.SkillStage 头注）。 */
+function SkillStageChip({ stage }: { stage: SkillStage }) {
+  return (
+    <span
+      data-testid="plan-todo-skill-stage"
+      className="mr-1.5 inline-block max-w-full truncate rounded bg-[#f3f4f6] px-1.5 align-[1px] text-[11px] leading-[18px] text-[#6b7280]"
+    >
+      {skillStageLabel(stage)}
+    </span>
+  );
+}
+
 export function PlanTodoDock({
   items,
   action,
+  stages: rawStages,
 }: {
   items?: Array<{ id?: string; status?: string; content?: string }> | null;
   /** 控制面当前挑的工程动作。只展示，不改 status。 */
   action?: PlanTodoAction | null;
+  /** 批准计划里承诺的技能步骤各落在哪条待办（宿主算，不在这里猜）。 */
+  stages?: unknown;
 }) {
   const todo = visiblePlanTodo(items);
+  const stages = visibleSkillStages(rawStages);
   const shown = todo.filter(item => item.status !== "cancelled");
   const progress = planTodoProgress(todo);
   const { percent } = planTodoCompleted(todo);
@@ -192,11 +213,48 @@ export function PlanTodoDock({
                     ) : (
                       item.content
                     )}
+                    {stagesForTodo(stages, item.id).length ? (
+                      <span className="mt-0.5 block">
+                        {stagesForTodo(stages, item.id).map(stage => (
+                          <SkillStageChip key={`${stage.skill}:${stage.stage}`} stage={stage} />
+                        ))}
+                      </span>
+                    ) : null}
                   </span>
                 </li>
               );
             })}
           </ol>
+          {stages.length ? (
+            <div
+              data-testid="plan-todo-skill-stages"
+              className="border-t border-[#f0f0f0] px-3.5 py-2"
+            >
+              <h4 className="mb-1 text-[12px] font-medium text-[#666]">技能步骤</h4>
+              <ul className="space-y-0.5">
+                {stages.map(stage => (
+                  <li
+                    key={`${stage.skill}:${stage.stage}`}
+                    data-skill-stage-status={stage.status}
+                    className="flex items-baseline gap-2 text-[12px] leading-5"
+                  >
+                    <span className="min-w-0 flex-1 break-words text-[#555]">{skillStageLabel(stage)}</span>
+                    <span
+                      className={`shrink-0 ${
+                        stage.status === "missing"
+                          ? "text-amber-600"
+                          : stage.status === "in_progress"
+                            ? "text-[#2f6bff]"
+                            : "text-[#9a9a9a]"
+                      }`}
+                    >
+                      {skillStageStatusLabel(stage.status)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </>
       ) : null}
       <button
@@ -213,6 +271,11 @@ export function PlanTodoDock({
           data-testid="plan-todo-current"
           className="min-w-0 flex-1 truncate text-[13px] text-[#333]"
         >
+          {current && progress.currentContent
+            ? stagesForTodo(stages, current.id).slice(0, 1).map(stage => (
+                <SkillStageChip key={`${stage.skill}:${stage.stage}`} stage={stage} />
+              ))
+            : null}
           {progress.currentContent ?? "待办"}
         </span>
         <span

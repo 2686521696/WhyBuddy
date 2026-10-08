@@ -32,6 +32,7 @@
 import React from "react";
 import { AppWindow, Check, Copy, ExternalLink, RotateCw } from "lucide-react";
 import { resultCardModel } from "./turn-result-card";
+import { openSkillStages, skillStageLabel, skillStageStatusLabel, visibleSkillStages } from "./plan-todo-dock";
 import { dispatchInspectAction } from "./project-computer-view";
 import type { UiTurn } from "./types";
 import { isOfficeFileDeliverable } from "./deliverable-kind";
@@ -127,6 +128,7 @@ export function TurnResultCard({
   deliveryBlockedReasons,
   interrupted = false,
   publishProjectId,
+  skillStages,
   onOpen,
   onRetry,
 }: {
@@ -149,11 +151,16 @@ export function TurnResultCard({
   interrupted?: boolean;
   /** 能发布的那个网页工程，只给「工程此刻」出自的那一轮（跟 delivered 同一轮）。 */
   publishProjectId?: string | null;
+  /** 技能步骤表（宿主算），只给最新、已跑完的那一轮：没做完的在卡下列出来（plan-todo-dock.SkillStage 头注）。 */
+  skillStages?: unknown;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
   // 缩略图由调用方给（整页只取一次，见 SlideRule.tsx 里 thumbnailUrl 的头注）。
   // 拿不到就是 null——验收还没跑过，卡片那一块不画。
+  // 宿主算的表，这里只挑没做完的（没进待办 / 待做 / 在做）。跳过的不算：那是模型说了不做，标成 cancelled。
+  // 不拦交付（§七 增强类），只让用户看得见——漏了一步不再只能靠模型自己说。
+  const unfinishedStages = openSkillStages(visibleSkillStages(skillStages));
   const model = resultCardModel(turn, {
     runtimeKind,
     goalText,
@@ -304,6 +311,19 @@ export function TurnResultCard({
           </span>
         </span>
       </div>
+      {unfinishedStages.length ? (
+        <div
+          data-testid="turn-result-skill-stages-open"
+          className="mt-1 px-0.5 text-[12px] leading-5 text-amber-600"
+        >
+          技能步骤没做完：
+          {unfinishedStages
+            .slice(0, 3)
+            .map(stage => `${skillStageLabel(stage)}（${skillStageStatusLabel(stage.status)}）`)
+            .join("；")}
+          {unfinishedStages.length > 3 ? ` 等 ${unfinishedStages.length} 段（明细在待办卡「技能步骤」）` : ""}
+        </div>
+      ) : null}
     </div>
   );
 }

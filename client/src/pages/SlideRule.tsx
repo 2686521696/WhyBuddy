@@ -619,6 +619,8 @@ const ImSurfaceContext = React.createContext<{
   verdictTurnId?: string | null;
   /** 被错误打断的那一轮（会话停在 awaitReason=error 时的最新一轮）。 */
   stoppedTurnId?: string | null;
+  /** 技能步骤表（plan-todo-dock.SkillStage）。结果卡只在最新、已跑完的那一轮上列没做完的。 */
+  skillStages?: unknown;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -640,6 +642,7 @@ const ImSurfaceContext = React.createContext<{
   deliveryVerdict: null,
   verdictTurnId: null,
   stoppedTurnId: null,
+  skillStages: null,
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -812,6 +815,8 @@ function ImAssistantMessage() {
         turn.id === ctx.verdictTurnId ? deliveryVerdict?.blockedReasons : undefined
       }
       interrupted={Boolean(ctx.stoppedTurnId) && turn.id === ctx.stoppedTurnId}
+      /* 技能步骤表是会话此刻的，不是每轮一份快照：只挂最新、已跑完的那一轮。 */
+      skillStages={!ctx.isRunning && turn.id === ctx.latestTurnId ? ctx.skillStages : null}
       publishProjectId={turn.id === ctx.verdictTurnId ? ctx.projectId : null}
       onOpen={() => {
         window.dispatchEvent(
@@ -1051,6 +1056,7 @@ export function ClaudeChatSurface({
   runtimeKind,
   projectRevision = null,
   controlTodo = null,
+  controlSkillStages = null,
   projectId = null,
   deliverableKind = "web-app",
   stoppedByError = false,
@@ -1087,6 +1093,8 @@ export function ClaudeChatSurface({
     status?: string;
     content?: string;
   }> | null;
+  /** 技能步骤表（宿主算）：待办标签、结果卡「技能步骤没做完」读它。 */
+  controlSkillStages?: unknown;
   /** 结果卡缩略图要用。 */
   projectId?: string | null;
   /** 批准计划上的交付物类别；办公文件章节不标「构建网页」。 */
@@ -1192,6 +1200,7 @@ export function ClaudeChatSurface({
       deliveryVerdict,
       verdictTurnId: latestDeliveringTurnId(uiTurns, deliverableKind),
       stoppedTurnId: stoppedByError && !isRunning ? latestTurn?.id ?? null : null,
+      skillStages: controlSkillStages,
     }),
     [
       publishClosure,
@@ -1204,6 +1213,7 @@ export function ClaudeChatSurface({
       projectRevision,
       projectId,
       controlTodo,
+      controlSkillStages,
       verifiedThumbnail,
       isRunning,
       onChallenge,
@@ -1255,7 +1265,7 @@ export function ClaudeChatSurface({
                     clarifySlot={isEmptyThread ? clarifySlot : undefined}
                     todoSlot={
                       isEmptyThread ? (
-                        <PlanTodoDock items={controlTodo} action={todoAction} />
+                        <PlanTodoDock items={controlTodo} action={todoAction} stages={controlSkillStages} />
                       ) : undefined
                     }
                   />
@@ -1278,7 +1288,7 @@ export function ClaudeChatSurface({
                 {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}
                 <div className="relative mx-auto w-full max-w-[720px]">
                   {clarifySlot}
-                  <PlanTodoDock items={controlTodo} action={todoAction} />
+                  <PlanTodoDock items={controlTodo} action={todoAction} stages={controlSkillStages} />
                   {composerSlot}
                 </div>
               </div>
@@ -1755,6 +1765,7 @@ function SlideRuleUnified({
                   }
                   projectRevision={sessionState.projectRevision}
                   controlTodo={sessionState.controlTodo}
+                  controlSkillStages={sessionState.controlSkillStages}
                   stoppedByError={sessionState.awaitReason === "error"}
                   projectId={sessionState.projectId}
                   deliverableKind={deliverableKind}

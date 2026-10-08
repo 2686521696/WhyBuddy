@@ -682,6 +682,8 @@ class V5SessionState(BaseModel):
     #   闭环读它 fail-closed；这个是模型自己写的自由清单，不参与任何判定。
     #   合并了就会出现「模型把 closure 划掉，闭环就放行」（§7 伪造绿灯）。
     controlTodo: Optional[List[Dict[str, Any]]] = None
+    #: 批准计划里承诺的技能流程段落各落在哪条待办、走到哪了（rehearsal_control.skill_stage_table）。宿主算，模型写不进来。
+    controlSkillStages: Optional[List[Dict[str, Any]]] = None
     # 本会话已经成功打开过的技能正文。批准计划后新回合如果商店目录
     # 空了，仍按这里加载——真机 13ME64TF8Z skill_not_found。
     controlSkillCache: Optional[List[Dict[str, Any]]] = None

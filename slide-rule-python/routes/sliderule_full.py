@@ -639,7 +639,7 @@ def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
             raise HTTPException(409, "plan_approval_required")
         return persisted
     raw_state.pop("ownerId", None)
-    for key in ("controlTranscript", "controlTodo", "controlSkillCache", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
+    for key in ("controlTranscript", "controlTodo", "controlSkillStages", "controlSkillCache", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
         raw_state.pop(key, None)
     if sid:
         raw_state["sessionId"] = sid
@@ -995,6 +995,8 @@ def save_sess(
     client_input.pop("factoryTodo", None)
     # 活儿清单同 factoryTodo：服务端拥有，客户端 PUT 一律不许带。
     client_input.pop("controlTodo", None)
+    # 技能步骤表同 controlTodo：宿主算（rehearsal_control.skill_stage_table），客户端 PUT 不许带。
+    client_input.pop("controlSkillStages", None)
     client_input.pop("controlSkillCache", None)
     client_input.pop("subagentTasks", None)
     for key in ("controlTranscript", "modelVersions", "currentModelVersionId", "specFirstPages", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision", "projectVerification"):
@@ -1055,7 +1057,7 @@ def save_sess(
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "controlSkillCache", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "controlSkillStages", "controlSkillCache", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision"})
             if existing.runtimeKind == "project":
                 updates.pop("publishClosure", None)
             for k, v in updates.items():

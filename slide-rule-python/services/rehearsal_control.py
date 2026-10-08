@@ -56,6 +56,7 @@ import copy
 import asyncio
 import inspect
 import json
+import logging
 import re
 import time
 import uuid
@@ -63,7 +64,7 @@ from contextlib import aclosing, contextmanager, nullcontext
 from contextvars import ContextVar
 from enum import Enum
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Sequence
 
 from services.factory_plan_steps import product_steps_for_tools
 from services.capability_plan import (
@@ -177,6 +178,7 @@ from services.control_skills import (
     mentioned_skill_slugs,
     normalize_skill_name,
     process_sections,
+    stages_mentioned,
     skill_tool_description,
 )
 from services.deliverable_kind import (
@@ -987,7 +989,9 @@ def _planning_skills_note(state: V5SessionState) -> str:
     if committed:
         note += ("\n批准的计划里，技能自己的流程步骤是这样落位的（计划原话）：\n"
                  + "\n".join(f"- {line}" for line in committed)
-                 + "\n待办里每条各占一项；做完的收尾时说一句怎么做的，没做的说为什么。")
+                 + "\n待办里每条各占一项，内容开头写上那段的标题（例如「Stage 3: Reader Testing：……」）——"
+                 "宿主按标题把待办对上技能步骤给用户看进度，收尾时没对上、没做完的会列出来。"
+                 "做完的收尾时说一句怎么做的；决定不做的那条标成 cancelled，并说为什么。")
     return note
 
 
@@ -1029,11 +1033,81 @@ def _plan_skill_commitments(state: V5SessionState) -> List[str]:
     lines: list[str] = []
     for raw in content.splitlines():
         line = raw.strip().lstrip("-*0123456789.、） ").strip()
-        if line and any(title in line for title in titles) and line not in lines:
+        if line and stages_mentioned(line, titles) and line not in lines:
             lines.append(line[:_PLAN_COMMITMENT_MAX_CHARS])
         if len(lines) >= _PLAN_COMMITMENT_MAX_LINES:
             break
     return lines
+
+
+def _skill_stage_commitments(state: V5SessionState) -> List[Dict[str, str]]:
+    """批准的计划里点到的技能流程段落：[{skill, stage}]，按技能、按原文顺序。宿主据此对待办、收尾核对。
+
+    跟 _plan_skill_commitments 同一份计划、同一把尺子（stages_mentioned），只是落到「哪个技能的哪一段」，不是计划原话。
+    """
+    content = str(latest_control_plan(state).get("planContent") or "")
+    if not content:
+        return []
+    out: List[Dict[str, str]] = []
+    for info in _carried_skill_infos(state):
+        titles = process_sections(info.body)
+        if not titles:
+            continue
+        placed: set[str] = set()
+        for raw in content.splitlines():
+            placed.update(stages_mentioned(raw, titles))
+        out.extend({"skill": info.name, "stage": title} for title in titles if title in placed)
+    return out
+
+
+_STAGE_STATUS_ORDER = ("in_progress", "pending", "completed", "cancelled")
+
+
+def skill_stage_table(commitments: Sequence[Dict[str, str]], todos: Any) -> List[Dict[str, Any]]:
+    """每个承诺过的技能步骤落在哪条待办、走到哪了。宿主算，模型写不进来（抄 grok TodoItem.meta：宿主侧的槽）。
+
+    status：没有对应待办 → missing；有 → 按对应待办合起来（有一条在做就是 in_progress，全做完是 completed，
+    全取消是 cancelled，其余 pending）。一条待办点到几段就算几段（「Stage 2 与 Stage 3」）。
+    """
+    rows = [r for r in (todos or []) if isinstance(r, dict)]
+    by_skill: Dict[str, List[str]] = {}
+    for item in commitments:
+        by_skill.setdefault(item["skill"], []).append(item["stage"])
+    hits: Dict[tuple, List[Dict[str, Any]]] = {}
+    for row in rows:
+        content = str(row.get("content") or "")
+        for skill, titles in by_skill.items():
+            for title in stages_mentioned(content, titles):
+                hits.setdefault((skill, title), []).append(row)
+    table: List[Dict[str, Any]] = []
+    for item in commitments:
+        matched = hits.get((item["skill"], item["stage"]), [])
+        statuses = {str(r.get("status") or "pending") for r in matched}
+        if not matched:
+            status = "missing"
+        elif "in_progress" in statuses:
+            status = "in_progress"
+        elif statuses == {"completed"}:
+            status = "completed"
+        elif statuses == {"cancelled"}:
+            status = "cancelled"
+        elif statuses <= {"completed", "cancelled"}:
+            status = "completed"
+        else:
+            status = "pending"
+        table.append({"skill": item["skill"], "stage": item["stage"], "status": status,
+                      "todoIds": [str(r.get("id") or "") for r in matched]})
+    return table
+
+
+def _skill_stages_missing_hint(table: Sequence[Dict[str, Any]]) -> str:
+    missing = [row for row in table if row.get("status") == "missing"]
+    if not missing:
+        return ""
+    return ("批准的计划里承诺了这些技能步骤，待办里还没有对应的一条："
+            + "；".join(f"{row['skill']}「{row['stage']}」" for row in missing)
+            + "。每段单独一条待办，内容开头写上段落标题（例如「" + missing[0]["stage"] + "：……」）——"
+            "用户按标题看进度，对不上的收尾时会列成没做。不做的就加一条写清为什么，status 用 cancelled。")
 
 
 def _memory_scope_id(state: V5SessionState) -> str:
@@ -6368,6 +6442,7 @@ async def _run_control_turn_body(
             #   抄 Claude Code 的 TodoWrite：全做完就清掉。没做完的照旧回喂——
             #   「继续」要接着那张做。
             state.controlTodo = []
+            state.controlSkillStages = []
         # ⚠ 2026-09-22 BABCJGGB44：上一轮 503 把会话停在 failed/error。
         #   这一轮工具都成功，模型 idle 交回，complete 仍是 phase=failed
         #   await=error、stop=None。驾驶把它当成又一次 llm_unavailable。
@@ -6840,7 +6915,9 @@ async def _dispatch_tool(
         #   「Process: plan, review against the brief, build, critique」，第三次漏掉自评。
         #   「对一下」没有可核对的东西。改成：段落标题没**原样**出现在计划里的，逐个点名；都点到了就不说。
         #   照抄标题也让用户批准计划时看得见「技能的哪一步落在这次的哪一步」。
-        unplaced = {name: [title for title in sections if title not in content]
+        mentioned = {name: {t for raw in content.splitlines() for t in stages_mentioned(raw, sections)}
+                     for name, sections in stages.items()}
+        unplaced = {name: [title for title in sections if title not in mentioned[name]]
                     for name, sections in stages.items()}
         unplaced = {name: titles for name, titles in unplaced.items() if titles}
         if stages:
@@ -7358,11 +7435,17 @@ async def _dispatch_tool(
             }
             return
         state.controlTodo = rows
+        # 技能步骤表：宿主按标题把待办对上批准计划里承诺的技能步骤（skill_stage_table 头注）。
+        # ⚠ 2026-10-08 用户本机 sr-20261008092556-8PW0MNC7ZW：计划把 doc-coauthoring 三段都落了位，执行开工列的五条待办
+        #   一条都不带段落标题（「执行结构化核验与独立读者自检」）——页面上看不出现在在技能的哪一步，漏了也没人知道。
+        stages = skill_stage_table(_skill_stage_commitments(state), rows)
+        state.controlSkillStages = stages
         await _apersist(state)
         # 用户看得见这半句要真的成立：前端浮层读这条事件里的 todos。
         # 只落库不发事件 = 抄了一半（工具说明第二句就成了假话）。
         yield {
             "type": "control_todo",
+            "skillStages": stages,
             "todos": rows,
             "summary": summarize_todo(rows),
             # line 给日志 / 工具回执。浮层读 todos：空数组 = 人清空了，卡收起来。
@@ -7377,6 +7460,8 @@ async def _dispatch_tool(
             # 只回文案、不回 id = 2026-09-19 坦克大战叠两份的根。
             "summary": summarize_todo(rows),
             "todos": rows,
+            **({"skillStages": stages} if stages else {}),
+            **({"hint": hint} if (hint := _skill_stages_missing_hint(stages)) else {}),
         }
         return
     if name == "report_done":

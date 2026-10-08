@@ -1001,6 +1001,14 @@ def _resolve_write_state(
                     update={"controlTodo": prior_plan}
                 )
 
+        # 技能步骤表同 controlTodo：[] 是「这段任务的表清掉了」，None 是客户端没带——别把后者当清空。
+        prior_stages = getattr(prior, "controlSkillStages", None) if prior is not None else None
+        if prior_stages:
+            if getattr(merged_logs_state, "controlSkillStages", None) is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"controlSkillStages": prior_stages}
+                )
+
         prior_skills = getattr(prior, "controlSkillCache", None) if prior is not None else None
         if prior_skills:
             inc_skills = getattr(merged_logs_state, "controlSkillCache", None)

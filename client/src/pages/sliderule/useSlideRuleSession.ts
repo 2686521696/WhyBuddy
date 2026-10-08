@@ -6,7 +6,7 @@ import type {
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { controlStopLine } from "./control-stop";
-import { visiblePlanTodo } from "./plan-todo-dock";
+import { visiblePlanTodo, visibleSkillStages } from "./plan-todo-dock";
 import {
   latestPlanDeliverableKind,
   projectTemplateForDeliverable,
@@ -2098,8 +2098,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 // 2026-09-15：清单写进 state，浮层读同一份。再往左栏
                 // 塞 `📋 ${line}` 就是用户对照 Manus 圈出来的「嵌在聊天里」。
                 const todos = visiblePlanTodo(payload.todos);
+                // 技能步骤表跟清单同一条事件到、同一刻写（§4：只写一半，标签就对着旧清单）。
+                const skillStages = visibleSkillStages(payload.skillStages);
                 setSessionState(prev => {
-                  const next = { ...prev, controlTodo: todos };
+                  const next = { ...prev, controlTodo: todos, controlSkillStages: skillStages.length ? skillStages : null };
                   sessionStateRef.current = next;
                   return next;
                 });

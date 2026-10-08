@@ -282,6 +282,13 @@ export interface V5SessionState {
    *   只能靠 `as any` 硬读，那等于把这条断链继续藏着。
    */
   controlTodo?: Array<{ id?: string; status?: string; content?: string }>;
+  /** 批准计划里承诺的技能流程段落各落在哪条待办、走到哪了（Python rehearsal_control.skill_stage_table，宿主算）。 */
+  controlSkillStages?: Array<{
+    skill: string;
+    stage: string;
+    status: "missing" | "pending" | "in_progress" | "completed" | "cancelled";
+    todoIds: string[];
+  }> | null;
   /**
    * 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
    * 回合级游标在真机上一次没响（每回合最多 3 轮只读就收尾，阈值 4），

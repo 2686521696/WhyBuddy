@@ -385,6 +385,28 @@ _PROCESS_HEADING = re.compile(
 _PROCESS_SECTIONS_MAX = 8
 
 
+def _stage_key(text: str) -> str:
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(text or "").lower())
+
+
+def stages_mentioned(text: str, titles: Sequence[str]) -> list[str]:
+    """这段话点到了哪几个流程段落（process_sections 的标题）。定计划点名、开工摆承诺、待办对步骤，三处同一把尺子。
+
+    ⚠ 2026-10-08 用户本机 sr-20261008092556-8PW0MNC7ZW（@ui-ux-pro-max @office-skills 采购审批方案）：计划写「Stage 1 Context
+      Gathering：……」「Stage 3 Reader Testing：……」，技能里的标题是「Stage 1: Context Gathering」——少一个冒号，「原样出现」
+      判不中：定计划那道点名、开工那道承诺块对 doc-coauthoring 全都没生效。比较前去掉标点、空白、大小写。
+    短标题被长标题包含时（「Workflow」在「Example Workflow」「Workflow router」里），长的先认、认过的那段字不再算给短的。
+    """
+    rest = _stage_key(text)
+    hit: list[str] = []
+    for title in sorted({t for t in titles if _stage_key(t)}, key=lambda t: -len(_stage_key(t))):
+        key = _stage_key(title)
+        if key in rest:
+            hit.append(title)
+            rest = rest.replace(key, "|")
+    return [t for t in titles if t in hit]
+
+
 def process_sections(body: str) -> list[str]:
     """技能正文里规定了做法 / 先后的二级段落标题（代码块里的不算），按原文顺序，最多 8 条。
 

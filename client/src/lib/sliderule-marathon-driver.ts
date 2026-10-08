@@ -410,6 +410,8 @@ export interface DriveFullStreamOpts {
     todos: unknown[];
     summary: string;
     line: string;
+    /** 技能步骤表（宿主算，plan-todo-dock.SkillStage）。这一轮没有承诺过的技能步骤就是空数组。 */
+    skillStages: unknown[];
   }) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
@@ -705,6 +707,7 @@ function applyFactoryStreamEvent(
         todos: Array.isArray(event.todos) ? event.todos : [],
         summary: String(event.summary || ""),
         line: String(event.line || ""),
+        skillStages: Array.isArray(event.skillStages) ? event.skillStages : [],
       });
       return "continue";
     case "run_pause_started":
