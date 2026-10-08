@@ -26,7 +26,8 @@ from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference, verification_with_current_authority
 from services.project_creation import (
-    create_session_project, load_authorized_session, load_project_template, sync_session_project,
+    TEMPLATE_ID_FOR_VERSION, create_session_project, load_authorized_session, load_project_template,
+    sync_session_project,
 )
 from services.project_manifest import (
     canonical_json, content_hash, file_content_matches, file_name_matches,
@@ -1292,6 +1293,28 @@ def command_receipt_from(adapter, operation_id):
     return receipt
 
 
+#: 各模板的验收套件，说给模型听的那一句。
+_TEMPLATE_SUITE_TEXT = {
+    "react-vite": "普通网页验收（构建通过、页面渲染出内容、刷新后还在、没有页面错误和失败请求）",
+    "react-vite-tasks": "任务清单验收（初始化管理员、写手登录、新增/编辑/筛选任务、读者只读、未登录被拒）",
+}
+
+
+def template_mismatch_note(requested: str, actual_version: str | None) -> str | None:
+    """模型要的模板跟回执里的工程对不上（工程早已建好且动过，没换）：照实说，不只给一串版本号。
+
+    ⚠ 2026-10-08 真机 sr-20261008144247-5MEAE5TMRS：回执写着 whybuddy-react-vite-tasks-1，模型没读出
+      「这不是我要的那个」，在任务清单模板上写了 50 步读书打卡，验收按任务清单套件跑，永远过不了。
+      没动过的工程由 project_creation._honour_requested_template 直接换掉，走不到这里。
+    """
+    actual = TEMPLATE_ID_FOR_VERSION.get(actual_version or "")
+    if actual is None or actual == requested:
+        return None                                    # 办公工作区由批准计划决定；对得上就不啰嗦
+    return (f"你要的是 {requested}，但这个会话的工程早已按 {actual} 建好，而且已经改过或电脑正开着，所以没有替换。"
+            f"验收按它的模板跑：{_TEMPLATE_SUITE_TEXT[actual]}，不是 {_TEMPLATE_SUITE_TEXT[requested]}。"
+            f"如果要做的不是这种应用，在这个工程里做完也交付不了——先照实告诉用户，让用户新开会话，别在这里接着写。")
+
+
 _TEST_RUN = re.compile(r"(?:^|[\s;&|(])(?:(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b|node\s+--test\b|npx\s+vitest\b|vitest\b)")
 _TEST_FILE = re.compile(r"(?:^|/)(?:tests?|__tests__)/|\.(?:test|spec)\.[cm]?[jt]sx?$")
 
@@ -1550,8 +1573,12 @@ class ProjectTools:
             if name == "project_create":
                 guard_control_run()
                 project = create_session_project(self.store, session_id,
-                    owner_id=self.owner_id, approval_ref=parsed.approvalRef, template_id=parsed.templateId)
+                    owner_id=self.owner_id, approval_ref=parsed.approvalRef, template_id=parsed.templateId,
+                    template_chosen_by_model=True)
                 created = self._project_result(project)
+                note = template_mismatch_note(parsed.templateId, created.get("templateVersion"))
+                if note:
+                    created = {"templateRequested": parsed.templateId, "templateNote": note, **created}
                 # ⚠ 2026-09-27 隔离真机第 33/36/37 轮：回执只有 fileCount=9，模型建完
                 #   工程第一件事是并行猜读 src/App.tsx、src/index.css、src/main.jsx……
                 #   每轮 2～3 次 project_file_not_found。模板就 9 个文件，直接列出来。

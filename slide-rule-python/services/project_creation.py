@@ -8,6 +8,7 @@ authority; the session pointer is a repairable projection.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import uuid
 
@@ -15,7 +16,7 @@ from models.project_runtime import Project
 from models.v5_state import V5SessionState
 from services import persistence
 from services.control_checkpoint import current_checkpoint
-from services.project_acceptance import TASK_ACCEPTANCE_PROFILE
+from services.project_acceptance import TASK_ACCEPTANCE_PROFILE, suite_for_template
 from services.deliverable_kind import (
     OFFICE_FILE,
     WORKSPACE_README,
@@ -27,8 +28,11 @@ from services.deliverable_kind import (
     plan_deliverable_kind,
 )
 from services.project_authority import approved_reference, assert_session_authorized, has_generated_application
+from services.project_manifest import build_manifest
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 from services.scope_authority import latest_control_plan
+
+logger = logging.getLogger(__name__)
 
 TEMPLATE_VERSION = "whybuddy-react-vite-1"
 TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "project-templates" / "react-vite"
@@ -186,6 +190,58 @@ def _ensure_office_tree(store: ProjectStore, project: Project, *, owner_id: str,
     return project
 
 
+#: 模板版本 → 模型/前端传的 templateId。办公工作区不在里面：办公计划由 host 按批准计划覆盖，不归模型挑。
+TEMPLATE_ID_FOR_VERSION = {TEMPLATE_VERSION: "react-vite", TASK_TEMPLATE_VERSION: "react-vite-tasks"}
+
+
+def _honour_requested_template(store: ProjectStore, project: Project, template_id: str, *,
+                               owner_id: str, approval_ref: str) -> Project:
+    """模型点名的模板跟已有工程不一样、而那份工程还一字没动：按模型点名的重铺一版。
+
+    ⚠ 2026-10-08 真机 sr-20261008144247-5MEAE5TMRS（读书打卡）：批准一落，浏览器的自动创建抢在模型前面
+      把工程建成 react-vite-tasks；模型随后 project_create(react-vite) 拿回的是那份已有工程——先到的赢，
+      回执里只有一串版本号。验收锁在任务清单套件，50 次调用后两次独立验收都卡在登录。
+      前端那一半（4571de1）只修了这一例；这里修的是「两方都能决定模板时，先到的悄悄赢」本身：
+      谁先建都行，模型明说的才算数。
+
+    只在**一字没动**（源码树哈希等于它出生时的模板）、电脑也没开着时换——那时换掉什么都不丢。
+    动过了就不换（会把模型写的东西抹掉），由回执照实告诉模型（project_tools.template_mismatch_note）。
+    浏览器那条路不走这里：它只负责「有一份工程」，不许把模型选好的模板换回去（旧标签页还会发 tasks）。
+    """
+    current = store.get_revision(project.projectId, owner_id=owner_id)
+    born_as = TEMPLATE_ID_FOR_VERSION.get(current.templateVersion)
+    if born_as is None or born_as == template_id:      # 先比版本号：对得上（最常见）就不读模板文件
+        return project
+    # 跟 _source_for_create 同一个叫法：react-vite 不带参数（测试夹具按无参替身换它）。
+    wanted_files, wanted_version = load_project_template() if template_id == "react-vite" else load_project_template(template_id)
+    born_files, _ = load_project_template() if born_as == "react-vite" else load_project_template(born_as)
+    if current.manifest.treeHash != build_manifest(born_files).treeHash:
+        return project
+    try:
+        lease = store.acquire_lease(project.projectId, owner_id=owner_id,
+            lease_owner="template-" + uuid.uuid4().hex, ttl_seconds=120)
+    except ProjectConflict:
+        return project                                 # 有人正占着电脑：不抢，fail-open，回执照实说（这是纠偏，不许拖垮 project_create）
+    try:
+        if lease.sandboxId or lease.processRefs:
+            return project
+        current = store.get_revision(project.projectId, owner_id=owner_id)
+        if current.manifest.treeHash != build_manifest(born_files).treeHash:
+            return project
+        store.commit_revision(project.projectId, owner_id=owner_id, expected_revision=current.revision,
+            files=wanted_files, template_version=wanted_version, plan_ref=approval_ref,
+            spec_revision=TASK_ACCEPTANCE_PROFILE if template_id == "react-vite-tasks" else None,
+            lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    finally:
+        store.release_lease(project.projectId, owner_id=owner_id,
+            lease_owner=lease.leaseOwner, generation=lease.generation)
+    orch_trace("template-replaced", projectId=project.projectId, was=current.templateVersion, now=wanted_version,
+               suite=suite_for_template(wanted_version))
+    logger.info("project %s template %s replaced by the model's %s before any edit",
+                project.projectId, current.templateVersion, wanted_version)
+    return store.get_project(project.projectId, owner_id=owner_id)
+
+
 def _source_for_create(state: V5SessionState, template_id: str) -> tuple[dict[str, str], str, str | None]:
     """批准计划决定电脑形状。模型传来的 react-vite* 对办公计划无效。"""
     if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
@@ -206,7 +262,8 @@ def _source_for_create(state: V5SessionState, template_id: str) -> tuple[dict[st
 
 
 def create_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
-                           approval_ref: str, template_id: str = "react-vite") -> Project:
+                           approval_ref: str, template_id: str = "react-vite",
+                           template_chosen_by_model: bool = False) -> Project:
     state = load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
     if not state.projectId and has_generated_application(state):
         raise ProjectConflict("project_conversion_required")
@@ -253,6 +310,9 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
             finally:
                 store.release_lease(existing.projectId, owner_id=owner_id,
                     lease_owner=lease.leaseOwner, generation=lease.generation)
+    if template_chosen_by_model and plan_deliverable_kind(latest_control_plan(state)) != OFFICE_FILE:
+        existing = _honour_requested_template(store, existing, template_id,
+            owner_id=owner_id, approval_ref=approval_ref)
     if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
         existing = _ensure_office_tree(
             store, existing, owner_id=owner_id, approval_ref=approval_ref,
