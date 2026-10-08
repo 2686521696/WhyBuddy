@@ -101,12 +101,15 @@ afterEach(async () => {
 });
 
 async function settle() {
-  for (let i = 0; i < 10; i += 1) await act(async () => { await Promise.resolve(); });
+  // ⚠ 2026-10-08：只冲微任务时，整个 pages 目录一起跑（机器忙）每次随机挂 2 条——封面先动态 import 渲染模块，
+  //   忙的时候那一步落到宏任务里，10 轮微任务等不到。每轮让出一次宏任务。
+  for (let i = 0; i < 10; i += 1) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
 
 async function mountCover(path: string, artifactId?: string) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    // 封面取的是 ?view=preview（Excel 的预览副本，2026-10-07）——比路径，不比查询串。
+    const url = String(input).split("?")[0];
     fetched.push(url);
     if (url.endsWith("/artifacts"))
       return new Response(JSON.stringify({ files: [{ artifactId: "art-1", path, sha256: "s", sizeBytes: 3 }] }),

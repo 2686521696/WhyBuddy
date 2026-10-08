@@ -309,6 +309,8 @@ export type SkillId = "dataModel" | "workflow" | "rbac" | "page" | "aigc" | "app
 
 export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
+  /** 控制流多久没新数据就回头问一次后台（测试用；默认 CONTROL_STREAM_STALL_MS）。 */
+  controlStallMs?: number;
   controlRequestId?: string;
   onControlRunId?: (runId: string) => void;
   maxLoops?: number;
@@ -1042,6 +1044,74 @@ export async function resumeControlTurnStream(
   }
 }
 
+export const CONTROL_STREAM_STALL_MS = 30_000;
+const CONTROL_RUN_TERMINAL = new Set(["completed", "waiting_user", "failed", "cancelled", "interrupted"]);
+
+/**
+ * 控制流的读者：流一段时间不说话，就回头问一次后台这条 run 的真实进度，落后了就从断点重新接上。
+ *
+ * ⚠ 2026-10-08 用户本机 sr-20261008061932-ZTM3RR7M5X（@ui-ux-pro-max @office-skills 采购审批应用方案）：
+ *   后台 4 分钟跑完——三个技能加载完、开场白、问题卡、complete，run 停在 waiting_user、lastSeq 9；
+ *   前端停在 seq 5「正在加载技能 doc-coauthoring」，计时器走到「已等待 92 分 6 秒」。连接一直开着、只是不再来数据，
+ *   所以「流断了」那条兜底（STREAM_NO_TERMINAL →「推演连接中断」）也没触发：前端只认这一条流，流不说话它就永远等。
+ *   卡在哪一段（代理 / 查库 / 长连接）那一次已经查不到了；不管是哪一段，回头问一次后台都能对上。
+ * 安静 ≠ 卡住：后台还在跑、事件也没比我们多（长 LLM 调用、长命令），照旧等，不重连。
+ */
+export function stallAwareControlReader(
+  first: ReadableStreamDefaultReader<Uint8Array>,
+  ctx: { runId: () => string | null; seq: () => number; signal?: AbortSignal; stallMs?: number },
+) {
+  let reader = first;
+  let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+  let reattached = false;
+  const stallMs = ctx.stallMs ?? CONTROL_STREAM_STALL_MS;
+  return {
+    /** 刚换过一条新流吗（换过就丢掉旧流读了一半的那行）。读一次就清。 */
+    takeReattached(): boolean {
+      const was = reattached;
+      reattached = false;
+      return was;
+    },
+    async read(): Promise<ReadableStreamReadResult<Uint8Array>> {
+      while (true) {
+        pending ??= reader.read();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const stall = new Promise<"stall">(resolve => { timer = setTimeout(() => resolve("stall"), stallMs); });
+        const got = await Promise.race([pending, stall]).finally(() => clearTimeout(timer));
+        if (got !== "stall") {
+          pending = null;
+          return got;
+        }
+        const runId = ctx.runId();
+        if (!runId || ctx.signal?.aborted) continue;
+        let run: { status?: string; lastSeq?: number } | null = null;
+        try {
+          const res = await fetch(`/api/sliderule/control-runs/${encodeURIComponent(runId)}`,
+            { credentials: "include", signal: ctx.signal });
+          run = res.ok ? await res.json() : null;
+        } catch {
+          run = null;
+        }
+        if (!run) continue;
+        const behind = Number(run.lastSeq) > ctx.seq();
+        if (!behind && !CONTROL_RUN_TERMINAL.has(String(run.status))) continue;
+        try {
+          const res = await fetch(
+            `/api/sliderule/control-runs/${encodeURIComponent(runId)}/stream?afterSeq=${ctx.seq()}`,
+            { credentials: "include", signal: ctx.signal });
+          if (!res.ok || !res.body) continue;
+          reader.cancel().catch(() => {});
+          reader = res.body.getReader();
+          pending = null;
+          reattached = true;
+        } catch {
+          continue;
+        }
+      }
+    },
+  };
+}
+
 /** 控制面 SSE：先处理 control_*；handoff 之后把剩余事件交给同一份工厂 case。 */
 export async function consumeControlStreamResponse(
   res: Response,
@@ -1056,7 +1126,13 @@ export async function consumeControlStreamResponse(
     let factoryDone = false;
     let sawTerminal = false;
     let controlSeq = 0;
-    const reader = res.body.getReader();
+    let controlRunId: string | null = res.headers?.get?.("X-Control-Run-Id") ?? null;
+    const reader = stallAwareControlReader(res.body.getReader(), {
+      runId: () => controlRunId,
+      seq: () => controlSeq,
+      signal: opts.stopSignal,
+      stallMs: opts.controlStallMs,
+    });
     const decoder = new TextDecoder();
     let buf = "";
     const acc: FactoryStreamAcc = {
@@ -1068,6 +1144,7 @@ export async function consumeControlStreamResponse(
     outer: while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (reader.takeReattached()) buf = "";
       buf += decoder.decode(value, { stream: true });
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
@@ -1080,6 +1157,9 @@ export async function consumeControlStreamResponse(
         let event: any;
         try { event = JSON.parse(jsonStr); } catch { continue; }
 
+        if (typeof event.controlRunId === "string" && event.controlRunId) {
+          controlRunId = event.controlRunId;
+        }
         if (typeof event.controlRunId === "string" && Number.isInteger(event.seq)) {
           if (event.seq <= controlSeq) continue;
           controlSeq = event.seq;
