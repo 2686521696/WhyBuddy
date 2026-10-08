@@ -1260,9 +1260,12 @@ export async function consumeControlStreamResponse(
             case "control_tool_result":
               opts.onControlToolResult?.(event);
               {
-                const human = String(
-                  event.human || event.summary || ""
-                ).trim();
+                // 只念 human：工具回执里 human 是「给用户的那一句」，其余字段（summary、available……）是给模型和日志的。
+                // ⚠ 2026-10-08 用户本机 sr-20261008133007-7R99SM9WXK：这里原来是 `human || summary`，再加上
+                //   skill_file_not_found 把整个包的文件清单写进 human，左栏刷出两百多个路径。顺着查下去，summary 兜底
+                //   把证据检索给模型的提醒（「这一轮**没有**外部证据——不是查过了没有，是没查成」）、记忆召回的整份笔记、
+                //   待办的整张清单都当成模型发言念给了用户。给谁看的分不清，是编排的问题，不是哪一个工具的问题。
+                const human = String(event.human || "").trim();
                 if (human) opts.onControlText?.(human);
               }
               continue;

@@ -173,8 +173,9 @@ describe("真机那一轮的原样事件", () => {
   it("todo_write 之后模型还在想：说在想下一步，带上进行中的那条待办（第 21 轮）", async () => {
     await replayThrough(ROUND21.length - 1, ROUND21);
     expect(ROUND21.at(-1)).toMatchObject({ type: "control_tool_result", tool: "todo_write" });
-    // 真机的输入形状：最后一步是 todo 摘要那段 model_speech，不是动作 chip。
-    expect(current.uiTurns.at(-1)?.steps.at(-1)?.kind).toBe("model_speech");
+    // 2026-10-08 起：工具结果只把 human 念给用户，summary 留给模型和日志（sliderule-marathon-driver 头注）——
+    // todo 摘要不再作为 model_speech 挂到步骤末尾，最后一步就是 todo_write 那个动作 chip。状态行照样要认得出空闲。
+    expect(current.uiTurns.at(-1)?.steps.at(-1)?.kind).toBe("chip");
     const text = statusLine();
     expect(text).toContain(`${THINKING_NEXT}：搭建 PPT 生成脚本与统一视觉规范`);
     expect(text).not.toContain("正在推演");
