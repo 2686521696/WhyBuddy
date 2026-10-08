@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
-import { PROJECT_PREVIEW_ORIGIN_ENV, workbenchContentSecurityPolicy } from "./scripts/project-preview-csp.mjs";
+import { PROJECT_PREVIEW_ORIGIN_ENV, SENTRY_DSN_ENV, workbenchContentSecurityPolicy } from "./scripts/project-preview-csp.mjs";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -173,8 +173,12 @@ export default defineConfig(({ mode }) => {
   // 不放开任何外联，zero-trust 姿态不变。
   // Vite does not load .env into process.env before this callback. Read the one
   // public template in both serve/build; gateway credentials stay server-only.
-  const previewEnv = loadEnv(mode, PROJECT_ROOT, PROJECT_PREVIEW_ORIGIN_ENV);
-  const csp = workbenchContentSecurityPolicy(previewEnv[PROJECT_PREVIEW_ORIGIN_ENV]);
+  // VITE_SENTRY_DSN 同理（构建期定死，Dockerfile 从 build-arg 灌进 process.env）：浏览器上报要进 connect-src。
+  const previewEnv = loadEnv(mode, PROJECT_ROOT, [PROJECT_PREVIEW_ORIGIN_ENV, SENTRY_DSN_ENV]);
+  const csp = workbenchContentSecurityPolicy(
+    previewEnv[PROJECT_PREVIEW_ORIGIN_ENV],
+    previewEnv[SENTRY_DSN_ENV]
+  );
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp}" />`;
   const vitePluginCspForByok = {
     name: "csp-for-byok-pages",

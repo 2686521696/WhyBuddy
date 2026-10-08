@@ -11,7 +11,9 @@ import test from "node:test";
 import { build, createServer } from "vite";
 import {
   PROJECT_PREVIEW_ORIGIN_ENV,
+  SENTRY_DSN_ENV,
   previewFrameSource,
+  sentryConnectSource,
   workbenchContentSecurityPolicy,
 } from "./project-preview-csp.mjs";
 
@@ -133,4 +135,33 @@ test("actual Vite serve and production HTML build load the public origin from mo
   } finally {
     await overridden.close();
   }
+});
+
+// ⚠ 2026-10-08：浏览器 Sentry 接上了，connect-src 却没放投递地址——报告会被 CSP 当场拦掉（sentryConnectSource 头注）。
+const DSN = "https://30e1f320ba46ae6a8d695740aea35cb6@o4512218484899840.ingest.us.sentry.io/4512218556596224";
+const INGEST = "https://o4512218484899840.ingest.us.sentry.io";
+
+test("a configured browser DSN lets exactly its ingest host through connect-src, nothing else widens", () => {
+  const without = directives(workbenchContentSecurityPolicy(undefined));
+  const withDsn = directives(workbenchContentSecurityPolicy(undefined, DSN));
+  assert.deepEqual(withDsn["connect-src"], [...without["connect-src"].slice(0, -1), INGEST, "data:"]);
+  for (const [name, sources] of Object.entries(without))
+    if (name !== "connect-src") assert.deepEqual(withDsn[name], sources, `${name} must not expand`);
+  assert.ok(!JSON.stringify(withDsn).includes("30e1f320ba46"), "DSN 的 key 不进页面头");
+  for (const bad of ["", "   ", "not a url", "http://o1.ingest.sentry.io/1", undefined])
+    assert.equal(sentryConnectSource(bad), undefined, String(bad));
+});
+
+test("actual Vite build reads the DSN the Dockerfile puts in process.env", async t => {
+  const original = process.env[SENTRY_DSN_ENV];
+  process.env[SENTRY_DSN_ENV] = DSN;
+  t.after(() => { if (original === undefined) delete process.env[SENTRY_DSN_ENV]; else process.env[SENTRY_DSN_ENV] = original; });
+  const server = await createServer({ configFile: join(root, "vite.config.ts"), logLevel: "silent" });
+  let served;
+  try {
+    served = await server.transformIndexHtml("/index.html", htmlFixture);
+  } finally {
+    await server.close();
+  }
+  assert.ok(directives(policyFromHtml(served))["connect-src"].includes(INGEST));
 });
