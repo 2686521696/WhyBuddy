@@ -17,6 +17,8 @@ coloraide>=4.0
 json-repair>=0.61
 pydantic-settings>=2.5.0
 python-dotenv>=1.0.0
+# 错误上报（services/error_reporting.py）：没配 SENTRY_DSN 就不启用。钉版本：上报前脱敏依赖它的 before_send 钩子形状。
+sentry-sdk==2.71.0
 httpx>=0.27.0
 pytest>=8.0.0
 # 按改动选测试（scripts/test-affected.mjs）与全量并行兜底（-n 4）

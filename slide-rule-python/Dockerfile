@@ -34,6 +34,10 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
+# 报错带上版本（services/error_reporting.py）：CI 传 github.sha；本地 build 不传就是空，那边会退回 git 提交号或不带。
+ARG GIT_SHA=""
+ENV SENTRY_RELEASE=$GIT_SHA
+
 # 依赖层先行，源码改动不重装依赖
 COPY slide-rule-python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt

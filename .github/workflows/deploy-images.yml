@@ -83,8 +83,12 @@ jobs:
           #   放 repo variable（不是 secret）：它是公开域名，不是凭据。
           #   没配时传空串，CSP 退回只允许本站 iframe，等于旧行为。
           #   python 那个 Dockerfile 不认这个 ARG，多传无害。
+          #   错误上报：GIT_SHA 让每条报错对得上是哪一版；VITE_SENTRY_DSN 是浏览器那份（公开的，放 variable）。
+          #   两个 Dockerfile 都认 GIT_SHA；python 那个不认 VITE_SENTRY_DSN，多传无害。
           build-args: |
             WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE=${{ vars.WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE }}
+            GIT_SHA=${{ github.sha }}
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

@@ -26,6 +26,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
+from services.error_reporting import reporting_scope
 from services.project_actor_access import authorize_project_actor
 from services.project_application_runtime import checkpoint_application_data, restore_application_data
 from services.project_browser_verification import (
@@ -398,7 +399,9 @@ class ProjectRuntimeSupervisor:
                     lease_owner=lease.leaseOwner, generation=lease.generation)
                 return
             context = _RuntimeTask(self, owner_id, lease, original)
-            with context.heartbeat:
+            # 这条工程操作里的报错带上操作号 / 工程 / 会话（services.error_reporting.reporting_scope）。
+            with reporting_scope(operation_id=original.operationId, project_id=original.projectId,
+                                 operation_kind=original.kind, owner_id=owner_id), context.heartbeat:
                 try:
                     if original.runtime is None and not lease.sandboxId and context.operation().cancelRequested:
                         raise _Cancel()

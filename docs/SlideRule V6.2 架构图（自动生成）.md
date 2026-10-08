@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **366** 个，模块 **366** 个
-- 内部依赖边 **1227** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1136** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **367** 个，模块 **367** 个
+- 内部依赖边 **1230** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1139** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,7 +37,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 162 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 163 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 77 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>162 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>163 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>77 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|169| util
   flow -->|142| core
-  flow -->|176| util
+  flow -->|178| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>282 个模块<br/>业务"]
+  services["services<br/>283 个模块<br/>业务"]
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -75,7 +75,7 @@ flowchart TB
   app -->|2| config
   app -->|1| models
   app -->|17| routes
-  app -->|29 · 其中 3 条边来自函数体 import| services
+  app -->|30 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、100 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、103 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -157,7 +157,7 @@ flowchart LR
   identity["identity<br/>9"]
   llm_gateway["llm_gateway<br/>19"]
   model_core["model_core<br/>27"]
-  observability["observability<br/>7"]
+  observability["observability<br/>8"]
   ops_scripts["ops_scripts<br/>41"]
   permission["permission<br/>8"]
   persist["persist<br/>14"]
@@ -182,6 +182,7 @@ flowchart LR
   control -->|5| identity
   control -->|9| llm_gateway
   control -->|3| model_core
+  control -->|1| observability
   control -->|12| persist
   control -->|37| platform
   control -->|4| spec_first
@@ -205,6 +206,7 @@ flowchart LR
   entrypoint -->|12| http_routes
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
+  entrypoint -->|1| observability
   entrypoint -->|1| permission
   entrypoint -->|4| persist
   entrypoint -->|8| platform
@@ -257,6 +259,7 @@ flowchart LR
   persist -->|42| platform
   run_control -->|1| platform
   runtime -->|2| identity
+  runtime -->|1| observability
   runtime -->|12| persist
   runtime -->|12| platform
   runtime -->|9| workspace

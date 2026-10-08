@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { applyInternalKeyAlias } from "./config/internal-key-alias.js";
+import { attachExpressErrorReporting, initErrorReporting } from "./observability/error-reporting.js";
 import express, { type Request, type Response } from "express";
 import { createServer } from "http";
 import dotenv from "dotenv";
@@ -37,6 +38,8 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 // 紧跟在 dotenv 之后、任何读这个变量的模块之前：Node 与 Python 守的是同一把
 // 钥匙却读两个变量名，只配一个会让每次 Node→Python 调用 403（见该模块说明）。
 applyInternalKeyAlias();
+// 错误上报（server/observability/error-reporting.ts）：.env 读完就接上，没配 SENTRY_DSN 是空操作。
+if (initErrorReporting("node")) console.log("[startup] error reporting: Sentry on");
 logSlideRuleProxyStartupDiag();
 const STARTUP_TRACE_ENABLED = process.env.STARTUP_TRACE === "1";
 
@@ -2468,6 +2471,9 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
     }
     res.sendFile(indexFile);
   });
+
+  // 路由全挂完之后：Express 里抛出来的错进错误上报（没接上就不挂）。
+  attachExpressErrorReporting(app);
 
   const port = process.env.PORT || 3000;
 

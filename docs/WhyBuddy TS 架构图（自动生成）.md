@@ -11,15 +11,15 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1091 |
+| client | 1092 |
 | project-templates | 5 |
 | scripts | 68 |
-| server | 588 |
+| server | 589 |
 | services | 32 |
-| shared | 179 |
-| **合计** | **2062** |
+| shared | 180 |
+| **合计** | **2065** |
 
-边 6138 条，其中动态 import / require 318 条、
+边 6142 条，其中动态 import / require 318 条、
 类型 import 2260 条。
 
 ## component 依赖图
@@ -32,7 +32,7 @@ graph LR
   agent-loop-tools["agent-loop-tools<br/>17"]
   agent-loop-vscode["agent-loop-vscode<br/>38"]
   client-components["client-components<br/>280"]
-  client-lib["client-lib<br/>176"]
+  client-lib["client-lib<br/>177"]
   client-pages["client-pages<br/>75"]
   client-pages-autopilot["client-pages-autopilot<br/>192"]
   client-pages-sliderule["client-pages-sliderule<br/>316"]
@@ -44,7 +44,7 @@ graph LR
   project-template-tasks["project-template-tasks<br/>3"]
   project-template-vite["project-template-vite<br/>2"]
   server-audit["server-audit<br/>26"]
-  server-core["server-core<br/>108"]
+  server-core["server-core<br/>109"]
   server-entry["server-entry<br/>1"]
   server-integrations["server-integrations<br/>26"]
   server-permission["server-permission<br/>16"]
@@ -57,7 +57,7 @@ graph LR
   server-sliderule["server-sliderule<br/>20"]
   server-tasks["server-tasks<br/>19"]
   shared-blueprint["shared-blueprint<br/>68"]
-  shared-contracts["shared-contracts<br/>79"]
+  shared-contracts["shared-contracts<br/>80"]
   shared-web-aigc["shared-web-aigc<br/>26"]
   shared-workflow["shared-workflow<br/>6"]
   agent-loop-tools --> agent-loop-src
@@ -374,7 +374,7 @@ Versioned React/TS/Vite template. index.html loads src/main.tsx after Python pub
 
 服务端核心：socket、注册表、治理、a2a 适配、nl-command。auth/runtime/config/startup 从组合根拆过来——grok 的 pager-bin 也不把库放进 binary crate。
 
-路径：`server/core`、`server/auth`、`server/runtime`、`server/config`、`server/startup`
+路径：`server/core`、`server/auth`、`server/runtime`、`server/config`、`server/startup`、`server/observability`
 
 ### server-entry
 

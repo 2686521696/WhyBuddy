@@ -16,6 +16,7 @@ from contextlib import aclosing
 from types import SimpleNamespace
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
+from services.error_reporting import reporting_scope
 from services.control_run_store import (
     ControlRunConflict, ControlRunNotFound, ControlRunStore, ControlRunUnavailable,
     TERMINAL,
@@ -531,7 +532,7 @@ class ControlRunService:
                         claimed = await asyncio.to_thread(self.store.claim, run_id,
                             self.worker_id, self.lease_seconds)
                         if claimed is not None:
-                            self._tasks[run_id] = asyncio.create_task(self._produce(claimed))
+                            self._tasks[run_id] = asyncio.create_task(self._produce_reported(claimed))
                             available -= 1
                         if available <= 0:
                             break
@@ -766,6 +767,12 @@ class ControlRunService:
                     # 存档抖动不许把正在采样的 run 判死。下一拍再续。
                     # 真丢了租约会在下一拍 ControlRunConflict，或 guard 看见过期。
                     log.exception("control heartbeat deferred run=%s", port.record["runId"])
+
+    async def _produce_reported(self, record):
+        """这条控制回合里的报错都带上 run / 会话 / 账号（services.error_reporting.reporting_scope）——按会话号能搜到。"""
+        with reporting_scope(run_id=record.get("runId"), session_id=record.get("sessionId"),
+                             owner_id=record.get("ownerId")):
+            await self._produce(record)
 
     async def _produce(self, record):
         run_id, generation = record["runId"], record["generation"]

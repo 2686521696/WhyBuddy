@@ -1,0 +1,19 @@
+{
+  "_why": "错误上报脱敏的成对判据（CLAUDE.md §四：Python 判定 / TypeScript 运行时）。slide-rule-python/services/error_reporting.py 与 shared/observability/error-scrub.ts 各自脱敏这几行，secret 一个都不许留下、keep 一个都不许误伤。两侧测试都读这一份。",
+  "texts": [
+    {"text": "connect postgresql://neondb_owner:p4ssw0rd@ep-x.neon.tech/neondb failed", "secret": ["p4ssw0rd", "neondb_owner"], "keep": ["connect", "failed"]},
+    {"text": "Authorization: Bearer sk-abcdefghijklmnopqrstuvwx", "secret": ["sk-abcdefghijklmnop"], "keep": []},
+    {"text": "llm call with key sk-proj-ABCDEFGHIJKLMNOPQRSTUV returned 401", "secret": ["ABCDEFGHIJKLMNOP"], "keep": ["returned 401"]},
+    {"text": "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3OCJ9.c2lnbmF0dXJlMTIz expired", "secret": ["eyJhbGciOiJIUzI1NiJ9"], "keep": ["expired"]},
+    {"text": "retry with password=hunter2 and api_key=AKIA1234567890", "secret": ["hunter2", "AKIA1234567890"], "keep": ["retry with"]},
+    {"text": "session sr-20261008092556-8PW0MNC7ZW interrupted: control_run_access_revoked", "secret": [], "keep": ["sr-20261008092556-8PW0MNC7ZW", "control_run_access_revoked"]}
+  ],
+  "headers": {
+    "Authorization": "secret",
+    "Cookie": "secret",
+    "X-Internal-Key": "secret",
+    "X-Session-Token": "secret",
+    "User-Agent": "keep",
+    "Content-Type": "keep"
+  }
+}

@@ -46,6 +46,14 @@ COPY . .
 ARG WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE=""
 ENV WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE=$WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE
 
+# 错误上报（client/src/lib/error-reporting.ts）：浏览器那份 DSN 也是构建期定死的。DSN 设计上就是公开的
+# （只能往这个项目里写事件，读不了），放 repo variable，不是 secret。留空 = 浏览器不上报、包里不加载 Sentry。
+ARG VITE_SENTRY_DSN=""
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+# 报错对得上是哪一版代码：CI 传 github.sha。
+ARG GIT_SHA=""
+ENV VITE_SENTRY_RELEASE=$GIT_SHA
+
 # Vite build emits dist/public/, esbuild bundles dist/index.js.
 RUN pnpm run build
 
@@ -54,6 +62,9 @@ FROM node:22-alpine AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3001
+# Node 服务报错带上版本（server/observability/error-reporting.ts）。ARG 不跨阶段，这里再声明一次。
+ARG GIT_SHA=""
+ENV SENTRY_RELEASE=$GIT_SHA
 
 # 运行期同样信任可选企业根证书（LLM 网关走企业代理时需要）
 COPY docker/certs/ /usr/local/share/ca-certificates/sliderule/

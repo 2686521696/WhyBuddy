@@ -86,6 +86,13 @@ def _hydrate_env_files() -> None:
 # 必须先于 config.settings / 各服务 import（它们在 import 期就读环境）。
 _hydrate_env_files()
 
+# 错误上报（services/error_reporting 头注）：env 灌完之后、FastAPI 建起来之前——Sentry 要在 app 之前 init，
+# 它的 FastAPI / Starlette 集成才挂得上。没配 SENTRY_DSN 就是空操作。
+from services.error_reporting import init_error_reporting
+
+if init_error_reporting("python"):
+    print("[startup] error reporting: Sentry on")
+
 from config.settings import settings
 from routes.audit import router as audit_router
 from routes.blueprint_jobs import router as blueprint_jobs_router

@@ -15,12 +15,12 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1091 个模块"]
+    ts_client["ts/client<br/>1092 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
     ts_scripts["ts/scripts<br/>68 个模块"]
-    ts_server["ts/server<br/>588 个模块"]
+    ts_server["ts/server<br/>589 个模块"]
     ts_services["ts/services<br/>32 个模块"]
-    ts_shared["ts/shared<br/>179 个模块"]
+    ts_shared["ts/shared<br/>180 个模块"]
   end
   subgraph py [Python]
     py_app["py/app<br/>1 个模块"]
@@ -31,7 +31,7 @@ flowchart TB
     py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>16 个模块"]
     py_scripts["py/scripts<br/>40 个模块"]
-    py_services["py/services<br/>282 个模块"]
+    py_services["py/services<br/>283 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>16 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -39,17 +39,17 @@ flowchart TB
     py_services_web_aigc_web_qa_adapter["services.web_aigc_web_qa_adapter"]
     py_services_web_aigc_device_location_adapter["services.web_aigc_device_location_adapter"]
   end
-  ts_client -->|415| ts_shared
+  ts_client -->|416| ts_shared
   ts_scripts -->|2| ts_client
   ts_scripts -->|10| ts_server
   ts_scripts -->|2| ts_shared
   ts_server -->|1| ts_client
-  ts_server -->|702| ts_shared
+  ts_server -->|703| ts_shared
   ts_services -->|23| ts_shared
   py_app -->|2| py_config
   py_app -->|1| py_models
   py_app -->|17| py_routes
-  py_app -->|29| py_services
+  py_app -->|30| py_services
   py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models

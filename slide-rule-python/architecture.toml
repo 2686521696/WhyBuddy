@@ -132,6 +132,8 @@ modules = [
   "services.calculator",
   # 对话档临时沙盒（2026-10-06）：沙盒提供方、技能包都由调用方注入，不 import services 里的模块 → 叶子。
   "services.scratch_sandbox",
+  # 错误上报（2026-10-08）：只 import 标准库和 sentry_sdk，不碰 services 里任何模块 → 叶子。
+  "services.error_reporting",
   # 给模型看图（2026-10-07）：待附的图只存这一回合，吃字节、拼 image_url，不 import services 里的模块 → 叶子。
   "services.model_images",
   # 工作器分组（2026-10-04）：本地连线上库时各领各的单。只读环境变量、拼 SQL 片段 → 叶子。
@@ -612,6 +614,8 @@ may_depend_on = [
   "model_core",
   "platform",
   "spec_first",
+  # 2026-10-08：控制回合里的报错带上 run / 会话号上报（services.error_reporting.reporting_scope）。叶子模块，不回依赖。
+  "observability",
 ]
 modules = [
   "services.control_run_service",
@@ -647,7 +651,8 @@ llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何�
 `ensure_llm_proxy_bypass()` 设好代理绕过名单（Windows/Clash 下控制面 522），
 而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
   # Lifespan owns both the durable control producer and project runtime worker.
-  may_depend_on = ["agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
+  # 2026-10-08 observability：进程启动时在建 FastAPI 之前 init Sentry（services.error_reporting）。
+  may_depend_on = ["agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "observability", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "app",
 ]
@@ -773,6 +778,8 @@ modules = [
   "services.stage_pairing",
   "services.telemetry",
   "services.telemetry_runtime",
+  # 错误上报（2026-10-08）：Sentry 初始化、上报前脱敏、按会话打标签。只 import 标准库和 sentry_sdk → 叶子。
+  "services.error_reporting",
 ]
 
 [component.ops_scripts]
@@ -870,7 +877,8 @@ modules = [
 [component.runtime]
 why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
   # Recover with persisted plan authority and recheck the owner's current account access.
-  may_depend_on = ["platform", "persist", "workspace", "identity"]
+  # 2026-10-08 observability：工程操作里的报错带上操作号 / 工程号上报（services.error_reporting）。
+  may_depend_on = ["platform", "persist", "workspace", "identity", "observability"]
   modules = [
     "services.project_runtime",
     "services.skill_hydrate",

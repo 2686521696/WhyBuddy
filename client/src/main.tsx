@@ -11,6 +11,10 @@ import "./styles/mirofish-tokens.css";
 import "./styles/mirofish-layer.css";
 import { migrateLegacyStorage } from "./lib/migrate-storage";
 import { initUserPrefs } from "./pages/sliderule/user-prefs";
+import { initBrowserErrorReporting } from "./lib/error-reporting";
+
+// 错误上报（lib/error-reporting.ts）：配了 VITE_SENTRY_DSN 才动态加载，不挡首帧。
+void initBrowserErrorReporting();
 
 // WhyBuddy → SlideRule rename: move legacy localStorage entries before anything reads them.
 migrateLegacyStorage();

@@ -216,7 +216,7 @@
         "server/auth",
         "server/runtime",
         "server/config",
-        "server/startup"
+        "server/startup", "server/observability"
       ],
       "mayDependOn": [
         "server-audit",
