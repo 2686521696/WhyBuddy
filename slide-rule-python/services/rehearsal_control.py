@@ -62,7 +62,7 @@ import uuid
 from contextlib import aclosing, contextmanager, nullcontext
 from contextvars import ContextVar
 from enum import Enum
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
 
 from services.factory_plan_steps import product_steps_for_tools
@@ -4499,6 +4499,9 @@ def _goal_brief(goal: str) -> str:
 _WEEKDAYS = "一二三四五六日"
 
 
+_BEIJING = timezone(timedelta(hours=8), "Asia/Shanghai")
+
+
 def _today_fact(now: Optional[datetime] = None) -> str:
     """今天是哪天（北京时间）。
 
@@ -4506,9 +4509,13 @@ def _today_fact(now: Optional[datetime] = None) -> str:
       交付文件名却是 order-service-incident-postmortem-2024-10-06.md——用户只说了「昨天（10月6日）」，系统提示里一个字的
       日期都没有，模型拿训练数据里的年份补上了。Claude Code 每一回合都在环境信息里写「Today's date」；写复盘、通知、
       周报、合同落款的技能都要用到它，这里补同一件事实。
+
+    ⚠ 2026-10-08 用户 Windows 本机 sr-20261008092556-8PW0MNC7ZW（@ui-ux-pro-max @office-skills 采购审批方案）：拉到这段
+      代码之后每一回合都 interrupted / control_producer_failed——@ 的两个技能由宿主先加载完，第一次问模型拼系统提示时
+      ZoneInfo("Asia/Shanghai") 抛 ZoneInfoNotFoundError：Windows 的 Python 没有系统时区库，要另装 tzdata，依赖清单里没有。
+      北京时间没有夏令时，固定 UTC+8 就是精确的，不依赖任何时区数据。
     """
-    from zoneinfo import ZoneInfo
-    current = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Asia/Shanghai"))
+    current = (now or datetime.now(timezone.utc)).astimezone(_BEIJING)
     return (f"今天是 {current:%Y-%m-%d}（星期{_WEEKDAYS[current.weekday()]}，北京时间）。"
             "用户说「昨天」「上周」「10月6日」没写年份时，按这个日期推算，别用别的年份。")
 
