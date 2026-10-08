@@ -100,3 +100,18 @@ def test_the_line_survives_into_the_next_turn():
     restored = control._skill_infos_from_cache(persisted)
     assert restored[0].assets == (PDF,)
     assert skill_asset_url("theme-factory", PDF) in build_skill_message(restored[0])
+
+
+def test_a_missing_file_tells_the_model_the_list_but_the_user_one_line(monkeypatch):
+    """⚠ 2026-10-08 sr-20261008133007-7R99SM9WXK：清单写在 human 里，前端原样念给用户，左栏刷出两百多个路径。
+    真机那一发原样：office-skills 读 standards/structure/docx-structure.md（包里没有）。"""
+    from models.v5_state import V5SessionState
+    monkeypatch.setattr(control, "installed_skill_infos", lambda owner: [local_seed_skill_info("office-skills")])
+    monkeypatch.setattr(control, "installed_skill_files",
+                        lambda owner, slug: local_seed_files(slug) if slug == "office-skills" else None)
+    state = V5SessionState(sessionId="sr-missing-file", ownerId="alice", goal={"text": "员工入职系统 Word 方案"})
+    out = control._skill_package_file(state, "office-skills", "standards/structure/docx-structure.md")
+    assert out["error"] == "skill_file_not_found"
+    assert "standards/structure/docx-cover-page.md" in out["available"]           # 模型照样拿得到清单、挑得对
+    assert len(out["human"]) < 120 and ".xsd" not in out["human"]                 # 用户那边只有一句
+    assert "docx-structure.md" in out["human"]

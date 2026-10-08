@@ -67,7 +67,9 @@ def test_the_base_directory_form_of_the_path_works_too(harness):
 def test_a_missing_file_lists_what_is_there(harness):
     body, _ = _turn(harness, "examples/nope.md")
     out = json.loads(body)
-    assert out["ok"] is False and "examples/general-comms.md" in out["human"]
+    # 清单给模型挑文件用，在 available 里；human 是念给用户的那一句（2026-10-08，_skill_package_file 头注）。
+    assert out["ok"] is False and "examples/general-comms.md" in out["available"]
+    assert "examples/general-comms.md" not in out["human"]
 
 
 def test_the_store_list_really_lacks_it():

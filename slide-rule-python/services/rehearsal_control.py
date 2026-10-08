@@ -1761,8 +1761,13 @@ def _skill_package_file(state: V5SessionState, slug: str, wanted: str) -> Dict[s
     if text is None:
         listed = sorted(path for path in files if not path.startswith("."))[:80]
         viewable = "；给人看的文件（只能给用户链接）：" + "、".join(assets) if assets else ""
+        # ⚠ 2026-10-08 用户本机 sr-20261008133007-7R99SM9WXK（员工入职系统 Word 方案，office-skills 读
+        #   standards/structure/docx-structure.md）：清单原来写在 human 里——human 是前端原样念给用户的那句话
+        #   （sliderule-marathon-driver：control_tool_result → onControlText(event.human)），左栏刷出两百多个
+        #   .xsd / .py 路径。清单是给模型挑对文件用的，挪到 available（模型回执里照样整份看得见）；human 只留一句。
         return {"ok": False, "error": "skill_file_not_found", "file": rel,
-                "human": f"「{slug}」包里没有 {rel}。包里有：" + "、".join(listed) + viewable}
+                "available": "包里有：" + "、".join(listed) + viewable,
+                "human": f"「{slug}」包里没有 {rel}，换一份读。"}
     clipped = len(text) > SKILL_FILE_MAX_CHARS
     return {"ok": True, "file": rel,
             "skill_message": f'<skill_file skill="{_xml_escape_attr(slug)}" path="{_xml_escape_attr(rel)}">\n'
