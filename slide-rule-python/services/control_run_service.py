@@ -46,7 +46,10 @@ log = logging.getLogger(__name__)
 def authorize_control_run(session_id, owner_id):
     try:
         authorize_project_actor(owner_id)
-    except PermissionError:
+    except PermissionError as exc:
+        # 「身份库查不到」不是「被吊销」：原样往上交，RunCheckpoint.guard 给它宽限（_authority_lookup_blip 头注）。
+        if str(exc) == "project_actor_unavailable":
+            raise
         raise PermissionError("control_run_access_revoked") from None
     return load_authorized_session(session_id, owner_id=owner_id)
 
@@ -194,6 +197,17 @@ def complete_with_provider_failure(completion, events):
 
 _SAVE_ATTEMPTS = 3
 _SAVE_BACKOFF_SECONDS = 0.5
+#: 权限确认通过后多久内不重查（RunCheckpoint._authorize 头注）。
+_AUTHORITY_RECHECK_SECONDS = 5.0
+#: 身份库 / 会话库连续查不到多久才停掉正在跑的任务。
+_AUTHORITY_BLIP_GRACE_SECONDS = 60.0
+
+
+def _authority_lookup_blip(exc: BaseException) -> bool:
+    """「查不到」而不是「查到了、没权限」：存储不可用、网关报错、抖一下回 0 行（会话 not_found，09-16 那一课）。"""
+    if isinstance(exc, PermissionError):
+        return str(exc) == "project_actor_unavailable"
+    return True
 
 
 class RunCheckpoint:
@@ -201,6 +215,8 @@ class RunCheckpoint:
         self.service, self.record = service, record
         self.checkpoint = copy.deepcopy(record.get("checkpoint"))
         self.stop_reason = None
+        self._authorized_at = 0.0
+        self._authority_blip_since = None
 
     def fence(self) -> dict:
         return {"runId": self.record["runId"], "generation": self.record["generation"],
@@ -223,10 +239,39 @@ class RunCheckpoint:
             raise ControlRunStopped("control_lease_lost")
         if record["cancelRequested"]:
             raise ControlRunStopped("control_cancelled")
+        self._authorize(record)
+
+    def _authorize(self, record):
+        """账号和会话还归这个人吗。确认过 _AUTHORITY_RECHECK_SECONDS 秒内不重查；查不到给宽限，查到没权限当场停。
+
+        ⚠ 2026-10-08 用户本机 sr-20261008092556-8PW0MNC7ZW 执行轮 ctr-6da33921cb525b04ae9454ba46caaede（@ui-ux-pro-max
+          @office-skills 采购审批方案）：跑了 6 分钟，interrupted / control_run_access_revoked——账号一秒都没被停用过。
+          采样期间 guard 每 0.25 秒一次（control_checkpoint.owned_model_sample），每次都查身份库 + 读整份会话，6 分钟一千多次
+          打共享库；这一晚那个网关反复回 db-api http 500。authorize_control_run 把「身份库查不到」改写成「被吊销」，
+          这里又把任何异常都当「被吊销」——抖一次，正在跑的任务就以「你没权限了」被掐。跟 09-16（project_actor_access 头注）、
+          今天运行时工作器（project_runtime_worker._authorize_actor）同一种病，第三处。
+          两处一起改：查不到 = 连续不到 _AUTHORITY_BLIP_GRACE_SECONDS 秒只记日志、这一轮放过，超过照旧停；
+          查到了、没权限 = 当场停。确认过的 5 秒内不重查：吊销最多晚 5 秒生效，打库少二十倍。
+        """
+        now = time.time()
+        if now - self._authorized_at < _AUTHORITY_RECHECK_SECONDS:
+            return
         try:
             self.service.authorize(record["sessionId"], record["ownerId"])
         except Exception as exc:
-            raise ControlRunStopped("control_run_access_revoked") from exc
+            if not _authority_lookup_blip(exc):
+                raise ControlRunStopped("control_run_access_revoked") from exc
+            since = self._authority_blip_since or now
+            self._authority_blip_since = since
+            if now - since >= _AUTHORITY_BLIP_GRACE_SECONDS:
+                log.warning("control authority lookup unavailable for %.0fs, stopping run=%s",
+                            now - since, self.record.get("runId"), exc_info=exc)
+                raise ControlRunStopped("control_checkpoint_unavailable") from exc
+            log.warning("control authority lookup unavailable (%.0fs so far), keeping run=%s: %s",
+                        now - since, self.record.get("runId"), type(exc).__name__)
+            return
+        self._authority_blip_since = None
+        self._authorized_at = now
 
     async def save(self, checkpoint):
         """存一份检查点。存储暂时不可用就退避重试，跟采样期间的 guard 一样（control_checkpoint._guard_sampling）。
