@@ -60,6 +60,11 @@ export function initErrorReporting(
       ...(levels ? { integrations: [Sentry.consoleLoggingIntegration({ levels })] } : {}),
       initialScope: { tags: { service, ...(env.SLIDERULE_WORKER_POOL ? { worker_pool: env.SLIDERULE_WORKER_POOL } : {}) } },
     });
+    // ⚠ 2026-10-08 线上核对：日志不吃 initialScope 的 tag，只吃 attribute——Node 的日志行 service 是空的，
+    //   Python 那份（error_reporting.py）早就挂成全局属性了（§四 成对）。
+    Sentry.getGlobalScope().setAttributes({
+      service, ...(env.SLIDERULE_WORKER_POOL ? { worker_pool: env.SLIDERULE_WORKER_POOL } : {}),
+    });
   } catch (error) {
     console.warn("[error-reporting] init failed; continuing without it:", (error as Error)?.message);
     return false;

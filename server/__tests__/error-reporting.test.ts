@@ -44,7 +44,7 @@ describe("Node 错误上报", () => {
   });
 
   it("执行过程：console 输出走真 SDK 进 Logs，脱敏；off 关得掉（官方 enableLogs + consoleLoggingIntegration）", async () => {
-    const items: Array<{ body: string; level: string }> = [];
+    const items: Array<{ body: string; level: string; attributes?: Record<string, { value: unknown }> }> = [];
     const transport = () => ({
       send: async (envelope: any) => {
         for (const [header, payload] of envelope[1]) if (header.type === "log") items.push(...payload.items);
@@ -63,6 +63,8 @@ describe("Node 错误上报", () => {
     expect(bodies.some(b => b.startsWith("[proxy] python upstream") && b.includes("[Filtered]"))).toBe(true);
     expect(JSON.stringify(items)).not.toContain("abc123secret");
     expect(items.find(item => item.body === "[preview] relay slow")?.level).toBe("warn");
+    // 线上核对时 Node 的日志行 service 是空的：跟 Python 一样能按服务筛
+    expect(items.every(item => item.attributes?.service?.value === "node")).toBe(true);
   });
 
   it("SENTRY_LOGS_LEVEL：跟 Python 那份同一套取值", () => {
