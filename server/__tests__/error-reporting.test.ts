@@ -4,7 +4,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { initErrorReporting } from "../observability/error-reporting";
+import * as Sentry from "@sentry/node";
+import { consoleLogLevels, initErrorReporting } from "../observability/error-reporting";
 
 describe("Node 错误上报", () => {
   it("没配 SENTRY_DSN：什么都不做", () => {
@@ -40,5 +41,38 @@ describe("Node 错误上报", () => {
     const attach = src.indexOf("attachExpressErrorReporting(app);");
     expect(attach).toBeGreaterThan(src.indexOf('app.get("*"'));
     expect(attach).toBeLessThan(src.indexOf("server.listen(port"));
+  });
+
+  it("执行过程：console 输出走真 SDK 进 Logs，脱敏；off 关得掉（官方 enableLogs + consoleLoggingIntegration）", async () => {
+    const items: Array<{ body: string; level: string }> = [];
+    const transport = () => ({
+      send: async (envelope: any) => {
+        for (const [header, payload] of envelope[1]) if (header.type === "log") items.push(...payload.items);
+        return {};
+      },
+      flush: async () => true,
+    });
+    const ok = initErrorReporting("node", { SENTRY_DSN: "https://k@o0.ingest.sentry.io/0" },
+      (options => Sentry.init({ ...options, transport } as never)) as never);
+    expect(ok).toBe(true);
+    console.log("[proxy] python upstream http://127.0.0.1:9700 token=abc123secret");
+    console.warn("[preview] relay slow");
+    await Sentry.flush(2000);
+    await Sentry.close();
+    const bodies = items.map(item => item.body);
+    expect(bodies.some(b => b.startsWith("[proxy] python upstream") && b.includes("[Filtered]"))).toBe(true);
+    expect(JSON.stringify(items)).not.toContain("abc123secret");
+    expect(items.find(item => item.body === "[preview] relay slow")?.level).toBe("warn");
+  });
+
+  it("SENTRY_LOGS_LEVEL：跟 Python 那份同一套取值", () => {
+    expect(consoleLogLevels(undefined)).toEqual(["log", "info", "warn", "error"]);
+    expect(consoleLogLevels("warning")).toEqual(["warn", "error"]);
+    expect(consoleLogLevels("off")).toBeNull();
+    let options: Record<string, any> = {};
+    initErrorReporting("node", { SENTRY_DSN: "https://k@o0.ingest.sentry.io/0", SENTRY_LOGS_LEVEL: "off" },
+      (o => { options = o as never; }) as never);
+    expect(options.enableLogs).toBe(false);
+    expect(options.integrations).toBeUndefined();
   });
 });

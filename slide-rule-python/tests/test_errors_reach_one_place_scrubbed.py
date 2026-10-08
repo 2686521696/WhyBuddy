@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 
 import pytest
 import sentry_sdk
@@ -25,11 +26,14 @@ class _Inbox(Transport):
     def __init__(self, options=None):
         super().__init__(options)
         self.events = []
+        self.logs = []
 
     def capture_envelope(self, envelope):
         for item in envelope.items:
             if item.type == "event":
                 self.events.append(item.payload.json)
+            elif item.type == "log":
+                self.logs.extend(item.payload.json["items"])
 
 
 @pytest.fixture
@@ -37,7 +41,9 @@ def inbox(monkeypatch):
     box = _Inbox()
     real_init = sentry_sdk.init
     monkeypatch.setattr(sentry_sdk, "init", lambda **kw: real_init(transport=box, **kw))
+    stdout = sys.stdout
     yield box
+    sys.stdout = stdout                                              # 转发器包过的 stdout 换回来
     sentry_sdk.get_client().close()
     sentry_sdk.init()                                                # 恢复成没有 DSN 的空客户端
     monkeypatch.setattr(error_reporting, "_active", False)
@@ -208,3 +214,96 @@ def test_both_exits_are_wired():
     worker = inspect.getsource(project_runtime_worker.ProjectRuntimeSupervisor)
     branch = worker[worker.index("                except Exception as exc:\n                    code = str(exc)"):]
     assert 'logger.error(f"project operation {original.kind} failed' in branch[:600]
+
+
+# ── 执行过程（Sentry Logs）：推演轨迹是 print("[control] …")，不是 logging ──────────────────────────
+# ⚠ 2026-10-08 方案 A：错误只说「哪儿炸了」，说不了「炸之前在干什么」（services/error_reporting 头注）。
+#   下面那行照抄真机控制台（services/action_stationarity 头注里记的那一段）。
+
+REAL_LINE = "[control] goal='请假系统' offered=[…'search_evidence'] picked=['search_evidence']"
+
+
+def _attr(log, key):
+    return (log["attributes"].get(key) or {}).get("value")
+
+
+def test_a_traced_line_reaches_logs_with_its_session_and_still_hits_the_console(inbox, capsys):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN, "SLIDERULE_WORKER_POOL": "dev-DESKTOP-57LOSN8-8374d0ee"})
+    with reporting_scope(run_id="ctr-a45b", session_id="sr-20261008092556-8PW0MNC7ZW"):
+        print(REAL_LINE, flush=True)
+    _flush()
+    [log] = [entry for entry in inbox.logs if entry["body"] == REAL_LINE]
+    assert _attr(log, "session_id") == "sr-20261008092556-8PW0MNC7ZW" and _attr(log, "run_id") == "ctr-a45b"
+    assert _attr(log, "log.tag") == "control" and _attr(log, "service") == "python"
+    assert _attr(log, "worker_pool") == "dev-DESKTOP-57LOSN8-8374d0ee"
+    assert REAL_LINE in capsys.readouterr().out                                  # 控制台那份一个字不少
+    assert inbox.events == []                                                    # 日志不是问题
+
+
+def test_untagged_prints_stay_on_the_console(inbox):
+    """反向：没有 [标签] 的 print（调试残留、第三方库）不抄。"""
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    print("Uvicorn running on http://0.0.0.0:9700", flush=True)
+    _flush()
+    assert inbox.logs == []
+
+
+def test_a_secret_in_a_traced_line_is_scrubbed(inbox):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    print("[identity] lookup via postgresql://neondb_owner:p4ss@ep-x.neon.tech/neondb token=abc123secret", flush=True)
+    _flush()
+    text = repr(inbox.logs)
+    assert inbox.logs and "p4ss" not in text and "abc123secret" not in text and FILTERED in text
+
+
+def test_a_warning_is_a_log_line_not_an_issue(inbox):
+    """WARNING 起的 logging 记录走官方集成进 Logs（「keeping run」这种自愈记录正是执行过程）。"""
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    with reporting_scope(session_id="sr-x"):
+        PRODUCER.warning("control authority lookup unavailable (3s so far), keeping run")
+    _flush()
+    [log] = inbox.logs
+    assert log["level"] == "warn" and _attr(log, "session_id") == "sr-x"
+    assert inbox.events == []
+
+
+def test_two_runs_at_once_keep_their_own_session_in_logs(inbox):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+
+    async def run(sid, delay):
+        with reporting_scope(session_id=sid):
+            await asyncio.sleep(delay)
+            print(f"[control] round=1 run={sid}", flush=True)
+
+    async def both():
+        await asyncio.gather(run("sr-A", 0.02), run("sr-B", 0.0))
+    asyncio.run(both())
+    _flush()
+    assert sorted((_attr(e, "session_id"), e["body"].endswith(_attr(e, "session_id"))) for e in inbox.logs) \
+        == [("sr-A", True), ("sr-B", True)]
+
+
+@pytest.mark.parametrize("level,prints,warnings", [("off", 0, 0), ("warning", 0, 1), ("info", 1, 1)])
+def test_the_logs_level_switch(inbox, level, prints, warnings):
+    init_error_reporting("python", env={"SENTRY_DSN": DSN, "SENTRY_LOGS_LEVEL": level})
+    print(REAL_LINE, flush=True)
+    PRODUCER.warning("keeping run")
+    _flush()
+    assert sum(e["body"] == REAL_LINE for e in inbox.logs) == prints
+    assert sum(e["body"] == "keeping run" for e in inbox.logs) == warnings
+    assert isinstance(sys.stdout, error_reporting._StdoutForwarder) is (level == "info")
+
+
+def test_a_broken_forwarder_never_eats_the_console(capsys):
+    """增强类：转发炸了，控制台照旧。"""
+    def boom(line, tag):
+        raise RuntimeError("sentry down")
+    out = error_reporting._StdoutForwarder(sys.stdout, boom)
+    print(REAL_LINE, file=out, flush=True)
+    assert REAL_LINE in capsys.readouterr().out
+
+
+def test_without_a_dsn_stdout_is_untouched(inbox):
+    before = sys.stdout
+    init_error_reporting("python", env={})
+    assert sys.stdout is before

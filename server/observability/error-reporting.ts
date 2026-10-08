@@ -9,13 +9,26 @@
  * 只收进程级未捕获异常 / 未处理的 Promise 拒绝、Express 路由里抛出来的错。不收 console.error：Node 这边
  * console.error 用得很多、大半是预期内的，全收会把真问题淹掉。进程级兜底处理器（server/index.ts 末尾）
  * 照旧「记日志、不退出」，Sentry 自带的处理器在已有处理器时也不会让进程退出。
+ *
+ * 执行过程（Sentry Logs）：照官方写法 enableLogs + consoleLoggingIntegration + beforeSendLog。console 输出
+ * 进的是 Logs、不是问题，所以上面「不收 console.error」那条不变。SENTRY_LOGS_LEVEL 跟 Python 那份同一个开关：
+ * info（默认：log / info / warn / error）/ warning（warn / error）/ off。
  */
 import os from "node:os";
 import * as Sentry from "@sentry/node";
 import type { Express } from "express";
-import { reportingEnvironment, scrubEvent } from "../../shared/observability/error-scrub.js";
+import { reportingEnvironment, scrubEvent, scrubValue } from "../../shared/observability/error-scrub.js";
 
 let active = false;
+
+type ConsoleLevel = "log" | "info" | "warn" | "error";
+
+/** SENTRY_LOGS_LEVEL → 抄进 Logs 的 console 级别；off 返回 null。跟 Python 的 _logs_level 同一套取值。 */
+export function consoleLogLevels(raw: string | undefined): ConsoleLevel[] | null {
+  const level = (raw || "info").trim().toLowerCase();
+  if (level === "off") return null;
+  return level === "warning" ? ["warn", "error"] : ["log", "info", "warn", "error"];
+}
 
 export function errorReportingActive(): boolean {
   return active;
@@ -28,6 +41,7 @@ export function initErrorReporting(
 ): boolean {
   const dsn = (env.SENTRY_DSN || "").trim();
   if (!dsn) return false;
+  const levels = consoleLogLevels(env.SENTRY_LOGS_LEVEL);
   try {
     init({
       dsn,
@@ -39,6 +53,11 @@ export function initErrorReporting(
       beforeSend: event => scrubEvent(event),
       beforeSendTransaction: event => scrubEvent(event),
       beforeBreadcrumb: crumb => scrubEvent(crumb),
+      enableLogs: levels !== null,
+      beforeSendLog: log => {
+        try { return scrubValue(log) as typeof log; } catch { return null; }      // 脱敏炸了就不发
+      },
+      ...(levels ? { integrations: [Sentry.consoleLoggingIntegration({ levels })] } : {}),
       initialScope: { tags: { service, ...(env.SLIDERULE_WORKER_POOL ? { worker_pool: env.SLIDERULE_WORKER_POOL } : {}) } },
     });
   } catch (error) {

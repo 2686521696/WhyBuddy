@@ -6,6 +6,13 @@
   排查只能从数据库里的运行记录倒推，有两次得先在另一台机器上复现。接上之后 ERROR 级日志（含 log.exception
   的调用栈）自动成为一个事件，按 environment / server_name / worker_pool / session_id 能筛。
 
+执行过程（Sentry Logs，照官方写法 enable_logs + LoggingIntegration(sentry_logs_level) + before_send_log）：
+  报错只说「哪儿炸了」，说不了「炸之前在干什么」。推演的执行轨迹几乎全是 `print("[control] …")`
+  （54 个文件用 print、16 个用 logging，而且没人配过 logging，INFO 级的 logging 记录在 WARNING 那道门就丢了）。
+  所以两路：WARNING 起的 logging 记录走官方集成；行首带 `[标签]` 的 print 行由 _StdoutForwarder 照抄一份进
+  Sentry Logs（控制台照旧先写，一个字不少）。两路都带 reporting_scope 里的 run_id / session_id，按会话能捞出一整段。
+  SENTRY_LOGS_LEVEL：info（默认，两路都开）/ warning（只有 logging 那一路）/ off。
+
 增强类（CLAUDE.md §七 fail-open）：没配 SENTRY_DSN 就什么都不做；sentry-sdk 没装、初始化抛错，都只记一行、照常启动。
 上报前脱敏（scrub_event）：cookie、鉴权头、内部 key、数据库连接串、API key 形状的串一律换成 [Filtered]。
 宁可多剥：上报的东西出了这台机器就收不回来。
@@ -21,6 +28,8 @@ import os
 import re
 import socket
 import subprocess
+import sys
+import threading
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
@@ -90,6 +99,74 @@ def _scrub_breadcrumb(crumb: dict, hint: Optional[dict] = None) -> Optional[dict
         return None
 
 
+def scrub_log(log: dict, hint: Optional[dict] = None) -> Optional[dict]:
+    """Sentry before_send_log：正文和属性同一套脱敏。脱敏自己炸了就**不发**。"""
+    try:
+        return _scrub(log)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _logs_level(env: Mapping[str, str]) -> str:
+    level = (env.get("SENTRY_LOGS_LEVEL") or "info").strip().lower()
+    return level if level in ("info", "warning", "off") else "info"
+
+
+#: 行首的 `[标签]`：`[control] goal=…`、`[skills] …`、`[project] …`。没有标签的 print（调试残留、第三方）不收。
+_TAGGED_LINE = re.compile(r"^\[([A-Za-z0-9_.:-]{1,40})\]\s?")
+_MAX_LOG_LINE = 2000
+
+
+class _StdoutForwarder:
+    """包住 sys.stdout：先原样写给控制台，再把带标签的整行抄进 Sentry Logs。
+
+    增强类：转发出任何错都吞掉，控制台那一份已经写完了。print 是先写正文再写换行，两次 write 之间
+    没有 await，所以按线程攒半行就不会串；转发途中再 print（SDK 自己的输出）直接放过，不递归。
+    """
+
+    def __init__(self, inner, emit):
+        self._inner = inner
+        self._emit = emit
+        self._local = threading.local()
+
+    def write(self, text):
+        written = self._inner.write(text)
+        try:
+            self._forward(text)
+        except Exception:  # noqa: BLE001
+            pass
+        return written
+
+    def _forward(self, text):
+        local = self._local
+        if getattr(local, "busy", False) or not isinstance(text, str):
+            return
+        pending = getattr(local, "pending", "") + text
+        *lines, rest = pending.split("\n")
+        local.pending = rest[-_MAX_LOG_LINE:]
+        local.busy = True
+        try:
+            for line in lines:
+                match = _TAGGED_LINE.match(line)
+                if match:
+                    self._emit(line[:_MAX_LOG_LINE], match.group(1))
+        finally:
+            local.busy = False
+
+    def __getattr__(self, name):                      # flush / fileno / isatty / encoding … 原样转给里面那个
+        return getattr(self._inner, name)
+
+
+def _emit_tagged_line(line: str, tag: str) -> None:
+    import sentry_sdk
+    sentry_sdk.logger.info(line, attributes={"log.tag": tag})
+
+
+def _install_stdout_forwarder() -> None:
+    if not isinstance(sys.stdout, _StdoutForwarder):
+        sys.stdout = _StdoutForwarder(sys.stdout, _emit_tagged_line)
+
+
 def _environment(env: Mapping[str, str]) -> str:
     explicit = (env.get("SENTRY_ENVIRONMENT") or "").strip()
     if explicit:
@@ -138,6 +215,7 @@ def init_error_reporting(service: str, env: Optional[Mapping[str, str]] = None) 
     except Exception:  # noqa: BLE001
         log.warning("SENTRY_DSN is set but sentry-sdk is not installed; error reporting stays off")
         return False
+    logs = _logs_level(env)
     try:
         sentry_sdk.init(
             dsn=dsn,
@@ -147,7 +225,11 @@ def init_error_reporting(service: str, env: Optional[Mapping[str, str]] = None) 
             send_default_pii=False,
             traces_sample_rate=_sample_rate(env),
             # WARNING 起进面包屑（事故前后发生了什么），ERROR 起成事件——log.exception 就是 ERROR，带调用栈。
-            integrations=[LoggingIntegration(level=logging.WARNING, event_level=logging.ERROR)],
+            # WARNING 起同时进 Sentry Logs（执行过程那一路，见头注）。
+            integrations=[LoggingIntegration(level=logging.WARNING, event_level=logging.ERROR,
+                                             sentry_logs_level=None if logs == "off" else logging.WARNING)],
+            enable_logs=logs != "off",
+            before_send_log=scrub_log,
             before_send=scrub_event,
             before_send_transaction=scrub_event,
             before_breadcrumb=_scrub_breadcrumb,
@@ -157,6 +239,12 @@ def init_error_reporting(service: str, env: Optional[Mapping[str, str]] = None) 
         pool = (env.get("SLIDERULE_WORKER_POOL") or "").strip()
         if pool:
             sentry_sdk.set_tag("worker_pool", pool)
+        # 日志不吃 tag，吃 attribute：同样两项挂成全局属性，Logs 里也能按服务 / 机器筛。
+        sentry_sdk.get_global_scope().set_attribute("service", service)
+        if pool:
+            sentry_sdk.get_global_scope().set_attribute("worker_pool", pool)
+        if logs == "info":
+            _install_stdout_forwarder()
     except Exception:  # noqa: BLE001
         log.warning("error reporting init failed; continuing without it", exc_info=True)
         return False
@@ -183,4 +271,5 @@ def reporting_scope(**tags: Any) -> Iterator[None]:
         for key, value in tags.items():
             if value not in (None, ""):
                 scope.set_tag(key, str(value)[:200])
+                scope.set_attribute(key, str(value)[:200])       # 同一个会话号也挂到这一段的每一行日志上
         yield
