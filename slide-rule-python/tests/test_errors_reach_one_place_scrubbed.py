@@ -213,7 +213,7 @@ def test_both_exits_are_wired():
     assert src.index("_report_abnormal_run_end(run_id, status, error)") > finally_at
     worker = inspect.getsource(project_runtime_worker.ProjectRuntimeSupervisor)
     branch = worker[worker.index("                except Exception as exc:\n                    code = str(exc)"):]
-    assert 'logger.error(f"project operation {original.kind} failed' in branch[:600]
+    assert 'logger.error(f"project operation {original.kind} failed' in branch[:1400]
 
 
 # ── 执行过程（Sentry Logs）：推演轨迹是 print("[control] …")，不是 logging ──────────────────────────
@@ -410,3 +410,37 @@ def test_the_control_scan_loop_uses_it_too():
     code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
     assert "outage.failed(exc)" in code and "outage.ok()" in code
     assert "log.exception" not in code
+
+
+# ── 模型自己的命令失败不是平台出错（2026-10-08 线上头两个真任务）──────────────────────────────────
+# ⚠ Sentry 里 3 个 project_command_failed，全是模型的 check / build / 校验脚本退出码 2，下一步就改好了
+#   （project_runtime_worker.APP_OUTCOME_CODES 头注）。走真工人：真 submit_command、真退出码。
+
+from test_project_command_worker import command_setup, submit  # noqa: E402,F401  （夹具）
+from project_actor_support import project_actor  # noqa: E402,F401  （夹具）
+from test_project_runtime_worker import eventually, setup, state  # noqa: E402,F401  （夹具）
+
+
+def test_a_model_command_exiting_2_is_a_log_line_not_an_issue(inbox, command_setup):  # noqa: F811
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    store, project, provider, worker, _ = command_setup
+    provider.command_code = 2                                       # 线上那三次的退出码
+    operation = submit(worker, project, command="build")
+    failed = eventually(lambda: state(store, operation, "failed"))
+    assert failed.result["errorCode"] == "project_command_failed"
+    _flush()
+    assert inbox.events == []
+    assert any("ended: project_command_failed" in e["body"] and e["level"] == "warn" for e in inbox.logs), \
+        [e["body"] for e in inbox.logs]
+
+
+def test_reverse_a_lost_exit_code_is_still_an_issue(inbox, command_setup):  # noqa: F811
+    """反向：拿不到退出码（project_command_result_unknown）是平台这边的事，照样成问题。"""
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    store, project, provider, worker, _ = command_setup
+    provider.command_code = None
+    operation = submit(worker, project)
+    eventually(lambda: state(store, operation, "failed"))
+    _flush()
+    assert [e["logentry"]["params"] for e in inbox.events] and any(
+        "project_command_result_unknown" in e["logentry"]["message"] for e in inbox.events), inbox.events

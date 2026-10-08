@@ -137,6 +137,14 @@ class _Expired(Exception):
     pass
 
 
+#: 生成的工程自己的结局，不是平台出错——这几个码不成错误上报的问题。
+#: ⚠ 2026-10-08 线上头两个真任务（读书打卡网页 sr-20261008130208-70FWGJY9F7、入职指南 Word sr-20261008130604-GY0MS37SRN）：
+#:   Sentry 里冒出 3 个 `WorkspaceProviderError: project_command_failed`——全是模型自己的 check / build / 校验脚本
+#:   退出码 2，下一步就改好了。上一版注释写着「模型自己的命令退出码非 0 不走这条」，是错的：退出码非 0 正是
+#:   在这条分支里抛 project_command_failed。照这样，每个正常任务都往问题列表里塞几条，真出事的那条被淹掉。
+APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_install_failed", "project_process_exited"})
+
+
 class ProjectRuntimeSupervisor:
     def __init__(self, store: ProjectStore, provider_factory: Callable[[], WorkspaceProvider], *,
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None] = authorize_operation,
@@ -424,10 +432,15 @@ class ProjectRuntimeSupervisor:
                     raise
                 except Exception as exc:
                     code = str(exc) if isinstance(exc, (WorkspaceProviderError, PermissionError, ValueError)) else type(exc).__name__
-                    # 平台这一侧抛出来的（沙盒提供方、身份库、存储……）才走到这里——模型自己的命令退出码非 0 不走这条。
-                    # 打 ERROR 带调用栈，错误上报才收得到（control_run_service._report_abnormal_run_end 头注，同一个缺口）。
-                    logger.error(f"project operation {original.kind} failed: {code[:120]} (operation=%s)",
-                                 original.operationId, exc_info=exc)
+                    if code in APP_OUTCOME_CODES:
+                        # 生成的工程自己的结局（命令退出码非 0、依赖装不上、开发服务器自己崩了）：模型下一步会去改，
+                        # 不是平台出错。记 WARNING（进日志、带操作标签），不成 Sentry 问题。
+                        logger.warning(f"project operation {original.kind} ended: {code} (operation=%s)", original.operationId)
+                    else:
+                        # 平台这一侧（沙盒提供方、身份库、存储……）：ERROR 带调用栈，错误上报才收得到
+                        # （control_run_service._report_abnormal_run_end 头注，同一个缺口）。
+                        logger.error(f"project operation {original.kind} failed: {code[:120]} (operation=%s)",
+                                     original.operationId, exc_info=exc)
                     context.finish("failed", "failed", code)
         except ProjectConflict:
             pass  # Another valid generation now owns all state and side effects.
