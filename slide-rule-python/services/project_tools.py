@@ -35,7 +35,7 @@ from services.project_manifest import (
 )
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_source_operations import ProjectSourceOperations
-from services.project_browser_interact import local_playwright_available, run_browser_action
+from services.project_browser_interact import console_first, local_playwright_available, run_browser_action
 from services.project_tool_contracts import (
     BROWSER_INTERACT_TOOLS, FILE_READ_EXCERPT_CHARS, FILE_READ_EXCERPT_LINES,
     LEAKED_UNAVAILABLE, PROJECT_ARGUMENTS, PROJECT_KERNEL_WRITE_TOOLS,
@@ -397,7 +397,8 @@ VERIFICATION_ERROR_TEXT = {
     "project_browser_not_configured": "这个环境没有配置独立验收浏览器。不是代码错误，重复验收没有用；如实告诉用户。",
     "project_browser_key_missing": "这个环境缺少验收浏览器的凭据。不是代码错误，重复验收没有用；如实告诉用户。",
     "project_browser_unavailable": "验收浏览器这次没能启动，是运行环境的问题，不是代码错误。可以稍后再验收一次；仍然失败就如实告诉用户。",
-    "project_browser_assertion_failed": "验收跑完了，有断言没通过——这是应用本身的问题。看 assertions 里 failed 的那几条，改代码后对新版本重新验收。",
+    "project_browser_assertion_failed": "验收跑完了，有断言没通过——这是应用本身的问题。看 assertions 里 failed 的那几条，改代码后对新版本重新验收。"
+        "no_page_errors / no_failed_requests 失败时，收据里只有「有报错」：先调 browser_console_view 看浏览器里具体报了什么错、哪个请求失败，再改。",
 }
 
 
@@ -2154,7 +2155,7 @@ class ProjectTools:
                     result["browserError"] = code
                     if code in BROWSER_ERROR_TEXT:
                         result["hint"] = BROWSER_ERROR_TEXT[code]
-            return _strip_preview_host(result)
+            return _strip_preview_host(console_first(result))
         # ⚠ 2026-09-30 隔离真机第 133 轮 sr-20260930004940-9GDY1QZGS4（月度预算网页，追问「加一个按类别统计支出的饼图」）：
         #   browser_console_view 的参数是 BrowserEmptyArguments（没有 id），这里读 parsed.id——AttributeError
         #   不在工具层接住的错误里，整轮 run 当场挂掉，用户看见「这一轮没跑完……（AttributeError）」。
@@ -2175,7 +2176,32 @@ class ProjectTools:
         logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))
         if name == "browser_console_view":
             logs["console"] = "runtime"
+            return {**self._browser_console(project), **logs}                    # 浏览器那一半在前（console_first）
         return logs
+
+    def _browser_console(self, project) -> dict:
+        """browser_console_view 的另一半：预览页里浏览器自己的控制台（JS 异常、console.error、失败的请求）。
+
+        ⚠ 2026-10-08：这个工具原来只回开发服务器的命令日志（logs["console"]="runtime"），名字叫「浏览器
+          控制台」，页面里真正的报错却从来不在里面（console_observation 头注）。观察类，fail-open（§七）：
+          预览没起来、浏览器起不来，命令日志照旧交回，附上为什么没有浏览器那一半。
+        """
+        try:
+            page = self._preview_page(project)
+            if page is None:
+                return {"browserConsoleError": "project_browser_preview_not_ready"}
+            interactor = getattr(self.supervisor, "browser_interactor", None)
+            if callable(interactor):
+                observed = interactor({"op": "snapshot"}, page)
+            elif local_playwright_available():
+                observed = run_browser_action(page["url"], {"op": "snapshot"})
+            else:
+                raise ValueError("project_browser_driver_unavailable")
+        except ValueError as exc:
+            return {"browserConsoleError": str(exc)[:240]}
+        if not isinstance(observed, dict) or "consoleCounts" not in observed:
+            return {"browserConsoleError": "project_browser_console_unavailable"}
+        return {key: observed[key] for key in ("browserConsole", "failedRequests", "consoleCounts")}
 
     def _preview_page(self, project):
         resolver = getattr(self.supervisor, "preview_page", None)
@@ -2209,9 +2235,9 @@ class ProjectTools:
             observed = interactor(action, page)
             if not isinstance(observed, dict):
                 raise ValueError("project_browser_action_failed")
-            return _strip_preview_host({"interactive": True, **observed})
+            return _strip_preview_host(console_first({"interactive": True, **observed}))
         if local_playwright_available():
-            return _strip_preview_host(run_browser_action(page["url"], action))
+            return _strip_preview_host(console_first(run_browser_action(page["url"], action)))
         raise ValueError("project_browser_driver_unavailable")
 
     def _shell_stdin(self, project, parsed):
