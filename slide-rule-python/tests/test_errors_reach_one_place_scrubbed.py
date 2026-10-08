@@ -166,3 +166,45 @@ def test_the_shared_header_samples():
     out = scrub_event({"request": {"headers": headers}})["request"]["headers"]
     for key, kind in _SAMPLES["headers"].items():
         assert (out[key] == FILTERED) is (kind == "secret"), key
+
+
+# ── 「执行到一半断了」也要收得到：ControlRunStopped 收场原来一行 ERROR 都没有 ─────────────────────
+# ⚠ 2026-10-08 用户本机执行轮 ctr-6da33921cb525b04ae9454ba46caaede：interrupted / control_run_access_revoked，
+#   只写进库（control_run_service._report_abnormal_run_end 头注）。
+
+def test_an_interrupted_run_becomes_its_own_issue_with_the_session(inbox):
+    from services.control_run_service import _report_abnormal_run_end
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    with reporting_scope(session_id="sr-20261008092556-8PW0MNC7ZW"):
+        _report_abnormal_run_end("ctr-6da33921cb525b04ae9454ba46caaede", "interrupted", "control_run_access_revoked")
+        _report_abnormal_run_end("ctr-x", "failed", "llm_unavailable")
+    _flush()
+    by_template = {e["logentry"]["message"]: e for e in inbox.events}
+    revoked = by_template["control run interrupted: control_run_access_revoked (run=%s)"]     # 码在模板里 → 自成一条问题
+    assert revoked["tags"]["session_id"] == "sr-20261008092556-8PW0MNC7ZW"
+    assert "control run failed: llm_unavailable (run=%s)" in by_template
+
+
+@pytest.mark.parametrize("status,error", [("cancelled", "control_cancelled"), ("interrupted", "control_worker_shutdown"),
+                                          ("interrupted", "control_producer_failed"), ("interrupted", "control_lease_lost"),
+                                          ("completed", None), ("waiting_user", None)])
+def test_ordinary_ends_are_not_issues(inbox, status, error):
+    """反向：用户自己停的、正常关停、已经带调用栈报过的、换 worker 接着跑的、正常结束的——都不成问题。"""
+    from services.control_run_service import _report_abnormal_run_end
+    init_error_reporting("python", env={"SENTRY_DSN": DSN})
+    _report_abnormal_run_end("ctr-x", status, error)
+    _flush()
+    assert inbox.events == []
+
+
+def test_both_exits_are_wired():
+    """§三：控制回合的唯一出口（finally）真的调到；工程操作的平台异常那支真的打 ERROR。"""
+    import inspect
+
+    from services import control_run_service, project_runtime_worker
+    src = inspect.getsource(control_run_service.ControlRunService._produce)
+    finally_at = src.index("        finally:\n            current_checkpoint.reset(token)")
+    assert src.index("_report_abnormal_run_end(run_id, status, error)") > finally_at
+    worker = inspect.getsource(project_runtime_worker.ProjectRuntimeSupervisor)
+    branch = worker[worker.index("                except Exception as exc:\n                    code = str(exc)"):]
+    assert 'logger.error(f"project operation {original.kind} failed' in branch[:600]

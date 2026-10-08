@@ -198,6 +198,31 @@ def complete_with_provider_failure(completion, events):
 
 _SAVE_ATTEMPTS = 3
 _SAVE_BACKOFF_SECONDS = 0.5
+#: 回合结束的这几种不是故障：用户自己停的、进程正常关停交给下一个 worker。
+_EXPECTED_RUN_ENDS = frozenset({"control_cancelled", "control_worker_shutdown"})
+#: 已经带着调用栈 log.exception 过的，不再报一遍（同一次故障两条事件）。
+_ALREADY_REPORTED_RUN_ENDS = frozenset({"control_producer_failed"})
+#: 租约被别的 worker 接走：任务没丢、换人接着跑，记 WARNING（进 Sentry 面包屑，不单成一条问题）。
+_HANDOVER_RUN_ENDS = frozenset({"control_lease_lost"})
+
+
+def _report_abnormal_run_end(run_id, status, error) -> None:
+    """控制回合以失败 / 中断收场时打一条 ERROR：错误上报（services.error_reporting）只收 ERROR，这一行不打就收不到。
+
+    ⚠ 2026-10-08 接上 Sentry 后对着当天的四次中断核对：control_producer_failed 走 log.exception，收得到；
+      control_run_access_revoked、control_checkpoint_unavailable 是 ControlRunStopped 收场——只把码写进库，一行 ERROR
+      都没有，Sentry 一条都收不到。恰恰是用户最常撞上的「执行到一半断了」。
+    错误码写进消息模板（不是参数）：Sentry 按模板分组，一个码一条问题；run / 会话号在 reporting_scope 的标签里。
+    """
+    if status not in ("interrupted", "failed") or not error:
+        return
+    code = str(error)[:120]
+    if code in _EXPECTED_RUN_ENDS or code in _ALREADY_REPORTED_RUN_ENDS:
+        return
+    level = logging.WARNING if code in _HANDOVER_RUN_ENDS else logging.ERROR
+    log.log(level, f"control run {status}: {code} (run=%s)", run_id)
+
+
 #: 权限确认通过后多久内不重查（RunCheckpoint._authorize 头注）。
 _AUTHORITY_RECHECK_SECONDS = 5.0
 #: 身份库 / 会话库连续查不到多久才停掉正在跑的任务。
@@ -963,6 +988,7 @@ class ControlRunService:
             status, error = "interrupted", "control_producer_failed"
         finally:
             current_checkpoint.reset(token)
+            _report_abnormal_run_end(run_id, status, error)
             try:
                 if suspend:
                     await asyncio.to_thread(self.store.suspend, run_id, self.worker_id, generation)

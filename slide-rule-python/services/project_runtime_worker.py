@@ -421,6 +421,10 @@ class ProjectRuntimeSupervisor:
                     raise
                 except Exception as exc:
                     code = str(exc) if isinstance(exc, (WorkspaceProviderError, PermissionError, ValueError)) else type(exc).__name__
+                    # 平台这一侧抛出来的（沙盒提供方、身份库、存储……）才走到这里——模型自己的命令退出码非 0 不走这条。
+                    # 打 ERROR 带调用栈，错误上报才收得到（control_run_service._report_abnormal_run_end 头注，同一个缺口）。
+                    logger.error(f"project operation {original.kind} failed: {code[:120]} (operation=%s)",
+                                 original.operationId, exc_info=exc)
                     context.finish("failed", "failed", code)
         except ProjectConflict:
             pass  # Another valid generation now owns all state and side effects.
