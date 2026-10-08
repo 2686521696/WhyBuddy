@@ -399,7 +399,54 @@ VERIFICATION_ERROR_TEXT = {
     "project_browser_unavailable": "验收浏览器这次没能启动，是运行环境的问题，不是代码错误。可以稍后再验收一次；仍然失败就如实告诉用户。",
     "project_browser_assertion_failed": "验收跑完了，有断言没通过——这是应用本身的问题。看 assertions 里 failed 的那几条，改代码后对新版本重新验收。"
         "no_page_errors / no_failed_requests 失败时，收据里只有「有报错」：先调 browser_console_view 看浏览器里具体报了什么错、哪个请求失败，再改。",
+    # ⚠ 2026-10-08 隔离真机 @frontend-design 读书打卡网页（sr-20261008103820-7ETR17FTE1）：页面 CSS 里
+    #   @import 了 Google Fonts，验收浏览器只许访问预览自己这一个地址，于是整次验收判 navigation_blocked。
+    #   这张表里原来没有这个码，模型只拿到一串字，收尾写成「浏览器导航在环境侧被阻断」——把自己代码的问题
+    #   当成了环境问题，没去改，自动续跑提醒「还没达到可交付」之后照样停下。这张表现在钉成覆盖全部错误码
+    #   （tests/test_every_verification_error_explains_itself.py），新加的码没写一句话就红。
+    "project_browser_navigation_blocked": "验收浏览器拦下了页面往预览之外伸手——这是应用代码造成的，不是环境问题，"
+        "不改代码重复验收结果不会变。验收只许页面访问预览自己这一个地址，下面任何一样都会触发："
+        "引用外部网址的资源（Google Fonts 的 @import 或 <link>、CDN 上的脚本 / 样式 / 图片 / 图标库）、请求外部接口、"
+        "window.open 或新窗口、alert / confirm / prompt 弹框、首页一打开就跳到别的地址。"
+        "在源码里搜 http:// 和 https://，把外链去掉：字体改用系统字体栈（font-family: system-ui, -apple-system, \"PingFang SC\", sans-serif），"
+        "图片放进 public/ 用相对路径，弹框换成页面里的提示。改完对新版本重新验收。",
+    "project_browser_timeout": "验收在时限内没跑完，没有结论。先排除应用自己卡住：首屏要等很久、死循环、一直在发请求——"
+        "调 browser_console_view 看报错和失败的请求。应用本身没问题就再验收一次，仍然超时就如实告诉用户。",
+    "project_browser_revision_mismatch": "验收期间源码版本变了（验收还在跑时又写了文件），这次结果作废——不是应用的错。"
+        "等改动全部写完，用最新的版本号重新验收一次。",
+    "project_browser_artifact_too_large": "验收截图超过上限（2MB），结果收不下。截图只拍首屏 1280×800，"
+        "这么大通常是首屏铺了大面积照片或噪点纹理；把首屏的大图换成压缩过的图或纯色 / 渐变，改完重新验收。",
+    "project_browser_output_invalid": "验收浏览器交回的结果格式不对，不能当证据——这是验收环境的问题，不是代码错误。"
+        "重新验收一次；仍然这样就如实告诉用户验收没能完成。",
+    "project_browser_execution_failed": "验收浏览器执行时出错退出，没有结论——这是验收环境的问题，不是代码错误。"
+        "可以再验收一次；仍然失败就如实告诉用户验收没能在这个环境里跑完。",
+    "project_browser_cleanup_pending": "验收跑完了，但验收用的临时浏览器还没确认清理干净，这次结果先不算数。"
+        "这是环境问题，不是代码错误；过一会儿再查验收状态，或重新验收一次。",
+    "project_browser_interrupted": "验收被中途打断（服务重启或被取消），没有结论。不是代码错误；重新验收一次。",
+    "project_browser_input_invalid": "这次验收的请求本身不合格（版本号或预览不对）——是平台这边的问题，不是代码错误。"
+        "先用 project_status 拿到最新版本号和正在运行的预览，再验收一次；仍然这样就如实告诉用户。",
+    # 下面这些不是浏览器跑出来的，是验收流程自己写进记录的（services/project_browser_verification.py）。
+    "project_build_failed": "验收前的生产构建没过，浏览器根本没开——这是代码问题。看 build 里的退出码，"
+        "用 project_logs 读构建日志找到报错，改完对新版本重新验收。",
+    "project_browser_preview_unavailable": "验收要用的预览没在运行（或预览通道没连上），浏览器没开，没有结论。"
+        "不是代码错误：先用 project_status 确认开发服务器在跑（没跑就 project_start），再验收一次。",
+    "project_browser_evidence_unavailable": "验收途中环境出了状况（沙盒、预览或构建产物对不上），这次没有可信的结论——"
+        "不是通过，也不等于代码有错。再验收一次；仍然这样就如实告诉用户验收没能完成。",
+    "project_browser_verification_interrupted": "验收被中途打断（工作进程重启），没有结论。不是代码错误；重新验收一次。",
+    "project_verification_revision_changed": "排队等验收的时候源码又改了，这次针对的是旧版本，已作废——不是应用的错。"
+        "用最新的版本号重新验收。",
+    "user_cancelled": "这次验收被取消了，没有结论。用户没要求就不用重来；需要交付时对当前版本重新验收。",
 }
+
+#: 表里没有的码（比如开发服务器停掉时带过来的运行时错误码）：不许只交一串字给模型——那样它会自己猜是谁的错。
+VERIFICATION_ERROR_FALLBACK = ("验收没有给出结论（错误码 {code}）。别猜是代码还是环境的问题：先用 project_status 看开发服务器"
+    "是不是还在跑、版本是不是最新，没跑就 project_start、版本变了就对最新版本重新验收；仍然这样就如实告诉用户验收没能完成。")
+
+
+def verification_error_hint(code) -> str | None:
+    if not code:
+        return None
+    return VERIFICATION_ERROR_TEXT.get(code) or VERIFICATION_ERROR_FALLBACK.format(code=code)
 
 
 def queue_blocker(adapter, operation_id) -> dict | None:
@@ -1931,8 +1978,7 @@ class ProjectTools:
                     "acceptanceProfile": record.specRevision if snapshot.deliveryEligible else None,
                     "acceptanceRequirements": list(record.acceptanceRequirements),
                     "errorCode": record.errorCode,
-                    **({"errorHint": VERIFICATION_ERROR_TEXT[record.errorCode]}
-                       if record.errorCode in VERIFICATION_ERROR_TEXT else {}),
+                    **({"errorHint": verification_error_hint(record.errorCode)} if record.errorCode else {}),
                     "runtimeOperationId": record.runtimeOperationId,
                     "logOperationId": record.runtimeOperationId,
                     "build": ({key: getattr(record.build, key) for key in (

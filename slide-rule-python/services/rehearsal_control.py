@@ -6210,6 +6210,7 @@ async def _control_llm_loop(
                 #   就等于把判据和产线各写一份（CLAUDE.md §4）。
                 if not restoring_calls:
                     stagnant_calls.observe(call_signature(call), result_fingerprint(tool_body))
+                    identical_tool_calls.record_result(result_fingerprint(tool_body))   # 实参一样、结果变了 = 有进展
                 messages.append(
                     {
                         "role": "tool",

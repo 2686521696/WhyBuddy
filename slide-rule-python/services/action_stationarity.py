@@ -136,9 +136,22 @@ def step_tool_name(calls: Sequence[Dict[str, Any]]) -> str:
 
 class IdenticalToolCallRun:
     """连续相同调用的游标。**一个回合一个**，不许做成模块级单例
-    （那会让上一位用户的打转记录漏到下一位身上）。"""
+    （那会让上一位用户的打转记录漏到下一位身上）。
 
-    __slots__ = ("last_signature", "tool_name", "problematic_step", "run_len", "nudged")
+    ⚠ 2026-10-08 隔离真机 @frontend-design 读书打卡网页（sr-20261008103820-7ETR17FTE1）：
+      模型起完预览连调两次 browser_view（实参都是 {}）——第一次 runtime 还在 syncing、拿不到页面，
+      第二次已经 ready、拿到了页面状态。两份结果不一样，却在第二次就被捅「原地打转、再这么重复会掐断」。
+      紧档的前提写在 READ 那一档上头：「同一份实参必然回同一份结果」——对 browser_view / project_status /
+      project_logs 这种看**活状态**的工具不成立。所以：实参一样、**结果变了**，这一步就不走紧档（record_result），
+      落回宽档（3 捅 / 5 停）——判据抄 grok progress_signature，跟下面那道「结果一模一样」的闸同一个口径。
+    ⚠ 只降档，**不清零**。第一版写成「结果变了就从头数」，全量测试当场挂死：test_manus_context_load 的模型
+      一字不差地反复 write_plan，回执里 revision 每次 +1 → 每次都「变了」→ 计数永远清零，工程档轮数上限是一万，
+      停下来全靠这道闸，于是一个回合永不结束。结果里总有会变的东西（版本号、时间），「变了」不等于「有进展」；
+      它只说明紧档的前提不成立，宽档的上限一样要守。
+    """
+
+    __slots__ = ("last_signature", "tool_name", "problematic_step", "run_len", "nudged",
+                 "previous_results", "current_results", "results_moved")
 
     def __init__(self) -> None:
         self.last_signature: Optional[str] = None
@@ -146,6 +159,9 @@ class IdenticalToolCallRun:
         self.problematic_step: bool = False
         self.run_len: int = 0
         self.nudged: bool = False
+        self.previous_results: Optional[List[str]] = None
+        self.current_results: List[str] = []
+        self.results_moved: bool = False
 
     def observe(
         self, signature: str, tool_name: str, problematic_step: bool
@@ -153,16 +169,27 @@ class IdenticalToolCallRun:
         """记一轮。签名跟上一轮一样就 +1，不一样就重新起一段（并清掉捅过的标记）。"""
         if self.last_signature == signature:
             self.run_len += 1
+            self.previous_results = self.current_results
         else:
             self.run_len = 1
             self.last_signature = signature
             self.nudged = False
+            self.previous_results = None
+        self.current_results = []
+        self.results_moved = False
         self.tool_name = tool_name
         self.problematic_step = problematic_step
         return self.run_len
 
+    def record_result(self, fingerprint: str) -> None:
+        """这一轮每件调用的结果指纹（result_fingerprint）依次记进来。一轮记齐了、跟上一轮比变了 → 这一步不走紧档。"""
+        self.current_results.append(fingerprint)
+        previous = self.previous_results
+        if previous is not None and len(self.current_results) == len(previous):
+            self.results_moved = self.current_results != previous
+
     def is_problematic(self) -> bool:
-        return self.problematic_step
+        return self.problematic_step and not self.results_moved
 
     def nudge_threshold(self) -> int:
         return (

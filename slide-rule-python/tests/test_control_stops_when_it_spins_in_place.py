@@ -347,3 +347,84 @@ def test_一段打转只捅一次_换了签名重新开始():
     # 换了签名要把「捅过了」清掉，否则第二段打转永远不会被捅。
     run.observe(other, "inspect_model", True)
     assert run.take_nudge() is True
+
+
+# ── 实参一样、结果在变：那是在等，不是打转（2026-10-08）────────────────────────
+# ⚠ 隔离真机 @frontend-design 读书打卡网页（sr-20261008103820-7ETR17FTE1）：起完预览连调两次 browser_view({})，
+#   第一次 runtime 还在 syncing、第二次 ready——第二次就被捅「原地打转、再重复会掐断」。紧档的前提
+#   「同一份实参必然回同一份结果」对看活状态的工具不成立（IdenticalToolCallRun 头注）。
+
+#: 真机那两发 browser_view 的回执原样（去掉 type 即 tool_body），只截掉了与判定无关的长字段。
+_BROWSER_VIEW_SYNCING = {"tool": "browser_view", "ok": True, "projectId": "prj-474e8eb6e4bf515f942f50a89cb84036",
+    "revision": "prv-512132e05f2b4727bfd1f36fc46ce4c4", "templateVersion": "whybuddy-react-vite-1", "fileCount": 9,
+    "sourceBytes": 64891, "runtimeKind": "project", "operationId": "pop-9eaa6a886ce1457d9fc450060447a1a0",
+    "kind": "runtime.start", "status": "running", "cancelRequested": False, "lastSeq": 2,
+    "runtime": {"status": "syncing", "health": "unknown", "errorCode": None, "expiresAt": 1791458219.3810422},
+    "commandFinished": False, "interactive": False, "toolCallId": "call_2764d493b0b8444b84121f06cbf03cc4", "seq": 61}
+_BROWSER_VIEW_READY = {**_BROWSER_VIEW_SYNCING, "lastSeq": 18, "commandFinished": True, "url": "/",
+    "runtime": {"status": "ready", "health": "revision_verified", "errorCode": None, "expiresAt": 1791458219.3810422},
+    "browserError": "project_browser_preview_unreachable", "toolCallId": "call_c724de5d27314b5b939ac95d7d7eb5e6", "seq": 63}
+
+
+def _run_with_results(results):
+    from services.action_stationarity import IdenticalToolCallRun, result_fingerprint, step_signature
+    run, calls = IdenticalToolCallRun(), [{"name": "browser_view", "arguments": {}}]
+    nudges = []
+    for body in results:
+        nudges.append(run.take_nudge())                         # 下一轮开头判（产线位置）
+        run.observe(step_signature(calls), "browser_view", True)
+        run.record_result(result_fingerprint(body))
+    nudges.append(run.take_nudge())
+    return nudges
+
+
+def test_真机_等预览起来再看一次_不算打转():
+    assert _run_with_results([_BROWSER_VIEW_SYNCING, _BROWSER_VIEW_READY]) == [False, False, False]
+
+
+def test_反向_结果一字不差_第二次照样捅():
+    """紧档本来的样子不能丢：同一份结果拿两次（易变字段 seq / toolCallId 不算变），第二次之后就捅。"""
+    again = {**_BROWSER_VIEW_READY, "toolCallId": "call_other", "seq": 65}
+    assert _run_with_results([_BROWSER_VIEW_READY, again]) == [False, False, True]
+
+
+def test_活路径_实参一样结果在变_落宽档_不走紧档(harness, monkeypatch):
+    """真循环、真分发：search_evidence 每次实参一字不差，回来的状态一次一个样（跟轮询一个形状）。
+    不走紧档（第 2 次就捅、第 4 次就掐），落宽档：第 3 次才捅、第 5 次才掐——**照样掐得住**。"""
+    from services import rehearsal_control as control
+
+    seen = {"n": 0}
+
+    async def moving(state, query):
+        seen["n"] += 1
+        return {"ok": True, "query": query, "status": f"第 {seen['n']} 次：还在处理", "hits": []}
+
+    monkeypatch.setattr(control, "_tool_search", moving)
+    sid = new_sid("spin-moving")
+    _confirmed(sid)
+    shots = _snapshotting(harness, lambda messages, **kw: llm_tool(
+        "search_evidence", {"query": "请假流程"}, call_id="same"))
+
+    _, events = harness.post(six_fields(sid, "帮我查查请假流程"))
+
+    from services.action_stationarity import MAX_CONSECUTIVE_IDENTICAL_CALLS, NUDGE_AFTER_IDENTICAL_CALLS
+    nudged = [i for i, snap in enumerate(shots) if any("原地打转" in str(m.get("content") or "") for m in snap)]
+    assert nudged and nudged[0] == NUDGE_AFTER_IDENTICAL_CALLS, nudged          # 第 3 次之后才捅，不是第 2 次
+    [stop] = _stops(events)
+    assert stop["stopReason"] == ControlStopReason.STATIONARITY.value and stop["limit"] == MAX_CONSECUTIVE_IDENTICAL_CALLS
+    assert len(harness.llm_calls) == MAX_CONSECUTIVE_IDENTICAL_CALLS
+
+
+def test_反向_结果里只有版本号在涨_照样掐得住(harness):
+    """⚠ 第一版「结果变了就清零」让全量测试挂死：模型一字不差地反复 write_plan，revision 每次 +1，
+    计数永远清零、回合永不结束（IdenticalToolCallRun 头注）。真 write_plan、真回执。"""
+    from services.action_stationarity import MAX_CONSECUTIVE_IDENTICAL_CALLS
+    sid = new_sid("spin-revision")
+    seed_session(sid, goal={"text": "做个PPT", "status": "clear"})
+    harness.llm_impl = lambda *_a, **_kw: llm_tool("write_plan", {"planContent": "# 计划\n\n1. 做一页封面"})
+    _, events = harness.post(six_fields(sid, "做个PPT"))
+    revisions = [e.get("revision") for e in events if e.get("tool") == "write_plan" and e.get("ok")]
+    assert len(set(revisions)) > 1, "前提：回执里的版本号真的在涨"
+    # 掐在宽档上限；write_plan 被掐时收尾是批准卡（不是停因文案），所以看次数和回合真的收了尾。
+    assert len(harness.llm_calls) == MAX_CONSECUTIVE_IDENTICAL_CALLS
+    assert events[-1].get("type") == "complete"
