@@ -10,7 +10,11 @@ FROM node:22-alpine AS builder
 COPY docker/certs/ /usr/local/share/ca-certificates/sliderule/
 RUN sh -c 'cat /usr/local/share/ca-certificates/sliderule/*.crt >> /etc/ssl/certs/ca-certificates.crt 2>/dev/null || true'
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# ⚠ 2026-10-08：4096 时 vite build 在 CI 里 heap out of memory（exit 134），从接入 Sentry 那次（faac0b2）起
+#   deploy-images 的 app 镜像连续七次没出来，线上一直停在前一天的前端——python 镜像照常出，没人发现。
+#   本机量过峰值常驻：接入前 5786MB、接入后 5928MB——一直贴着 4G 堆跑，@sentry/react 只是最后一根稻草。
+#   公开仓库的 ubuntu-latest 有 16G，给 6G 堆。下次再贴线，先看 vite 的分包，别只往上加。
+ENV NODE_OPTIONS=--max-old-space-size=6144
 
 # pnpm via corepack (pinned by package.json `packageManager`).
 RUN corepack enable
