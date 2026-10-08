@@ -70,7 +70,11 @@ export async function startApplication({ host = "127.0.0.1", port = 5173, dev = 
       const content = await readFile(file);
       const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" }[extname(file)] || "application/octet-stream";
       response.writeHead(200, { "Content-Type": mime, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); response.end(request.method === "HEAD" ? undefined : content);
-    } catch (error) { send(error.status || 500, { error: error.code || "服务暂时不可用，请重试" }); }
+    } catch (error) {
+      // 预料之外的错（没带 status）原来只回一句「服务暂时不可用」，调用栈哪儿都没有——Agent 读开发服务器日志也看不到。
+      if (!error.status) console.error(`[server] ${request.method} ${request.url?.split("?", 1)[0]} failed:`, error);
+      send(error.status || 500, { error: error.code || "服务暂时不可用，请重试" });
+    }
   });
   try {
     if (dev) {

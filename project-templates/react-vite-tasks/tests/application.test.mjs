@@ -87,3 +87,22 @@ test("invalid tasks do not persist and independent static paths never expose app
     assert.equal((await request("/database.mjs", { token: account.token })).status, 404);
   });
 });
+
+test("unexpected server errors reach the dev server log; expected ones stay quiet", async () => {
+  // 预料之外的错（没带 status）原来只回一句「服务暂时不可用」，Agent 读开发服务器日志也看不到调用栈。
+  // 坏的 % 转义让 decodeURIComponent 抛 URIError——真实的、没带 status 的那一类。
+  const logged = [];
+  const original = console.error;
+  console.error = (...args) => logged.push(args.map(String).join(" "));
+  try {
+    await fixture(async ({ request }) => {
+      const broken = await request("/%E0%A4%A");
+      assert.equal(broken.status, 500);
+      assert.ok(logged.some(line => line.includes("[server] GET /%E0%A4%A failed") && line.includes("URIError")), logged.join("\n"));
+      logged.length = 0;
+      assert.equal((await request("/missing.png")).status, 404);              // 反向：带 status 的预期错误不刷日志
+      assert.equal((await request("/api/nope")).status, 401);                 // 没登录先挡在鉴权上，也是预期内的
+      assert.deepEqual(logged, []);
+    });
+  } finally { console.error = original; }
+});

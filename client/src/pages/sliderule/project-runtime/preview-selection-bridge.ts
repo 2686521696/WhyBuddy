@@ -41,6 +41,31 @@ export function sourcePathFromActionDetail(detail: string): string | null {
   return null;
 }
 
+/** 预览里应用自己抛出来的错（shared/project-preview-selection.mjs 头注）。 */
+export interface PreviewRuntimeError {
+  kind: "uncaught_exception" | "unhandled_rejection";
+  message: string;
+  stack: string;
+}
+
+/** 页面那一侧是生成的应用，发来什么都不可信：形状不对就丢，长度再封一次。 */
+export function previewRuntimeError(value: unknown): PreviewRuntimeError | null {
+  const raw = value as Partial<PreviewRuntimeError> | null;
+  if (
+    !raw ||
+    (raw.kind !== "uncaught_exception" && raw.kind !== "unhandled_rejection") ||
+    typeof raw.message !== "string" ||
+    !raw.message.trim() ||
+    (raw.stack !== undefined && typeof raw.stack !== "string")
+  )
+    return null;
+  return {
+    kind: raw.kind,
+    message: raw.message.slice(0, 500),
+    stack: (raw.stack || "").slice(0, 2000),
+  };
+}
+
 /** Sandpack's source/channel lifecycle, with explicit origin and revision fencing. */
 export function connectPreviewSelection({
   frame,
@@ -48,12 +73,14 @@ export function connectPreviewSelection({
   scope,
   onSelection,
   onStatus,
+  onRuntimeError,
 }: {
   frame: HTMLIFrameElement;
   origin: string;
   scope: PreviewSelectionScope;
   onSelection: (location: PreviewSourceLocation) => void;
   onStatus: (status: "ready" | "missing-source") => void;
+  onRuntimeError?: (error: PreviewRuntimeError) => void;
 }) {
   const channelId = crypto.randomUUID();
   let enabled = false;
@@ -90,6 +117,12 @@ export function connectPreviewSelection({
       return;
     if (data.type === "whybuddy:select:ready") {
       onStatus("ready");
+      return;
+    }
+    if (data.type === "whybuddy:runtime:error") {
+      // 不看 enabled：点选开没开，报错都要回来。
+      const error = previewRuntimeError(data.error);
+      if (error) onRuntimeError?.(error);
       return;
     }
     if (!enabled || data.type !== "whybuddy:select:element") return;

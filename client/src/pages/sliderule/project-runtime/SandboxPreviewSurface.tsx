@@ -31,8 +31,10 @@ import {
 } from "./ProjectWorkspacePanel";
 import {
   connectPreviewSelection,
+  type PreviewRuntimeError,
   sourcePathFromActionDetail,
 } from "./preview-selection-bridge";
+import { previewErrorPrompt, previewErrorSummary } from "./preview-runtime-errors";
 import { ProjectDataPanel } from "./ProjectDataPanel";
 import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
 import { PresentedOfficeFile } from "./PresentedOfficeFile";
@@ -589,6 +591,7 @@ export function SandboxPreviewSurface({
   isRunning = false,
   projectCreateError = null,
   deliverableKind,
+  onAskAgent,
 }: ProjectPreviewReference & {
   appTitle?: string;
   /**
@@ -610,6 +613,11 @@ export function SandboxPreviewSurface({
   projectCreateError?: string | null;
   /** 办公文件不把 Vite iframe 叫醒当交付物。 */
   deliverableKind?: string;
+  /**
+   * 会话工作台才传：把一段话当用户消息发给 Agent（预览报错的「让 Agent 修复」）。
+   * 应用中心没有对话，不传就只显示报错、没有按钮。
+   */
+  onAskAgent?: (text: string) => void;
 }) {
   const preview = useProjectPreview({
     projectId,
@@ -827,6 +835,9 @@ export function SandboxPreviewSurface({
   // 框揭开后等了多久还没握手（previewUnresponsive 头注）。
   const [waitedSinceReady, setWaitedSinceReady] = useState(0);
   const [unresponsiveDismissed, setUnresponsiveDismissed] = useState(false);
+  // 预览里应用自己抛的错（preview-runtime-errors 头注）。换一版 / 重开预览就清空。
+  const [runtimeErrors, setRuntimeErrors] = useState<PreviewRuntimeError[]>([]);
+  const [runtimeErrorsDismissed, setRuntimeErrorsDismissed] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const bridge = useRef<ReturnType<typeof connectPreviewSelection> | null>(
     null
@@ -856,6 +867,8 @@ export function SandboxPreviewSurface({
     setSelecting(false);
     setBridgeStatus("waiting");
     setSelection(null);
+    setRuntimeErrors([]);
+    setRuntimeErrorsDismissed(false);
     if (!frame.current || !preview.entryUrl || !descriptor) return;
     const connection = connectPreviewSelection({
       frame: frame.current,
@@ -866,6 +879,15 @@ export function SandboxPreviewSurface({
         revision: descriptor.revision,
       },
       onStatus: setBridgeStatus,
+      onRuntimeError: error => {
+        setRuntimeErrors(current =>
+          current.length >= 10 ||
+          current.some(e => e.kind === error.kind && e.message === error.message)
+            ? current
+            : [...current, error]
+        );
+        setRuntimeErrorsDismissed(false);
+      },
       onSelection: location => {
         setManualSelect(true);
         setSelection({
@@ -1658,6 +1680,39 @@ export function SandboxPreviewSurface({
                     type="button"
                     onClick={() => setUnresponsiveDismissed(true)}
                     className="rounded px-2 py-0.5 hover:bg-amber-100"
+                  >
+                    收起
+                  </button>
+                </div>
+              ) : null}
+              {runtimeErrors.length > 0 && !runtimeErrorsDismissed ? (
+                <div
+                  role="alert"
+                  data-testid="project-preview-runtime-error"
+                  className="absolute inset-x-0 bottom-0 z-[2] flex flex-wrap items-center gap-2 border-t border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-900"
+                >
+                  <span className="min-w-0 flex-1 truncate" title={runtimeErrors[0].message}>
+                    预览报错：{previewErrorSummary(runtimeErrors)}
+                  </span>
+                  {onAskAgent ? (
+                    <button
+                      type="button"
+                      data-testid="project-preview-runtime-error-fix"
+                      disabled={isRunning}
+                      title={isRunning ? "Agent 正在干活，这一轮结束后再交给它" : undefined}
+                      onClick={() => {
+                        onAskAgent(previewErrorPrompt(runtimeErrors));
+                        setRuntimeErrorsDismissed(true);
+                      }}
+                      className="rounded bg-red-900 px-2 py-0.5 text-white disabled:opacity-50"
+                    >
+                      让 Agent 修复
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setRuntimeErrorsDismissed(true)}
+                    className="rounded px-2 py-0.5 hover:bg-red-100"
                   >
                     收起
                   </button>

@@ -1743,6 +1743,7 @@ function SlideRuleUnified({
               projectRevision={sessionState.projectRevision}
               projectCreateError={projectCreateState?.error ?? null}
               deliverableKind={deliverableKind}
+              onAskAgent={text => void sendMessage(text)}
               sessionEmpty={isHomeEmpty}
               turns={conversationTurns}
               chatSlot={

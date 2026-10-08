@@ -250,6 +250,8 @@ interface SlideRuleStudioProps {
   isRestoringVersion?: boolean;
   // --- Chat panel (left) ---
   chatSlot: React.ReactNode;
+  /** 把一段话当用户消息发给 Agent（工程预览报错的「让 Agent 修复」）。 */
+  onAskAgent?: (text: string) => void;
 
   // --- Right panel data ---
   activeSkillId: SkillId | null;
@@ -325,7 +327,7 @@ export function SlideRuleStudio(props: SlideRuleStudioProps) {
 function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
   sessionId, isRunning = false, liveActionLabel = null, turns = [],
-  projectCreateError = null, deliverableKind,
+  projectCreateError = null, deliverableKind, onAskAgent,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
@@ -365,6 +367,7 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
             resetSlot={resetSlot}
             projectCreateError={projectCreateError}
             deliverableKind={deliverableKind}
+            onAskAgent={onAskAgent}
             className="min-h-0 flex-1"
           />
         </div>
