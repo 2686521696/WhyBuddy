@@ -188,6 +188,7 @@ from services.deliverable_kind import (
     office_e2b_template,
     orch_trace,
     plan_deliverable_kind,
+    workspace_toolchains_fact,
 )
 from services.skill_catalog_store import (
     OFFICE_SKILL_CATEGORY,
@@ -4774,6 +4775,10 @@ def _system_prompt(state: V5SessionState) -> str:
             "operation_idempotency_conflict 不是验收结论，也不是登录失败。"
             "构建通过和服务就绪都不是业务验收。"
         )
+        if plan_deliverable_kind(plan) != OFFICE_FILE:
+            # ⚠ 2026-10-09：通用 Agent 接 Go / PHP / Java / .NET 的活，先得知道电脑上有没有那门语言。
+            #   只陈述这台电脑装了什么（按真用的镜像），不排步骤；办公工作区是另一张镜像，不说这句。
+            facts.append(workspace_toolchains_fact())
         listing = (readiness_tool.source_file_listing(getattr(state, "projectId", None))
                    if readiness_tool is not None and hasattr(readiness_tool, "source_file_listing")
                    else None)

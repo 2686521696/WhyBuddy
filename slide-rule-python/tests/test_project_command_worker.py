@@ -663,6 +663,7 @@ def test_office_sandbox_uses_the_office_image_and_vite_does_not(command_setup, m
     from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
 
     monkeypatch.setenv("WHYBUDDY_OFFICE_E2B_TEMPLATE", "whybuddy-office")
+    monkeypatch.delenv("WHYBUDDY_WORKSPACE_E2B_TEMPLATE", raising=False)   # 网页那张另见 test_any_language_project_computer
     store, project, provider, worker, _ = command_setup
     office = store.create_project(
         "session-office-image", owner_id="alice",

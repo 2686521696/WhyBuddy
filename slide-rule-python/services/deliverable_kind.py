@@ -110,6 +110,41 @@ def office_e2b_template() -> str | None:
     return value
 
 
+#: 网页 / 后端工程的 E2B 镜像名（scripts/build_workspace_e2b_template.py 构建）。空 = 默认 code-interpreter。
+WORKSPACE_E2B_TEMPLATE_ENV = "WHYBUDDY_WORKSPACE_E2B_TEMPLATE"
+
+
+def workspace_e2b_template() -> str | None:
+    """网页 / 后端工程要起的 E2B 镜像：带齐 Python、Node、Java、Go、PHP、Ruby、.NET、Rust 的那张。
+
+    ⚠ 2026-10-09：默认镜像只有 Python、Node 和一个 Java 11——通用 Agent 接到 Go / PHP / .NET 的活，电脑上
+      连编译器都没有（build_workspace_e2b_template.py 头注）。没配或名字不合法就返回 None，照旧用默认镜像：
+      增强类，不许因为少一张镜像就开不了箱（§七）。
+    """
+    value = os.getenv(WORKSPACE_E2B_TEMPLATE_ENV, "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value):
+        return None
+    return value
+
+
+#: 模型看到的「这台工程电脑上有什么」。跟 scripts/build_workspace_e2b_template.py 装的那张清单成对（§4），
+#: 两边的命令名由 tests/test_any_language_project_computer.py 钉在一起；默认镜像那句是 2026-10-09 真沙盒里逐个查的。
+WORKSPACE_TOOLCHAINS_FACT = (
+    "这台工程电脑装好了：Python 3.13（python3、pip）、Node 20（node、npm、npx，corepack 的 pnpm / yarn）、"
+    "Java 21（java、mvn）、Go 1.24（go）、PHP 8.4（php、composer）、Ruby 3.3（ruby、gem）、.NET 8（dotnet）、"
+    "Rust 1.85（rustc、cargo）。"
+)
+DEFAULT_TOOLCHAINS_FACT = (
+    "这台工程电脑只有 Python 3.13（python3、pip）、Node 20（node、npm、npx）和 Java 11（java），"
+    "没有 Go、PHP、Ruby、.NET、Rust，也没有 Maven。"
+)
+
+
+def workspace_toolchains_fact() -> str:
+    """按这台电脑真用的镜像说实话：配了全家桶镜像说全家桶，没配说默认镜像有什么、缺什么。"""
+    return WORKSPACE_TOOLCHAINS_FACT if workspace_e2b_template() else DEFAULT_TOOLCHAINS_FACT
+
+
 def operation_left_on_lease(store, lease, owner_id: str):
     refs = getattr(lease, "processRefs", None) or {}
     prior_id = refs.get("operationId") if isinstance(refs, dict) else None

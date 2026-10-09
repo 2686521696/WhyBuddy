@@ -52,6 +52,7 @@ from services.deliverable_kind import (
     is_office_zip_bytes,
     office_facts,
     office_e2b_template,
+    workspace_e2b_template,
     orch_trace,
     skip_vite_dependency_install,
 )
@@ -798,10 +799,11 @@ class _RuntimeTask:
                 # ⚠ 2026-09-22 办公文件生在 E2B，预览却在主机上找 soffice。
                 #   只有 whybuddy-workspace-1 使用办公镜像。没配模板仍用默认
                 #   code-interpreter，不许因此拒绝开箱。网页工程不传这张镜像。
+                # ⚠ 2026-10-09：网页 / 后端工程用全家桶镜像（workspace_e2b_template 头注），没配仍是默认。
                 image = (
                     office_e2b_template()
                     if str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
-                    else None
+                    else workspace_e2b_template()
                 )
                 self.handle = self.provider.create(
                     workspace_id=self.lease.workspaceId, template=image)

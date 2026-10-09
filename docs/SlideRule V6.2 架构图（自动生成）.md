@@ -15,7 +15,7 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **368** 个，模块 **368** 个
+- 扫描文件 **369** 个，模块 **369** 个
 - 内部依赖边 **1235** 条（包含普通包初始化依赖）
 - 内部 import 语句 **1144** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
@@ -71,7 +71,7 @@ flowchart TB
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
-  scripts["scripts<br/>40 个模块<br/>运维脚本"]
+  scripts["scripts<br/>41 个模块<br/>运维脚本"]
   app -->|2| config
   app -->|1| models
   app -->|17| routes
@@ -158,7 +158,7 @@ flowchart LR
   llm_gateway["llm_gateway<br/>19"]
   model_core["model_core<br/>27"]
   observability["observability<br/>8"]
-  ops_scripts["ops_scripts<br/>41"]
+  ops_scripts["ops_scripts<br/>42"]
   permission["permission<br/>8"]
   persist["persist<br/>14"]
   platform["platform<br/>48"]
