@@ -56,6 +56,7 @@ describe("parseStaffSection", () => {
     expect(parseStaffSection("/agent-loop/dashboard")).toBe("overview");
     expect(parseStaffSection("/agent-loop/admin/users")).toBe("users");
     expect(parseStaffSection("/agent-loop/admin/audit")).toBe("audit");
+    expect(parseStaffSection("/agent-loop/admin/credits")).toBe("credits");
     expect(parseStaffSection("/admin")).toBe("overview");
     expect(parseStaffSection("/admin/users")).toBe("users");
     expect(parseStaffSection("/agent-loop/settings")).toBe("overview");
@@ -75,13 +76,14 @@ describe("StaffConsolePage", () => {
     expect(html).not.toContain('data-testid="sliderule-staff-nav-users"');
   });
 
-  it("超管二级就是总览/用户/项目/运行/失败/审计", () => {
+  it("超管二级就是总览/用户/额度/项目/运行/失败/审计", () => {
     authState.user = { ...user, isSuperuser: true };
     const html = renderToStaticMarkup(<StaffConsolePage />);
     expect(html).toContain('data-testid="sliderule-staff-console"');
     expect(STAFF_NAV_ITEMS.map(item => item.label)).toEqual([
       "总览",
       "用户",
+      "额度", // 2026-10-09 积分制（pages/admin/Credits.tsx）
       "项目",
       "运行",
       "失败",

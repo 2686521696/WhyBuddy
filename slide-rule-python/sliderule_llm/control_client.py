@@ -28,7 +28,9 @@ from .client import (
     _describe_http_error,
     _describe_timeout,
     _empty_content_hint,
+    credit_gate,
 )
+from . import usage_meter
 from .config import (
     ensure_llm_proxy_bypass,
     get_llm_config,
@@ -270,6 +272,8 @@ async def call_control_llm(
     """
     ensure_llm_proxy_bypass()
 
+    # 额度在熔断之前判：额度用完是这个账号的事，不许算进网关熔断去连累别人（usage_meter 头注）。
+    credit_gate()
     blocked = reject_reason()
     if blocked is not None:
         raise LlmError(blocked, status=525, transient=True)
@@ -466,6 +470,7 @@ async def _call_control_llm_once(
         raise LlmError(
             f"non-JSON response: {response.text[:200]}", transient=False
         ) from exc
+    usage_meter.report_llm(str(data.get("model") or model_name), data.get("usage"))
 
     finish, termination_usage = _termination_metadata(data)
     if finish == "content_filter":

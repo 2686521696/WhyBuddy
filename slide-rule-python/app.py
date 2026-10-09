@@ -144,6 +144,8 @@ from services.control_run_store import ControlRunStore
 from services.control_run_service import ControlRunService
 from services.control_budget import startup_budget_line
 from services.project_store import get_project_store
+from services.credit_service import CreditMeterMiddleware
+from routes.credits import install_credit_wiring, router as credits_router
 from models.v5_state import V5SessionState
 
 
@@ -586,11 +588,19 @@ if _cors_origins:
 else:
     print("[cors] 未配置 BACKEND_CORS_ORIGINS：只允许同源访问（跨站请求会被浏览器拦下）")
 
+# 积分（2026-10-09）：每个请求挂一个计量器，请求里的模型 / 生图调用记到登录用户头上、受其额度拦
+# （services.credit_service 头注；登录用户由 middlewares.current_user.optional_user 写进请求状态）。
+app.add_middleware(CreditMeterMiddleware)
+
+# 账本接到工程存储那个库，超管从身份库查（routes.credits.install_credit_wiring；注入是为了让 credit_service 留在 core 层）。
+install_credit_wiring()
+
 # Full V5 API - this is the takeover
 # 账号接口挂在 sliderule 前缀下：复用已验证的 Node→Python 代理。
 # （/api/auth 那套 —— Node 的遗留账号体系和这边的桥接桩 —— 已于 2026-08-03
 # 整体删除，现在全站只有这一套身份。）
 app.include_router(account_router, prefix="/api/sliderule")
+app.include_router(credits_router, prefix="/api/sliderule")   # 积分（routes/credits.py 头注）
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(project_runtime_router, prefix="/api/sliderule")
 app.include_router(project_sources_router, prefix="/api/sliderule")

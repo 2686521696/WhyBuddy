@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from . import usage_meter
 from .config import (
     FallbackLlmConfig,
     LlmConfig,
@@ -765,6 +766,8 @@ def _call_llm_once(
         data = r.json()
     except json.JSONDecodeError as e:
         raise LlmError(f"non-JSON response: {r.text[:200]}", transient=False) from e
+    # 服务商回了就算花了钱——空正文下面会抛，用量照记（usage_meter 头注）。
+    usage_meter.report_llm(str(data.get("model") or model), data.get("usage"))
 
     content, usage, finish = _extract(data, cfg.wire_api)
     if not content.strip():
@@ -877,6 +880,7 @@ def _call_llm_once_streaming(
         raise LlmError(f"cannot reach {url}: {_describe_http_error(e)}", transient=True) from e
 
     latency = int((time.time() - started) * 1000)
+    usage_meter.report_llm(str(resolved_model), usage)
     content = "".join(content_parts)
     if not content.strip():
         raise LlmError(
@@ -891,6 +895,14 @@ def _call_llm_once_streaming(
         latency_ms=latency,
         provider=cfg.provider_name,
     )
+
+
+def credit_gate() -> None:
+    """额度用完就在打服务商之前停下（usage_meter 头注）。不可重试：重试只会再被拦一次。"""
+    try:
+        usage_meter.gate()
+    except usage_meter.CreditExhausted as exc:
+        raise LlmError(str(exc), transient=False) from exc
 
 
 def call_llm(
@@ -908,6 +920,7 @@ def call_llm(
 
     on_delta 提供时走流式（逐块回调内容增量），否则保持既有非流式路径。
     """
+    credit_gate()
     providers = build_provider_configs(config)
     if not providers:
         raise LlmError("LLM not configured (no provider chain)", transient=False)

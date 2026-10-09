@@ -64,6 +64,7 @@
 import {
   DashboardOutlined,
   LoadingOutlined,
+  WalletOutlined,
   LogoutOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -71,7 +72,10 @@ import {
 } from "@ant-design/icons";
 import React from "react";
 
+import { creditsApi, formatPoints } from "@/lib/credits-client";
 import { useAuth } from "@/lib/use-auth";
+
+import { CreditsDialog } from "./CreditsDialog";
 
 export type AccountMenuView = "dashboard" | "settings" | "help";
 
@@ -93,11 +97,30 @@ export function AccountPanel({ onOpenView }: AccountPanelProps = {}) {
   const { user, ready, signOut } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  // 积分（2026-10-09）：菜单打开时取一次余额，写在「额度」那一项上；点开是额度弹窗（CreditsDialog 头注）。
+  const [points, setPoints] = React.useState<number | null>(null);
+  const [creditsOpen, setCreditsOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
 
   // 点面板外 / 按 Escape 关闭。绑在 document 上而不是给页面加遮罩：
   // 遮罩会吃掉"点侧栏另一项"这种一步到位的操作，多一次点击。
+  React.useEffect(() => {
+    if (!open || !user) return;
+    let cancelled = false;
+    creditsApi
+      .me()
+      .then(me => {
+        if (!cancelled) setPoints(me.account.points);
+      })
+      .catch(() => {
+        if (!cancelled) setPoints(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user]);
+
   React.useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -168,6 +191,7 @@ export function AccountPanel({ onOpenView }: AccountPanelProps = {}) {
 
   return (
     <div className="native-agent-account" ref={rootRef}>
+      <CreditsDialog open={creditsOpen} onClose={() => setCreditsOpen(false)} />
       {open && (
         <div
           className="native-agent-account-menu"
@@ -189,6 +213,19 @@ export function AccountPanel({ onOpenView }: AccountPanelProps = {}) {
             >
               <DashboardOutlined />
               <span>Dashboard</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="native-agent-account-item"
+              data-testid="account-credits"
+              onClick={() => {
+                setOpen(false);
+                setCreditsOpen(true);
+              }}
+            >
+              <WalletOutlined />
+              <span>额度{points === null ? "" : ` · ${formatPoints(points)} 积分`}</span>
             </button>
             <button
               type="button"

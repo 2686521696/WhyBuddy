@@ -27,6 +27,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
+from services.credit_service import charge_computer, metered_for, require_credit
 from services.error_reporting import OutageLog, reporting_scope
 from services.project_actor_access import authorize_project_actor
 from services.project_application_runtime import checkpoint_application_data, restore_application_data
@@ -305,6 +306,8 @@ class ProjectRuntimeSupervisor:
                 active = self.store.active_runtime_start(project_id, owner_id=owner_id)
                 if active is not None:
                     return active
+            # 积分（2026-10-09）：开着的那台照用（上面），新开一台之前看额度（credit_service 头注）。
+            require_credit(owner_id, project_store=self.store)
             operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
                 idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
                 input={"port": port} if command is None else {"port": port, "command": command})
@@ -359,6 +362,7 @@ class ProjectRuntimeSupervisor:
         #     · 先占租约 → 一条命令在跑时来的**新**命令由「排队」变成
         #       workspace_lease_busy。
         #   跨版本抢单是部署顺序的事，不是把队列拆了换来的。这里只入队。
+        require_credit(owner_id, project_store=self.store)      # 积分：跑命令要开电脑，先看额度
         operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
             idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
             input=payload)
@@ -518,7 +522,7 @@ class ProjectRuntimeSupervisor:
             self._wake.clear()
 
     def _execute(self, candidate: ProjectOperation, owner_id: str) -> None:
-        context, lease = None, None
+        context, lease, computer_started = None, None, None
         try:
             lease = self.store.acquire_lease(candidate.projectId, owner_id=owner_id,
                 lease_owner="runtime-" + uuid.uuid4().hex, ttl_seconds=self.lease_ttl)
@@ -539,11 +543,14 @@ class ProjectRuntimeSupervisor:
                 return
             context = _RuntimeTask(self, owner_id, lease, original)
             # 这条工程操作里的报错带上操作号 / 工程 / 会话（services.error_reporting.reporting_scope）。
+            # 积分（2026-10-09）：工作器线程不在请求里——这条操作里的模型调用花 owner 的钱（credit_service 头注 3）。
             with reporting_scope(operation_id=original.operationId, project_id=original.projectId,
-                                 operation_kind=original.kind, owner_id=owner_id), context.heartbeat:
+                                 operation_kind=original.kind, owner_id=owner_id), context.heartbeat, \
+                    metered_for(owner_id, project_store=self.store):
                 try:
                     if original.runtime is None and not lease.sandboxId and context.operation().cancelRequested:
                         raise _Cancel()
+                    computer_started = time.monotonic()
                     context.set_provider(self.provider_factory())
                     context.run()
                 except _Cancel:
@@ -577,6 +584,10 @@ class ProjectRuntimeSupervisor:
         finally:
             if context is not None:
                 context.heartbeat.close()
+                if computer_started is not None:
+                    # 电脑按这一段实际用了多久计费；凭据带租约代数：重启后续上的那一段另算，同一段结算两次只扣一次。
+                    charge_computer(owner_id, time.monotonic() - computer_started,
+                                    ref=f"{candidate.operationId}:{lease.generation}", project_store=self.store)
             elif lease is not None:
                 try:
                     self.store.release_lease(candidate.projectId, owner_id=owner_id,

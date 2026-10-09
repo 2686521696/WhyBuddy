@@ -9,6 +9,7 @@ from middlewares.current_user import CurrentUser
 from models.project_runtime import (ProjectSourceIndex, ProjectSourceFile, ProjectSourceCommand,
     ProjectRevisionPage, ProjectForkResult, ProjectDataSnapshot, ProjectDataRestoreResult,
     ProjectDeliveryStatus, ProjectReleaseResult)
+from services.credit_service import CreditExhaustedError, exhausted_detail
 from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
@@ -81,6 +82,8 @@ def _service(request, viewer, *, write=False):
         raise HTTPException(status_code=503, detail="project_runtime_unavailable") from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="project_plan_approval_required") from exc
+    except CreditExhaustedError as exc:   # 积分用完：402 + 原话（services.credit_service）
+        raise HTTPException(status_code=402, detail=exhausted_detail(exc.text)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

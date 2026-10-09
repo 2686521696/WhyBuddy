@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from config.settings import settings
 from middlewares.current_user import CurrentUser
 from models.project_runtime import ProjectOperationSnapshot, RuntimeEventPage
+from services.credit_service import CreditExhaustedError, exhausted_detail
 from services.project_runtime_worker import approved_reference as _approved_reference
 from services.project_access import project_access_enabled, project_read_access
 from services.project_rollout import rollout_readiness
@@ -74,6 +75,8 @@ def _store_errors():
         raise HTTPException(status_code=503, detail="project_runtime_unavailable") from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="project_plan_approval_required") from exc
+    except CreditExhaustedError as exc:   # 积分用完：402 + 原话（services.credit_service）
+        raise HTTPException(status_code=402, detail=exhausted_detail(exc.text)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

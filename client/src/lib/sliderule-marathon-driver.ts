@@ -8,6 +8,7 @@
  * Mode: "single" (current default, bypass) vs "marathon" (autopilot).
  */
 
+import { creditExhaustedMessage } from "./credits-client";
 import type { V5SessionState, CapabilityCostRecord } from "@shared/blueprint/v5-reasoning-state";
 import type { ReentryStopReason } from "./sliderule-runtime";
 import * as SlideRuleRuntime from "./sliderule-runtime";
@@ -1005,6 +1006,21 @@ export async function postControlTurnStream(
       }),
     });
     await throwIfAuthRequired(res);
+    if (res.status === 402) {
+      // ⚠ 2026-10-09 积分制：额度用完，后端不开这一轮（402 + 原话）。以前非 200 一律 return null，
+      //   界面只剩「控制面未返回结果」或一直转圈——照实说是额度的事、去哪充。
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = null;
+      }
+      const text =
+        creditExhaustedMessage(body) ??
+        "额度已用完。请在左下角账号菜单的「额度」里输入兑换码充值，或联系管理员加额度。";
+      opts.onControlText?.(text, { stopReason: "unknown", stoppedBy: "credit" });
+      return null;
+    }
     if (!res.ok || !res.body) return null;
     const controlRunId = res.headers.get("X-Control-Run-Id");
     if (controlRunId) opts.onControlRunId?.(controlRunId);

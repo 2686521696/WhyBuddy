@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **371** 个，模块 **371** 个
-- 内部依赖边 **1237** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1146** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **375** 个，模块 **375** 个
+- 内部依赖边 **1261** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1166** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,8 +37,8 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 165 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 78 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `util` | 166 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 79 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -49,11 +49,11 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>165 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>78 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  util["util<br/>166 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  core["core<br/>79 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|172| util
-  flow -->|142| core
+  core -->|174| util
+  flow -->|144| core
   flow -->|180| util
 ```
 
@@ -65,17 +65,17 @@ flowchart TB
   config["config<br/>2 个模块<br/>配置"]
   models["models<br/>4 个模块<br/>数据形状"]
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
-  sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
+  sliderule_llm["sliderule_llm<br/>17 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>286 个模块<br/>业务"]
-  routes["routes<br/>16 个模块<br/>HTTP 路由"]
+  services["services<br/>288 个模块<br/>业务"]
+  routes["routes<br/>17 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
   scripts["scripts<br/>41 个模块<br/>运维脚本"]
   app -->|2| config
   app -->|1| models
-  app -->|17| routes
-  app -->|32 · 其中 3 条边来自函数体 import| services
+  app -->|18| routes
+  app -->|33 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -83,9 +83,9 @@ flowchart TB
   middlewares -->|1| config
   middlewares -->|2| services
   routes -->|10| config
-  routes -->|9| middlewares
+  routes -->|10| middlewares
   routes -->|6| models
-  routes -->|173 · 其中 77 条边来自函数体 import| services
+  routes -->|182 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -95,7 +95,7 @@ flowchart TB
   scripts -->|2| stdio_utf8
   services -->|19 · 其中 7 条边来自函数体 import| config
   services -->|43 · 其中 1 条边来自函数体 import| models
-  services -->|126 · 其中 90 条边来自函数体 import| sliderule_llm
+  services -->|128 · 其中 90 条边来自函数体 import| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
 
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、103 条边，由 `architecture.toml` 声明、判据强制。
+我们 27 个 component、110 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -149,13 +149,14 @@ flowchart LR
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
   control["control<br/>10"]
+  credits["credits<br/>3"]
   diagnostics["diagnostics<br/>6"]
   drive["drive<br/>9"]
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>12"]
   identity["identity<br/>9"]
-  llm_gateway["llm_gateway<br/>19"]
+  llm_gateway["llm_gateway<br/>20"]
   model_core["model_core<br/>27"]
   observability["observability<br/>8"]
   ops_scripts["ops_scripts<br/>42"]
@@ -177,6 +178,7 @@ flowchart LR
   capability_engine -->|2| llm_gateway
   capability_engine -->|2| platform
   capability_engine -->|1| spec_first
+  control -->|1| credits
   control -->|handoff 7| drive
   control -->|1| evidence
   control -->|5| identity
@@ -186,6 +188,9 @@ flowchart LR
   control -->|12| persist
   control -->|37| platform
   control -->|4| spec_first
+  credits -->|2| identity
+  credits -->|2| llm_gateway
+  credits -->|1| persist
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
@@ -202,6 +207,7 @@ flowchart LR
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|3| control
+  entrypoint -->|2| credits
   entrypoint -->|2| drive
   entrypoint -->|12| http_routes
   entrypoint -->|2| llm_gateway
@@ -221,6 +227,7 @@ flowchart LR
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
   http_routes -->|3| control
+  http_routes -->|4| credits
   http_routes -->|1| diagnostics
   http_routes -->|11| drive
   http_routes -->|5| evidence
@@ -258,6 +265,7 @@ flowchart LR
   permission -->|1| platform
   persist -->|43| platform
   run_control -->|1| platform
+  runtime -->|1| credits
   runtime -->|2| identity
   runtime -->|1| observability
   runtime -->|12| persist

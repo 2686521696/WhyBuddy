@@ -1,3 +1,4 @@
+import { creditExhaustedMessage } from "@/lib/credits-client";
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 
 export interface ProjectPreviewReference {
@@ -111,9 +112,14 @@ const START_REASONS: Record<string, string> = {
   project_worker_unavailable: "工程运行服务尚未就绪，暂时不能启动预览。",
   project_plan_approval_required: "当前计划尚未批准或批准已失效，不能启动预览。",
   project_runtime_unavailable: "工程运行服务暂时不可用，请稍后重试。",
+  credit_exhausted:
+    "额度已用完，不能再开工程电脑。请在左下角账号菜单的「额度」里输入兑换码充值，或联系管理员加额度。",
 };
 
 function throwRuntimeCommandError(response: Response, payload: unknown): never {
+  // 积分用完（402）：后端给了带余额的原话，照原话说（credits-client.creditExhaustedMessage）。
+  const credit = response.status === 402 ? creditExhaustedMessage(payload) : null;
+  if (credit) throw new ProjectPreviewError(credit);
   const detail =
     payload && typeof payload === "object"
       ? (payload as { detail?: unknown; reason?: unknown; message?: unknown })

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from middlewares.current_user import CurrentUser
 from models.project_runtime import PreviewDescriptor
+from services.credit_service import CreditExhaustedError, exhausted_detail
 from services.project_acceptance import template_verification_capabilities
 from services.project_access import project_access_enabled
 from services.project_rollout import rollout_readiness
@@ -85,6 +86,8 @@ def _errors():
         raise HTTPException(status_code=503, detail="project_preview_unavailable") from exc
     except (PermissionError, ProjectConflict) as exc:
         raise HTTPException(status_code=403, detail="project_preview_denied") from exc
+    except CreditExhaustedError as exc:   # 积分用完：402 + 原话（services.credit_service）
+        raise HTTPException(status_code=402, detail=exhausted_detail(exc.text)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=503, detail="project_preview_configuration_invalid") from exc
 

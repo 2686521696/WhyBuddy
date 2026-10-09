@@ -19,6 +19,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+from . import usage_meter
+
 RETRIES = 3
 BACKOFF = 5  # 秒，退避基数：5, 10, 15
 DEFAULT_TIMEOUT_S = 600
@@ -199,6 +201,10 @@ def generate_image_png(
     if resolved is None:
         raise ImageGenError("IMAGE_API_KEY / IMAGE_API_URL / IMAGE_MODEL 未完整配置，生图能力不可用")
 
+    try:
+        usage_meter.gate()
+    except usage_meter.CreditExhausted as exc:
+        raise ImageGenError(str(exc)) from exc
     body = _build_body(resolved, prompt, size)
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {resolved.key}"}
 
@@ -226,6 +232,7 @@ def generate_image_png(
             per_call = resolved.timeout if budget <= 0 else min(resolved.timeout, remaining)
             with urllib.request.urlopen(req, timeout=per_call) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
+            usage_meter.report_image(str(getattr(resolved, "model", "") or ""))   # 服务商回了图就算一张
             return _png_from_payload(payload, timeout=per_call)
         except Exception as exc:  # noqa: BLE001 — 统一走下面的重试/包装逻辑
             last_exc = exc

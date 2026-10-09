@@ -36,6 +36,7 @@ from services.deliverable_kind import office_file_uses_task_delivery, plan_deliv
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
+from services.credit_service import metered_for
 from services.worker_pool import current_pool
 from sliderule_llm.gateway_circuit import reject_reason
 from services.project_rollout import rollout_readiness
@@ -797,8 +798,10 @@ class ControlRunService:
 
     async def _produce_reported(self, record):
         """这条控制回合里的报错都带上 run / 会话 / 账号（services.error_reporting.reporting_scope）——按会话号能搜到。"""
+        # 积分（2026-10-09）：调度器在后台执行，不在请求里——这条回合的模型调用花 owner 的钱（credit_service 头注 2）。
         with reporting_scope(run_id=record.get("runId"), session_id=record.get("sessionId"),
-                             owner_id=record.get("ownerId")):
+                             owner_id=record.get("ownerId")), \
+                metered_for(record.get("ownerId") or "", project_store=self.project_store):
             await self._produce(record)
 
     async def _produce(self, record):

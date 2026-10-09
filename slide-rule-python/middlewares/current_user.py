@@ -303,6 +303,10 @@ def optional_user(
         # 已登录用户全部锁在门外。身份判定本身（①②③）不依赖这张表。
         pass
 
+    # 积分（2026-10-09）：把登录用户放进请求状态，这个请求里的模型调用记到他头上（services.credit_service 头注 1）。
+    # 依赖在线程池里跑，设 ContextVar 传不回端点；请求状态是同一个 dict，CreditMeterMiddleware 的计量器用到时来读。
+    request.state.credit_user = user
+
     # 过半程换新（见模块头「自动续期」）。放在全部判定通过之后——
     # 一张验不过的令牌当然不该被续。
     # from_cookie 必须看**实际用上的那张令牌**：junk Bearer 回落到 Cookie 时，

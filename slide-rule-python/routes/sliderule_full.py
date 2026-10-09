@@ -27,6 +27,7 @@ from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
 # 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
 # gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
+from services.credit_service import CreditExhaustedError, exhausted_detail, require_credit
 from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION
 from services.project_site_store import ProjectSiteStore
 from services.project_source_operations import fork_published_project
@@ -1632,6 +1633,11 @@ async def control_turn_stream(
     # Authorize before opening SSE; private and missing IDs have the same 404.
     sid = str(payload.get("sessionId") or "").strip()
     state = await asyncio.to_thread(_require_run_session, sid, "drive", viewer)
+    # 积分（2026-10-09）：额度用完就不开这一轮——402 + 原话，前端照实显示，不转圈（services.credit_service）。
+    try:
+        await asyncio.to_thread(require_credit, str(viewer.id), superuser=bool(getattr(viewer, "is_superuser", False)))
+    except CreditExhaustedError as exc:
+        raise HTTPException(402, detail=exhausted_detail(exc.text)) from exc
     if project_access_enabled(viewer):
         service = _control_service(request, viewer)
         try:

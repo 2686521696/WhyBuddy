@@ -1,6 +1,6 @@
 /**
  * 超管全站台。入口在账号菜单 Dashboard，不在侧栏。
- * 二级仍是：总览 / 用户 / 项目 / 运行 / 失败 / 审计。
+ * 二级仍是：总览 / 用户 / 额度 / 项目 / 运行 / 失败 / 审计。（额度 2026-10-09 加，积分制）
  *
  * 普通人进同一入口走 UserDashboardPage，不挂这页。
  * 旧书签 /agent-loop/admin 仍解析到这套二级路径。
@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   BarChart3,
   ClipboardList,
+  Coins,
   FolderKanban,
   Search,
   Users,
@@ -22,6 +23,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/use-auth";
 
 import { AdminAuditPage } from "./Audit";
+import { AdminCreditsPage } from "./Credits";
 import { AdminFailuresPage } from "./Failures";
 import { AdminOverviewPage } from "./Overview";
 import { AdminProjectsPage } from "./Projects";
@@ -33,6 +35,7 @@ export const STAFF_CONSOLE_PATH = "/agent-loop/admin";
 export type StaffSection =
   | "overview"
   | "users"
+  | "credits"
   | "projects"
   | "runs"
   | "failures"
@@ -57,6 +60,12 @@ export const STAFF_NAV_ITEMS: StaffNavItem[] = [
     label: "用户",
     keywords: "停用 恢复 超管 用量",
     icon: <Users className="h-4 w-4" />,
+  },
+  {
+    id: "credits",
+    label: "额度",
+    keywords: "积分 额度 兑换码 充值 倍率 计费",
+    icon: <Coins className="h-4 w-4" />,
   },
   {
     id: "projects",
@@ -200,6 +209,8 @@ export function StaffConsolePage() {
             <div className="mx-auto w-full max-w-[1280px] px-8 py-8">
             {section === "users" ? (
               <AdminUsersPage embedded />
+            ) : section === "credits" ? (
+              <AdminCreditsPage />
             ) : section === "projects" ? (
               <AdminProjectsPage />
             ) : section === "runs" ? (

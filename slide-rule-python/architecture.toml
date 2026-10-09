@@ -123,6 +123,8 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  # 积分算法 + 账本（2026-10-09）：只认注入的 query，只 import 标准库 → 叶子。
+  "services.credit_ledger",
   "services.control_budget",
   "services.control_context_compact",
   "services.control_transcript_log",
@@ -341,6 +343,8 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  # 积分装配（2026-10-09）：只依赖叶子 credit_ledger；库与身份由入口注入（2026-10-10 从 flow 降下来，flow 只许变短）。
+  "services.credit_service",
   # 2026-10-04 从 util 挪上来：领单要按工作器分组过滤，顶层 import 了 services.worker_pool。
   "services.control_run_store",
   # 子代理（2026-10-05，对标 Claude Code Task）：只读工作区工具与循环；问模型由控制面注入。依赖 deliverable_kind（util）。
@@ -609,7 +613,7 @@ modules = [
 why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面（host 循环另算）。
 和 drive 必须是两个 crate：混居的话图上看不见两层终局。
 回流是运行时合同（factory_complete → control_tool_result），不必画成 import 边。"""
-may_depend_on = [
+may_depend_on = ["credits", 
   "drive",
   # Session-bound tools reuse durable source storage; the runtime owner is injected.
   "persist",
@@ -658,7 +662,7 @@ llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何�
 而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
   # Lifespan owns both the durable control producer and project runtime worker.
   # 2026-10-08 observability：进程启动时在建 FastAPI 之前 init Sentry（services.error_reporting）。
-  may_depend_on = ["agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "observability", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
+  may_depend_on = ["credits", "agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "observability", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "app",
 ]
@@ -682,7 +686,7 @@ modules = [
 
 [component.http_routes]
 why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
-  may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec"]
+  may_depend_on = ["credits", "app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec"]
 modules = [
   "routes.account",
   "routes.audit",
@@ -737,6 +741,7 @@ modules = [
   "sliderule_llm.retry_budget",
   "sliderule_llm.scoped",
   "sliderule_llm.structured",
+  "sliderule_llm.usage_meter",
   "sliderule_llm.vector",
 ]
 
@@ -889,7 +894,7 @@ modules = [
 why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
   # Recover with persisted plan authority and recheck the owner's current account access.
   # 2026-10-08 observability：工程操作里的报错带上操作号 / 工程号上报（services.error_reporting）。
-  may_depend_on = ["platform", "persist", "workspace", "identity", "observability"]
+  may_depend_on = ["credits", "platform", "persist", "workspace", "identity", "observability"]
   modules = [
     "services.project_runtime",
     "services.skill_hydrate",
@@ -906,6 +911,18 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
     "services.project_browser_remote",
 ]
 
+
+[component.credits]
+why = """积分（2026-10-09，照 New API）：额度、兑换码、价格设置、计量与拦截。上线开关改成 public 后任何登录账号都能
+开电脑、调模型，这一组管「谁花了多少、还剩多少、用完了拦」。
+依赖：身份（谁是超管、超管接口的守卫）、LLM 通道（usage_meter 那个计量出口在 sliderule_llm 里）、持久化（账跟工程数据同一个库）。
+被依赖：控制面（回合按主人计量）、工程运行（开电脑前看额度、按时长计费）、HTTP 路由（开回合 402）、入口（请求级计量中间件）。"""
+may_depend_on = ["identity", "llm_gateway", "persist"]
+modules = [
+  "routes.credits",
+  "services.credit_ledger",
+  "services.credit_service",
+]
 
 [component.platform]
 why = """最底下的共用叶子：配置、数据形状、请求域上下文、零依赖的契约与工具。
