@@ -17,7 +17,7 @@
 import os from "node:os";
 import * as Sentry from "@sentry/node";
 import type { Express } from "express";
-import { reportingEnvironment, scrubEvent, scrubValue } from "../../shared/observability/error-scrub.js";
+import { fitEventSize, reportingEnvironment, scrubEvent, scrubValue, slimBreadcrumb } from "../../shared/observability/error-scrub.js";
 
 let active = false;
 
@@ -50,9 +50,10 @@ export function initErrorReporting(
       serverName: os.hostname(),
       sendDefaultPii: false,
       tracesSampleRate: Math.min(1, Math.max(0, Number(env.SENTRY_TRACES_SAMPLE_RATE) || 0)),
-      beforeSend: event => scrubEvent(event),
+      // 同浏览器那份（shared/observability/error-scrub.ts 的 fitEventSize / slimBreadcrumb 头注）：超限的事件整条被拒收。
+      beforeSend: event => { const scrubbed = scrubEvent(event); return scrubbed && fitEventSize(scrubbed); },
       beforeSendTransaction: event => scrubEvent(event),
-      beforeBreadcrumb: crumb => scrubEvent(crumb),
+      beforeBreadcrumb: crumb => slimBreadcrumb(crumb),
       enableLogs: levels !== null,
       beforeSendLog: log => {
         try { return scrubValue(log) as typeof log; } catch { return null; }      // 脱敏炸了就不发

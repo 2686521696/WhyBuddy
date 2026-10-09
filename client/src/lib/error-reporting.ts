@@ -5,7 +5,7 @@
  * 配了才动态加载 @sentry/react：没配的部署首屏包里不多一个字节。代价是挂载前那几毫秒的报错收不到。
  * React 19 渲染期没接住的错会走 reportError → window error，Sentry 的全局处理器收得到。
  */
-import { reportingEnvironment, scrubEvent } from "../../../shared/observability/error-scrub";
+import { fitEventSize, reportingEnvironment, scrubEvent, slimBreadcrumb } from "../../../shared/observability/error-scrub";
 
 type Env = Record<string, string | boolean | undefined>;
 type SentryLike = { init: (options: Record<string, unknown>) => unknown };
@@ -30,9 +30,10 @@ export function browserReportingOptions(env: Env, dsn: string, href: () => strin
     beforeSend: (event: { tags?: Record<string, unknown> }) => {
       const session = sessionFromLocation(href());
       if (session) event.tags = { ...(event.tags || {}), session_id: session };
-      return scrubEvent(event);
+      const scrubbed = scrubEvent(event);
+      return scrubbed && fitEventSize(scrubbed);       // 超过 Sentry 的大小上限会被整条拒收（error-scrub 头注）
     },
-    beforeBreadcrumb: (crumb: unknown) => scrubEvent(crumb),
+    beforeBreadcrumb: (crumb: unknown) => slimBreadcrumb(crumb),
   };
 }
 

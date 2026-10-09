@@ -30,6 +30,33 @@ describe("浏览器错误上报", () => {
     expect(sent.message).not.toContain("abcdefghijklmnop");
   });
 
+  // ⚠ 2026-10-09 审 Sentry：一天里 6 条浏览器错误被以 too_large:event 拒收（shared/observability/error-scrub.ts 头注）。
+  //   面包屑照 Sentry 浏览器 SDK 给 console.log 生成的样子：message 是拼好的一行，data.arguments 是原始参数对象。
+  it("工作台往控制台打过大对象：出错时事件仍放得下，错误本身完好", () => {
+    const opts = browserReportingOptions({}, "dsn", () => "http://localhost:3000/");
+    const state = { controlTranscript: Array.from({ length: 300 }, (_, i) => ({ kind: "tool_result", text: "结果".repeat(60) + i })) };
+    const rawCrumb = (i: number) => ({ category: "console", level: "log", timestamp: i,
+      message: "[control] state " + JSON.stringify(state).slice(0, 5000), data: { arguments: ["[control] state", state], logger: "console" } });
+    const exception = { values: [{ type: "TypeError", value: "Cannot read properties of undefined (reading 'revision')",
+      stacktrace: { frames: [{ filename: "app.js", function: "applyRun", lineno: 1, colno: 2 }] } }] };
+    const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+    const unslimmed = { exception, breadcrumbs: Array.from({ length: 100 }, (_, i) => rawCrumb(i)) };
+    expect(size(unslimmed)).toBeGreaterThan(1024 * 1024);                        // 前提：不处理就超过 Sentry 的 1 MB
+    const crumbs = unslimmed.breadcrumbs.map(c => (opts.beforeBreadcrumb as (c: unknown) => any)(c));
+    expect(crumbs.every(c => c.data.arguments === undefined && c.data.logger === "console")).toBe(true);
+    const sent = (opts.beforeSend as (e: unknown) => any)({ exception, breadcrumbs: crumbs, extra: { blob: "x".repeat(900_000) } });
+    expect(size(sent)).toBeLessThanOrEqual(512 * 1024);
+    expect(sent.exception.values[0].value).toBe("Cannot read properties of undefined (reading 'revision')");
+    expect(sent.tags.trimmed).toContain("extra");
+  });
+
+  it("小事件原样发，不打 trimmed 标签", () => {
+    const opts = browserReportingOptions({}, "dsn", () => "http://localhost:3000/");
+    const sent = (opts.beforeSend as (e: unknown) => any)({ message: "boom", breadcrumbs: [{ message: "click" }] });
+    expect(sent.breadcrumbs).toEqual([{ message: "click" }]);
+    expect(sent.tags?.trimmed).toBeUndefined();
+  });
+
   it("加载失败不影响页面", async () => {
     expect(await initBrowserErrorReporting({ VITE_SENTRY_DSN: "x" }, async () => { throw new Error("offline"); })).toBe(false);
   });

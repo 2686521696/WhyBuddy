@@ -29,6 +29,20 @@ describe("Node 错误上报", () => {
     expect(sent.request.headers.Authorization).toBe("[Filtered]");
   });
 
+  // ⚠ 2026-10-09：超过 Sentry 1 MB 的事件整条被拒收（shared/observability/error-scrub.ts 头注）。Node 进程常驻，
+  //   面包屑跨请求攒满 100 条；接线要跟浏览器那份一样（§四）。
+  it("面包屑不留控制台原始参数，超大的事件裁到放得下", () => {
+    let options: Record<string, any> = {};
+    initErrorReporting("node", { SENTRY_DSN: "https://k@o0.ingest.sentry.io/0" }, (o => { options = o as never; }) as never);
+    const crumb = options.beforeBreadcrumb({ category: "console", message: "[proxy] body", data: { arguments: ["x".repeat(50_000)], logger: "console" } });
+    expect(crumb.data.arguments).toBeUndefined();
+    const sent = options.beforeSend({ exception: { values: [{ type: "Error", value: "boom" }] },
+      breadcrumbs: Array.from({ length: 100 }, () => ({ message: "y".repeat(20_000) })) });
+    expect(new TextEncoder().encode(JSON.stringify(sent)).length).toBeLessThanOrEqual(512 * 1024);
+    expect(sent.exception.values[0].value).toBe("boom");
+    expect(sent.tags.trimmed).toBe("breadcrumbs");
+  });
+
   it("初始化抛错：照常启动，不抛", () => {
     expect(initErrorReporting("node", { SENTRY_DSN: "x" }, (() => { throw new Error("bad dsn"); }) as never)).toBe(false);
   });

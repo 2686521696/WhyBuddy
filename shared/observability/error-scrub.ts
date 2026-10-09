@@ -72,6 +72,74 @@ export function scrubEvent<T>(event: T): T | null {
   }
 }
 
+/**
+ * Sentry 拒收的事件大小上限是 1 MB（outcome = invalid / too_large:event）。这里留一半余量。
+ *
+ * ⚠ 2026-10-09 审 Sentry：问题列表一天多没有新错误，统计里却有 6 条错误被以 too_large:event 拒收、8 条发送失败
+ *   ——线上真出了错，只是没进来。同一天 Python / Node 的 ERROR 日志（Sentry Logs）一条都没有，所以是浏览器那份：
+ *   SDK 默认把每次 console.log 的**原始参数对象**存进面包屑（data.arguments），出错时最近 100 条跟着事件走，
+ *   工作台往控制台打过大对象就超限。被拒收的原件看不到，所以两头都做：面包屑不留原始参数（slimBreadcrumb），
+ *   发送前再按大小兜底（fitEventSize），保证错误本身一定送得到——上报是增强，但「错误进不来」等于没装。
+ */
+export const MAX_EVENT_BYTES = 512 * 1024;
+const MAX_CRUMB_MESSAGE = 1000;
+
+/** beforeBreadcrumb：先脱敏，再去掉控制台面包屑的原始参数对象、截短正文。 */
+export function slimBreadcrumb<T>(crumb: T): T | null {
+  const out = scrubEvent(crumb) as unknown as { message?: unknown; data?: Record<string, unknown> } | null;
+  if (!out || typeof out !== "object") return out as T | null;
+  if (out.data && typeof out.data === "object" && "arguments" in out.data) {
+    const { arguments: _dropped, ...rest } = out.data;
+    out.data = rest;
+  }
+  if (typeof out.message === "string" && out.message.length > MAX_CRUMB_MESSAGE) {
+    out.message = out.message.slice(0, MAX_CRUMB_MESSAGE) + "…";
+  }
+  return out as unknown as T;
+}
+
+function byteSize(value: unknown): number {
+  const text = JSON.stringify(value) ?? "";
+  return typeof TextEncoder === "function" ? new TextEncoder().encode(text).length : text.length * 3;
+}
+
+/**
+ * beforeSend 的最后一步：超过上限就依次丢面包屑、extra、各帧的局部变量、只留每个异常最后 50 帧，
+ * 直到放得下；丢了什么记在 tag `trimmed` 上。量不出大小（循环引用等）就原样交回，让 SDK 自己处理。
+ */
+export function fitEventSize<T>(event: T, limit = MAX_EVENT_BYTES): T {
+  try {
+    if (!event || typeof event !== "object" || byteSize(event) <= limit) return event;
+    const raw = event as unknown as {
+      breadcrumbs?: unknown; extra?: unknown; tags?: Record<string, unknown>;
+      exception?: { values?: Array<{ value?: string; stacktrace?: { frames?: Array<Record<string, unknown>> } }> };
+    };
+    const trimmed: string[] = [];
+    const steps: Array<[string, () => void]> = [
+      ["breadcrumbs", () => { delete raw.breadcrumbs; }],
+      ["extra", () => { delete raw.extra; }],
+      ["frame_vars", () => {
+        for (const value of raw.exception?.values ?? []) for (const frame of value.stacktrace?.frames ?? []) delete frame.vars;
+      }],
+      ["frames", () => {
+        for (const value of raw.exception?.values ?? []) {
+          if (value.stacktrace?.frames && value.stacktrace.frames.length > 50) value.stacktrace.frames = value.stacktrace.frames.slice(-50);
+          if (typeof value.value === "string" && value.value.length > 4000) value.value = value.value.slice(0, 4000) + "…";
+        }
+      }],
+    ];
+    for (const [name, step] of steps) {
+      step();
+      trimmed.push(name);
+      if (byteSize(raw) <= limit) break;
+    }
+    raw.tags = { ...(raw.tags || {}), trimmed: trimmed.join(",") };
+    return raw as unknown as T;
+  } catch {
+    return event;
+  }
+}
+
 /** environment：显式 SENTRY_ENVIRONMENT 优先；否则 production / development。跟 Python 那份同一个规则。 */
 export function reportingEnvironment(explicit: string | undefined, mode: string | undefined): string {
   const set = (explicit || "").trim();
