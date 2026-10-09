@@ -1,0 +1,42 @@
+# 前端镜像（根目录 Dockerfile）专用的忽略清单：BuildKit 见到「<Dockerfile 名>.dockerignore」就用它，**不再读**根目录的
+# .dockerignore——所以下面先原样带上那一份（tests/test_app_image_cache.py 钉着「一条不少」），再加前端用不到的。
+#
+# ⚠ 2026-10-09 CI 日志（run 660，一次只改了 Python 的提交）：前端镜像 4 分 15 秒，其中前端编译 81 秒白做——
+#   `COPY . .` 把 Python 代码也拷了进来，Python 一变，这层以及后面的编译全部失效。
+#   这里多排掉的路径，必须跟 deploy-images.yml 里 app 那行的 unchanged_paths 一致（同一个判据钉着）：
+#   那边据此算「前端镜像的内容最后一次变化的提交」当版本号；两边对不上，要么缓存白费，要么版本号说错。
+#   docs 不能整个排：client 引用了 docs/assets/logo.png；只排顶层 docs 下的 .md（架构图等，Python 提交常顺带重生成）。
+
+node_modules
+**/node_modules
+project-templates/*/dist
+artifacts
+dist
+.git
+.github
+.codex-logs
+.manus-logs
+.tmp
+.kiro/specs/**/evidence
+data
+tmp
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+client/dist
+services/lobster-executor/dist
+services/lobster-executor/node_modules
+slide-rule-python/.venv
+slide-rule-python/data
+slide-rule-python/.pytest_cache
+**/__pycache__
+
+# —— 以下是前端镜像额外排掉的 ——
+# ⚠ 第一版整个排掉 slide-rule-python，本地按这份清单真编一遍：vite 报 Could not load
+#   slide-rule-python/services/data/product_archetypes.json——前端直接 import 两边共用的那批数据（vite.config.ts /
+#   tsconfig.json 的别名）。grep 源码没抓到，是真编抓到的。那个目录留着（! 那行），别的 Python 代码前端用不到。
+slide-rule-python
+!slide-rule-python/services/data
+docs/**/*.md

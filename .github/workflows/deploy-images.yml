@@ -40,12 +40,42 @@ jobs:
         include:
           - name: app
             dockerfile: Dockerfile
+            # 这些路径变了，前端镜像的内容不会变（Dockerfile.dockerignore 里多排掉的那几条，两边一致，判据钉着）；
+            # 例外：kept_paths 在排掉的目录里，但前端编译要读（两边共用的数据），它变了照样算前端变了。
+            unchanged_paths: "slide-rule-python docs/**/*.md"
+            kept_paths: "slide-rule-python/services/data"
           - name: python
             dockerfile: slide-rule-python/Dockerfile
           - name: project-preview
             dockerfile: server/project-preview/Dockerfile
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 算版本号要看历史（下面 release 那步）。blob:none 只拉提交和目录树，不拉旧文件内容，几乎不多花时间。
+          fetch-depth: 0
+          filter: blob:none
+
+      # ⚠ 2026-10-09 CI 日志（run 660）：GIT_SHA 原来传 github.sha，每次提交都变，前端镜像里用到它的那步（编译）
+      #   就每次重跑——只改了 Python 的提交也重编前端 81 秒。版本号改成「这个镜像的内容最后一次变化的那个提交」：
+      #   内容没变，版本号不变，整层走缓存；Sentry 里前端的报错照样对得上是哪一版前端代码。
+      #   unchanged_paths 为空（python / 预览网关）就是 github.sha，跟原来一样。
+      - id: release
+        run: |
+          SHA='${{ github.sha }}'
+          if [ -n '${{ matrix.unchanged_paths }}' ]; then
+            set -f
+            EXCLUDES=""
+            for p in ${{ matrix.unchanged_paths }}; do EXCLUDES="$EXCLUDES :(exclude,glob)$p"; done
+            FOUND=$(git log -1 --format=%H HEAD -- . $EXCLUDES)
+            # git 的 exclude 压过正向路径，例外得单独查一次，再取两者里较新的那个。
+            if [ -n '${{ matrix.kept_paths }}' ]; then
+              KEPT=$(git log -1 --format=%H HEAD -- ${{ matrix.kept_paths }})
+              [ -n "$KEPT" ] && FOUND=$(git rev-list -n1 --topo-order $FOUND $KEPT)
+            fi
+            SHA=${FOUND:-$SHA}
+          fi
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "release for ${{ matrix.name }}: ${SHA}"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -91,10 +121,10 @@ jobs:
           #   没配时传空串，CSP 退回只允许本站 iframe，等于旧行为。
           #   python 那个 Dockerfile 不认这个 ARG，多传无害。
           #   错误上报：GIT_SHA 让每条报错对得上是哪一版；VITE_SENTRY_DSN 是浏览器那份（公开的，放 variable）。
-          #   两个 Dockerfile 都认 GIT_SHA；python 那个不认 VITE_SENTRY_DSN，多传无害。
+          #   GIT_SHA 见上面 release 那步。两个 Dockerfile 都认 GIT_SHA；python 那个不认 VITE_SENTRY_DSN，多传无害。
           build-args: |
             WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE=${{ vars.WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE }}
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ steps.release.outputs.sha }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.name }}

@@ -54,7 +54,8 @@ ENV WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE=$WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TE
 # （只能往这个项目里写事件，读不了），放 repo variable，不是 secret。留空 = 浏览器不上报、包里不加载 Sentry。
 ARG VITE_SENTRY_DSN=""
 ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
-# 报错对得上是哪一版代码：CI 传 github.sha。
+# 报错对得上是哪一版代码：CI 传「这个镜像的内容最后一次变化的那个提交」（deploy-images.yml 的 release 那步），
+# 不是 github.sha——它每次提交都变，会让下面的 build 每次都重跑，只改了 Python 也要重编一遍前端。
 ARG GIT_SHA=""
 ENV VITE_SENTRY_RELEASE=$GIT_SHA
 
@@ -66,9 +67,6 @@ FROM node:22-alpine AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3001
-# Node 服务报错带上版本（server/observability/error-reporting.ts）。ARG 不跨阶段，这里再声明一次。
-ARG GIT_SHA=""
-ENV SENTRY_RELEASE=$GIT_SHA
 
 # 运行期同样信任可选企业根证书（LLM 网关走企业代理时需要）
 COPY docker/certs/ /usr/local/share/ca-certificates/sliderule/
@@ -77,16 +75,22 @@ ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
-# Copy package manifest + lockfile + the built artifacts.
+# ⚠ 2026-10-09 CI 日志（run 660）：原来先拷 dist 再装生产依赖，dist 每次都变，这一层（18 秒）连同整包 node_modules
+#   每次重装、重推。依赖只看清单：先装依赖，再放每次会变的东西；版本号同理放到最后（它每次提交都变）。
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
 COPY --from=builder /app/patches ./patches
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/dist ./dist
 
 # Production install — no devDependencies, no scripts.
 RUN corepack enable && \
     pnpm install --frozen-lockfile --prod --ignore-scripts && \
     pnpm store prune
+
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/dist ./dist
+
+# Node 服务报错带上版本（server/observability/error-reporting.ts）。ARG 不跨阶段，这里再声明一次。
+ARG GIT_SHA=""
+ENV SENTRY_RELEASE=$GIT_SHA
 
 EXPOSE 3001
 
