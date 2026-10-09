@@ -2406,7 +2406,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   ...t,
                   status: "complete",
                   durationMs: Date.now() - turnStartMs,
-                  assistant: `推演中断：${bannerMsg}（可重试或换指令）`,
+                  // 额度用完（credits-client，2026-10-09）：重试只会再被拦，不说「可重试」。
+                  assistant:
+                    lastControlStopRef.current?.stoppedBy === "credit"
+                      ? `推演中断：${bannerMsg}`
+                      : `推演中断：${bannerMsg}（可重试或换指令）`,
                   assistantSource: "fallback",
                 }
               : t

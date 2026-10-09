@@ -354,6 +354,7 @@ def test_an_exhausted_user_cannot_open_a_control_turn(identity, tmp_path, monkey
     assert got.status_code == 402
     assert got.json()["code"] == "credit_exhausted" and "额度已用完" in got.json()["message"]
     assert "这一轮没有开始" in got.json()["message"]
+    assert "当前余额 0 积分" in got.json()["message"]                                   # 不是「0.0 积分」（本地真跑截图）
     # 反向：有额度的人走得过这道闸（后面是什么结果不归这条判据管，只要不是 402）
     other = client.post("/api/sliderule/sessions", json={"goal": {"text": "做个待办"}}, headers=_hdr(identity["bob"])).json()
     passed = client.post("/api/sliderule/control-turn-stream", headers=_hdr(identity["bob"]),

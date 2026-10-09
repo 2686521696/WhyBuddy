@@ -73,7 +73,9 @@ def reset_credit_store() -> None:
 
 
 def exhausted_text(quota: int, *, stopping: bool) -> str:
-    head = f"额度已用完（当前余额 {quota_to_points(quota)} 积分）"
+    points = quota_to_points(quota)
+    shown = f"{points:g}" if points != int(points) else str(int(points))   # 0.0 → 0（本地真跑截图里是「0.0 积分」）
+    head = f"额度已用完（当前余额 {shown} 积分）"
     tail = "，本轮已停止，已保存现有结果。" if stopping else "，这一轮没有开始。"
     return head + tail + "请在左下角账号菜单的「额度」里输入兑换码充值，或联系管理员加额度。"
 
