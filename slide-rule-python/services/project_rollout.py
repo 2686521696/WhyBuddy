@@ -11,7 +11,7 @@ def rollout_mode():
     value = os.getenv("WHYBUDDY_PROJECT_ROLLOUT", "").strip()
     if not value:
         return "internal" if os.getenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED") == "1" else "disabled"
-    return value if value in {"disabled", "internal", "allowlist"} else "disabled"
+    return value if value in {"disabled", "internal", "allowlist", "public"} else "disabled"
 
 
 def allowed_users():
@@ -44,8 +44,12 @@ def rollout_readiness(*, mode=None):
         blockers.append("project_rollout_disabled")
     if mode == "internal" and production:
         blockers.append("project_internal_mode_not_for_production")
-    if mode == "allowlist":
-        if not allowed_users():
+    # ⚠ 2026-10-09 迁到新服务器后，用户自己的账号不在名单里：control-turn-stream 判它没有工程权限，
+    #   整轮落到进程内的旧路径——不落库、建工程被拒（project_preview_not_enabled），界面停在「起草规格」转圈，
+    #   库里一条回合记录都没有（sr-20261009164412-1EQ3PRXPZZ）。名单是灰度用的；产品对所有账号开放就用 public：
+    #   登录的账号都走新路径，部署侧的检查一项不少（持久库、隔离的预览来源、网关、E2B、浏览器模板）。
+    if mode in {"allowlist", "public"}:
+        if mode == "allowlist" and not allowed_users():
             blockers.append("project_rollout_users_missing")
         database = (getattr(settings, "APP_STORE_DATABASE_URL", "") or "").strip()
         api = (getattr(settings, "APP_STORE_HTTP_API_URL", "") or "").strip()

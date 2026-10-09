@@ -10,7 +10,8 @@ def project_access_enabled(viewer) -> bool:
     status = rollout_readiness()
     return bool(viewer and status["configured"] and (
         (status["mode"] == "internal" and admin) or
-        (status["mode"] == "allowlist" and str(identity) in allowed_users())))
+        (status["mode"] == "allowlist" and str(identity) in allowed_users()) or
+        (status["mode"] == "public" and bool(str(identity or "").strip()))))
 
 
 def project_read_access(viewer) -> bool:

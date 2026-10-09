@@ -19,7 +19,7 @@ def main():
     bundle = Path(os.getenv("WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE") or ROOT / "dist/project-preview/agent.cjs")
     report["agentBundlePresent"] = bundle.is_file()
     report["cleanupWorkerConfigured"] = os.getenv("WHYBUDDY_PROJECT_CLEANUP_ENABLED") == "1"
-    if report["mode"] == "allowlist" and not report["agentBundlePresent"]:
+    if report["mode"] in {"allowlist", "public"} and not report["agentBundlePresent"]:
         report["blockers"].append("project_preview_agent_bundle_required")
         report["configured"] = False
     print(json.dumps(report, ensure_ascii=False, indent=2))
