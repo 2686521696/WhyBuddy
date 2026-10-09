@@ -327,8 +327,8 @@ SANDBOX_FONTS_NOTE = (
     "for later commands. The platform installs nothing for you — install what the project needs yourself. "
     "If the computer was recycled (idle too long), the command receipt says so; reinstall then. "
     # ⚠ 2026-10-09 线上 Django 借阅登记：电脑被回收后预览面板叫醒，新电脑上没装 Django，起不来（devcontainer_setup 头注）。
-    "Declare how to install the project's dependencies in .devcontainer/devcontainer.json as postCreateCommand "
-    "(e.g. {\"postCreateCommand\": \"pip install -r requirements.txt\"}): whenever the project gets a new computer "
+    "Declare in .devcontainer/devcontainer.json as postCreateCommand every step a clean checkout needs before it can "
+    "run on a new computer (e.g. {\"postCreateCommand\": \"pip install -r requirements.txt\"}): whenever the project gets a new computer "
     "(the first one, or after a recycle) the platform runs it before your command or dev server. "
     # ⚠ 2026-09-28 第 81～83 轮（webapp-testing 点击测试）：pip install playwright + 下载 Chromium 都成功，
     #   Chromium 起不来——libnspr4.so 缺失。E2B 探针：uid 1000，libnspr4 / libnss3 都不在，apt-get 要 root，
@@ -808,7 +808,8 @@ _DESCRIPTIONS = {
         "install dependencies inside the command or with shell_exec first. Listen on 0.0.0.0. port is optional: the preview shows "
         "whichever port that command's processes listen on (HOST=0.0.0.0, and PORT=<port> when you give one, are exported). "
         "Later starts without command reuse the last command — on a new computer they run after the project's "
-        ".devcontainer/devcontainer.json postCreateCommand, so put dependency installs there, not only in this command. "
+        ".devcontainer/devcontainer.json postCreateCommand, so put every step a clean checkout needs there, not only in "
+        "this command. "
         "This is not a public deployment."),
     "deploy_apply_deployment": "Start the private preview (same kernel as deploy_expose_port). This is not a public CDN. deployed is always false; previewPrivate is true.",
     "make_manus_page": "Switch the preview to one existing file. file may be a source .html, or a collected deliverable — .pptx/.docx/.xlsx or .md/.txt/.csv (the officeFiles path). A missing path fails. In an office workspace, omitting file shows the newest collected office file; in a web project it shows the project page. This does not start Vite.",

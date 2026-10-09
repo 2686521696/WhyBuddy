@@ -23,6 +23,9 @@ services:
     restart: unless-stopped
 
   project-preview:
+    # ⚠ 2026-10-09：原来只有 build:，服务器 pull 拉不到、up -d 也不重建，网关修复一整天没上线（deploy-images.yml 头注）。
+    #   现在跟 app / python 一样由 CI 出镜像，部署照常 pull && up -d。build: 留作 CI 镜像拉不下来时的现场构建。
+    image: ${SLIDERULE_IMAGE_PROJECT_PREVIEW:-${SLIDERULE_REGISTRY:-ghcr.io}/${SLIDERULE_IMAGE_OWNER:-xiaojilele-glitch}/whybuddy-project-preview:${SLIDERULE_IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: server/project-preview/Dockerfile

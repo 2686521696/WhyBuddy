@@ -268,3 +268,31 @@ def test_本地网关样例也过同一条规则():
     assert _gateway_accepts_authority(value), (
         f".env.preview.example 发的 {value!r} 会被网关拒掉"
     )
+
+
+def test_每个现场构建的服务都有CI出的镜像():
+    """⚠ 2026-10-09：预览网关在 docker-compose.project.yml 里只有 `build:`，CI 不出它的镜像。服务器照「只拉不建」
+    部署（pull && up -d），pull 拉不到、up -d 看到本地旧镜像也不重建——网关修复推上去一整天，线上容器还是 3 周前
+    那版（/app/gateway.cjs 里一处新代码都没有），三轮部署都没发现。
+
+    规则：生产 compose 里凡是写了 build: 的服务，都得有 image:，且这个镜像名正是 CI 矩阵里同一个 Dockerfile 产出的。
+    """
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "deploy-images.yml").read_text(encoding="utf-8"))
+    matrix = workflow["jobs"]["build-push"]["strategy"]["matrix"]["include"]
+    built_by_ci = {entry["dockerfile"]: entry["name"] for entry in matrix}
+    checked = []
+    for compose in ("docker-compose.prod.yml", "docker-compose.project.yml"):
+        services = (yaml.safe_load((ROOT / compose).read_text(encoding="utf-8")) or {}).get("services") or {}
+        for name, service in services.items():
+            build = (service or {}).get("build")
+            if not build:
+                continue
+            dockerfile = build.get("dockerfile", "Dockerfile") if isinstance(build, dict) else "Dockerfile"
+            assert dockerfile in built_by_ci, f"{compose} 的 {name} 现场构建 {dockerfile}，CI 不出它的镜像——pull 永远拉不到新版"
+            image = str(service.get("image") or "")
+            assert f"whybuddy-{built_by_ci[dockerfile]}:" in image, (
+                f"{compose} 的 {name} 没有指向 CI 出的镜像（whybuddy-{built_by_ci[dockerfile]}），pull 不会更新它")
+            checked.append(name)
+    assert "project-preview" in checked                                       # 前提：真的查到了网关这一项

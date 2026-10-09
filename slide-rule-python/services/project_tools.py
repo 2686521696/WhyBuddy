@@ -694,7 +694,8 @@ def _snapshot_office_facts(facts: dict) -> dict:
 FRESH_COMPUTER_NOTE = ("这个工程之前那台电脑已经回收了（闲置太久或连不上）。工程源码都在，"
                        "但之前装的依赖、没写回源码的文件都不在了——要用就重装。")
 #: 没声明准备命令时补的一句：换电脑后自动装好的办法（devcontainer_setup 头注）。
-SETUP_ADVICE = ("想让以后换电脑时自动装好，把装依赖的命令写进 .devcontainer/devcontainer.json 的 postCreateCommand"
+SETUP_ADVICE = ("想让以后换电脑时自动恢复，把「一份干净的源码在新电脑上跑起来需要的全部步骤」写进 "
+                ".devcontainer/devcontainer.json 的 postCreateCommand"
                 "（例如 {\"postCreateCommand\": \"pip install -r requirements.txt\"}），平台每次开新电脑都会先跑它。")
 
 

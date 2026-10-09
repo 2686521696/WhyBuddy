@@ -6,6 +6,11 @@
 # 服务器先 docker login ghcr.io -u <用户名> -p <PAT>）：
 #   ghcr.io/xiaojilele-glitch/whybuddy-app:latest      （及 :<commit-sha> 可回滚）
 #   ghcr.io/xiaojilele-glitch/whybuddy-python:latest
+#   ghcr.io/xiaojilele-glitch/whybuddy-project-preview:latest   （预览网关，docker-compose.project.yml）
+#
+# ⚠ 2026-10-09：预览网关原来不在这里，只在 docker-compose.project.yml 里写 `build:` 现场构建。服务器照「只拉
+#   不建」部署，pull 拉不到它、up -d 看到本地旧镜像也不重建——网关修复（d387037）推上去一整天，线上容器还是
+#   3 周前那版，`/app/gateway.cjs` 里一处新代码都没有。三个服务现在都从这里出镜像，部署一条 pull 全更新。
 name: deploy-images
 
 on:
@@ -37,6 +42,8 @@ jobs:
             dockerfile: Dockerfile
           - name: python
             dockerfile: slide-rule-python/Dockerfile
+          - name: project-preview
+            dockerfile: server/project-preview/Dockerfile
     steps:
       - uses: actions/checkout@v4
 

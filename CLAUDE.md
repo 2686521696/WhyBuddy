@@ -219,8 +219,14 @@ TS 侧额外一条硬闸（无基线）：**包级不许成环**。client / serv
 服务器上**手动**拉取（watchtower 是可选 profile，默认不开）：
 
 ```bash
-docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml -f docker-compose.project.yml pull
+docker compose -f docker-compose.prod.yml -f docker-compose.project.yml up -d
 ```
+
+⚠ **两个 compose 文件都要带。** 预览网关（project-preview）在 `docker-compose.project.yml` 里。2026-10-09 之前它
+不在 CI 里、只能现场 `build`，pull 拉不到、`up -d` 也不重建——网关修复推上去一整天，线上容器还是 3 周前那版。
+现在三个镜像（app / python / project-preview）都由 CI 出，`tests/test_preview_deploy_wiring.py` 钉着
+「compose 里每个能现场构建的服务都得有 CI 出的镜像」。
 
 ⚠ **"镜像构建成功"≠"线上在跑"。** 验线上行为之前先确认版本——查静态包的
 `last-modified` 是否落在目标构建的时间窗内。纯 Python 的改动不会换前端包，那时
