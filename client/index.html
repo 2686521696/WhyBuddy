@@ -13,7 +13,9 @@
          而 512 的 PNG 被浏览器一步缩到 16 时，五官会糊成一团灰。
          实测两者在 16px 上几乎逐像素相同——也就是说 PNG 排前面的话，
          专画那一版根本用不上。
-         512 的 PNG 保留给 apple-touch-icon 与大尺寸场景。 -->
+         512 的 PNG 保留给 apple-touch-icon 与大尺寸场景。
+         ⚠ 2026-10-09 换成新标（面团小星球）：favicon.ico 用设计资源包里自带的多尺寸 ico（16～256），
+         不再由 scripts/build_favicon.py 生成——那个脚本的五官坐标是旧标的，跑一次会把新标的 16/32 画坏。 -->
     <link rel="icon" href="%BASE_URL%favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="512x512" href="%BASE_URL%miantuan-mark-512.png" />
     <link rel="apple-touch-icon" href="%BASE_URL%miantuan-mark-512.png" />
