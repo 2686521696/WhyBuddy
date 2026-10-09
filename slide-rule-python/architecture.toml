@@ -143,6 +143,8 @@ modules = [
   "services.project_preview_config",
   # 2026-10-09：叶子，只有一段脚本字符串和请求拼装。
   "services.project_source_scan",
+  # 2026-10-09：叶子，只解析 devcontainer.json 的生命周期命令，不碰沙盒。
+  "services.devcontainer_setup",
   # 预览 Host 注入是纯字符串/命令拼装：不碰 E2B、不读存储。worker 启动
   # Vite 时引用；Agent 源码接不接 allowedHosts 都走这一份。
   "services.vite_preview_hosts",
@@ -879,6 +881,8 @@ modules = [
   "services.project_browser_provider",
   # 2026-10-09：命令跑完扫沙盒工程目录的脚本（字符串，沙盒里跑）——provider 用它把命令改的源码交回工人。
   "services.project_source_scan",
+  # 2026-10-09：新电脑开机先跑的准备命令（工程 devcontainer.json 声明）——工人开新电脑时用。
+  "services.devcontainer_setup",
 ]
 
 [component.runtime]

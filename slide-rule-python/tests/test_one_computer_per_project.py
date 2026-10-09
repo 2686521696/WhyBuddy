@@ -149,5 +149,121 @@ def test_a_server_that_will_not_stop_costs_the_computer_and_the_receipt_says_so(
     _started(_django_world)
     _, snap = _restart(_django_world)
     assert restartable.created == 2
-    assert snap.get("freshComputer") is True and snap.get("freshComputerNote") == FRESH_COMPUTER_NOTE
+    assert snap.get("freshComputer") is True and FRESH_COMPUTER_NOTE in snap.get("freshComputerNote", "")
     assert START in restartable.commands[-1]                                     # 照上次的命令再起
+
+
+# ── 新电脑先跑工程声明的准备命令（devcontainer.json）──────────────────────────────────────────────
+# ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：电脑被回收后叫醒，新电脑上没装 Django，起不来
+#   （services/devcontainer_setup 头注）。判据走真 worker、真回执；devcontainer.json 照模型会写的样子带注释。
+
+from services.project_tools import SETUP_ADVICE  # noqa: E402
+
+DEVCONTAINER = """{
+  // 读书打卡：新电脑开好先装依赖
+  "name": "library",
+  "postCreateCommand": "pip install -r requirements.txt",
+}
+"""
+SETUP = "pip install -r requirements.txt"
+
+
+def _project_with_devcontainer(store, name="session-dc"):
+    return store.create_project(name, owner_id="alice", files={
+        "package.json": TEMPLATE_PACKAGE, "manage.py": "import sys\n", "requirements.txt": "django\n",
+        ".devcontainer/devcontainer.json": DEVCONTAINER}, template_version="whybuddy-react-vite-1", plan_ref="plan-1")
+
+
+def test_a_new_computer_runs_the_declared_setup_before_the_command(command_setup):
+    store, _, provider, _, _ = command_setup
+    project = _project_with_devcontainer(store)
+    snap, receipt = _run(command_setup, project, "python manage.py migrate", "dc-first")
+    assert provider.commands == [SETUP, "python manage.py migrate"]          # 先准备，再跑命令
+    assert snap.get("freshComputer") is None                                 # 第一台不算「换了」
+    _run(command_setup, project, "python manage.py check", "dc-reused")
+    assert provider.commands[2:] == ["python manage.py check"]               # 接着用同一台：不再跑准备命令
+
+
+def test_after_a_recycle_the_setup_runs_again_and_the_receipt_says_so(command_setup):
+    store, _, provider, _, _ = command_setup
+    project = _project_with_devcontainer(store)
+    _run(command_setup, project, "python manage.py migrate", "dc-before")
+    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").expiresAt <= time.time())
+    provider.handles.clear()                                                  # 闲置太久，被回收
+    _, receipt = _run(command_setup, project, "python manage.py runserver --check", "dc-after")
+    assert provider.created == 2 and provider.commands[-2:] == [SETUP, "python manage.py runserver --check"]
+    assert "已先按 .devcontainer/devcontainer.json 跑过准备命令" in receipt["hint"]
+    assert "要用就重装" not in receipt["hint"]                                # 已经装回来了，不再叫它重装
+
+
+def test_a_failing_setup_stops_there_and_says_the_command_did_not_run(command_setup):
+    store, _, provider, worker, _ = command_setup
+    project = _project_with_devcontainer(store)
+    provider.command_code = 1                                                 # 准备命令（第一个派发的进程）失败
+    operation = worker.submit_command(project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="dc-fail", command="shell", script="python manage.py migrate")
+    failed = eventually(lambda: state(store, operation, "failed"))
+    assert failed.runtime.errorCode == "project_setup_failed"
+    assert provider.commands == [SETUP]                                       # 命令本身没有派发
+    snap = operation_snapshot(store.snapshot_operation(operation.operationId, owner_id="alice"))
+    hint = _command_pointer(snap, "ERROR: No matching distribution", full_command="python manage.py migrate")["hint"]
+    assert "准备命令" in hint and SETUP in hint and "没有跑" in hint
+
+
+def test_without_a_declaration_the_receipt_teaches_where_to_declare(command_setup):
+    store, project, provider, _, _ = command_setup
+    _run(command_setup, project, DJANGO_INSTALL, "nd-before")
+    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").expiresAt <= time.time())
+    provider.handles.clear()
+    _, receipt = _run(command_setup, project, "python manage.py migrate", "nd-after")
+    assert "要用就重装" in receipt["hint"] and SETUP_ADVICE in receipt["hint"]
+
+
+def test_both_shell_descriptions_point_at_postcreatecommand():
+    for item in project_tool_definitions():
+        fn = item.get("function", item)
+        if fn["name"] in {"shell_exec", "bash", "deploy_expose_port"}:
+            assert "postCreateCommand" in fn["description"], fn["name"]
+
+
+class SetupAwareProvider(StoppableProvider):
+    """准备命令是一条会跑完的命令（装完就退出）；服务器一直在跑。"""
+
+    def __init__(self):
+        super().__init__()
+        self.by_pid = {}
+
+    def start_process(self, handle, command, **kwargs):
+        result = super().start_process(handle, command, **kwargs)
+        self.by_pid[result.process_id] = command
+        return result
+
+    def is_process_running(self, handle, pid):
+        return self.by_pid.get(pid) != SETUP and super().is_process_running(handle, pid)
+
+
+@pytest.fixture
+def setup_aware(monkeypatch):
+    provider = SetupAwareProvider()
+    monkeypatch.setattr("test_custom_dev_server_through_the_tools.DjangoProvider", lambda: provider)
+    return provider
+
+
+def test_a_recycled_dev_server_comes_back_with_its_dependencies(setup_aware, _django_world):
+    """线上那一趟本身：服务器停了、电脑被回收，只说端口再起（叫醒走的同一个 submit），新电脑先准备、再起服务器。"""
+    world = _django_world
+    first = _started(world)
+    written = world.tools.execute("file_write", {"file": ".devcontainer/devcontainer.json", "content": DEVCONTAINER}, world.state)
+    assert written["ok"], written
+    synced = lambda: world.store.get_operation(written["operationId"], owner_id="alice")  # noqa: E731
+    eventually(lambda: synced().status == "completed")                          # 写进源码（同步完）再往下
+    assert world.tools.execute("project_cancel", {"operationId": first().operationId}, world.state)["ok"]
+    eventually(lambda: first().status == "cancelled")
+    setup_aware.handles.clear()                                                 # 闲置太久，被回收
+    again = world.tools.execute("deploy_expose_port", {"port": 8000}, world.state)
+    assert again["ok"], again
+    op = lambda: world.store.get_operation(again["operationId"], owner_id="alice")  # noqa: E731
+    eventually(lambda: op().runtime and op().runtime.status == "ready")
+    assert setup_aware.commands[-2] == SETUP and START in setup_aware.commands[-1]   # 先装、再起
+    snap = operation_snapshot(world.store.snapshot_operation(again["operationId"], owner_id="alice"))
+    assert "已先按 .devcontainer/devcontainer.json 跑过准备命令" in snap["freshComputerNote"]

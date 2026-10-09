@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **370** 个，模块 **370** 个
-- 内部依赖边 **1236** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1145** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **371** 个，模块 **371** 个
+- 内部依赖边 **1237** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1146** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,7 +37,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 164 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 165 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 78 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>164 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>165 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>78 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|172| util
   flow -->|142| core
-  flow -->|179| util
+  flow -->|180| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>285 个模块<br/>业务"]
+  services["services<br/>286 个模块<br/>业务"]
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -167,7 +167,7 @@ flowchart LR
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
-  workspace["workspace<br/>5"]
+  workspace["workspace<br/>6"]
   agent_loop -->|1| identity
   agent_loop -->|6| platform
   app_store -->|6| identity
@@ -262,7 +262,7 @@ flowchart LR
   runtime -->|1| observability
   runtime -->|12| persist
   runtime -->|12| platform
-  runtime -->|9| workspace
+  runtime -->|10| workspace
   spec_first -->|3| app_store
   spec_first -->|62| llm_gateway
   spec_first -->|3| observability

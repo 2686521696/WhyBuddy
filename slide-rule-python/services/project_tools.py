@@ -693,6 +693,32 @@ def _snapshot_office_facts(facts: dict) -> dict:
 #: 一件事开到了新电脑上时说给模型听的那句（命令回执、开发服务器回执共用）。
 FRESH_COMPUTER_NOTE = ("这个工程之前那台电脑已经回收了（闲置太久或连不上）。工程源码都在，"
                        "但之前装的依赖、没写回源码的文件都不在了——要用就重装。")
+#: 没声明准备命令时补的一句：换电脑后自动装好的办法（devcontainer_setup 头注）。
+SETUP_ADVICE = ("想让以后换电脑时自动装好，把装依赖的命令写进 .devcontainer/devcontainer.json 的 postCreateCommand"
+                "（例如 {\"postCreateCommand\": \"pip install -r requirements.txt\"}），平台每次开新电脑都会先跑它。")
+
+
+def computer_note(saved: dict) -> str:
+    """这件事用的电脑是什么情况，说给模型听（命令回执、开发服务器回执共用，§四 同一句话）。
+
+    ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：电脑被回收后预览面板叫醒，新电脑上没装 Django，
+      启动失败。现在新电脑先跑工程声明的准备命令（worker._prepare_new_computer），这里把跑了什么、成没成照实说。
+    """
+    source = str(saved.get("setupSource") or "")
+    command = str(saved.get("setupCommand") or "")[:300]
+    if saved.get("errorCode") == "project_setup_failed" or saved.get("setupError") or (
+            saved.get("setupExitCode") not in (None, 0, "0")):
+        reason = {"devcontainer_json_unreadable": f"{source} 不是合法的 JSON", "timeout": "超时没跑完",
+                  "project_sudo_forbidden": "里面有 sudo，平台不允许"}.get(str(saved.get("setupError") or ""),
+                                                                      f"退出码 {saved.get('setupExitCode')}")
+        shown = f"「{command}」" if command else ""
+        return (f"这是一台新电脑，开机先跑 {source} 里的准备命令{shown}，它失败了（{reason}），后面的命令 / 服务器都没有跑。"
+                f"日志里就是准备命令的输出；改好 {source} 再试。")
+    if saved.get("freshComputer") is not True:
+        return ""
+    if command:
+        return f"这是一台新电脑（之前那台已回收），已先按 {source} 跑过准备命令「{command}」。"
+    return "这是一台新电脑：" + FRESH_COMPUTER_NOTE + SETUP_ADVICE
 
 
 def operation_snapshot(snapshot):
@@ -761,12 +787,17 @@ def operation_snapshot(snapshot):
     written = saved.get("sourceWriteBack")
     if isinstance(written, dict) and written:
         result["sourceWriteBack"] = _bounded_write_back(written)
-    if saved.get("freshComputer") is True and operation.kind in {"runtime.exec", "runtime.start"}:
-        # 一个工程一台电脑；这件事却开在一台新电脑上（上一台闲置被回收、或连不上）。命令的回执在 _command_pointer
-        # 里挂这句；开发服务器（deploy_expose_port / browser_*）的回执没有 hint 那一层，直接带上这句（§4 同一句话）。
-        result["freshComputer"] = True
-        if operation.kind == "runtime.start":
-            result["freshComputerNote"] = FRESH_COMPUTER_NOTE
+    if operation.kind in {"runtime.exec", "runtime.start"}:
+        # 一个工程一台电脑；这件事却开在一台新电脑上（上一台闲置被回收、或连不上），或新电脑的准备命令失败了。
+        # 命令的回执在 _command_pointer 里挂这句；开发服务器（deploy_expose_port / browser_*）的回执没有 hint 那一层，
+        # 直接带上这句（§4 同一句话）。
+        note = computer_note({**saved, "errorCode": saved.get("errorCode") or result.get("errorCode")})
+        if saved.get("freshComputer") is True:
+            result["freshComputer"] = True
+        if note:
+            result["computerNote"] = note
+            if operation.kind == "runtime.start":
+                result["freshComputerNote"] = note
     if operation.kind == "runtime.patch":
         # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
         #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
@@ -1266,12 +1297,12 @@ def _command_pointer(result, excerpt="", full_command=None):
         hint = (f"这条命令在沙盒里改了工程源码文件：{named}。改动只在沙盒里，工程源码还是旧版；"
                 "下一条命令开跑前会按工程源码把它们重写回去，这次的改动就没了。"
                 "要留住：用 file_write 把改后的完整内容写回（或者改用 file_str_replace 改源码再跑）。" + hint)
-    if result.get("freshComputer"):
+    if result.get("computerNote"):
         # ⚠ 2026-09-28 隔离真机第 81 轮 sr-20260928021545-B6CQ0CM50T（番茄钟网页）：pip install playwright 成功，
         #   五分钟后 `import playwright` → ModuleNotFoundError——那时网页工程每条命令一台新沙盒、跑完回收，回执只在
         #   「只装依赖」的命令上提醒一句。2026-10-09 起一个工程一台电脑，装的东西一直在；只有电脑真被回收了
         #   （闲置太久、连不上）才换新的，那一次照实说，不管这条命令是不是在装东西——模型下一步要用的东西可能就没了。
-        hint = "这条命令开在一台新电脑上：" + FRESH_COMPUTER_NOTE + hint
+        hint = str(result["computerNote"]) + hint
     hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
     # 只在看的命令本来就不产出文件：第 24 轮 `python3 -c "import docx; print('python-docx ok')"`
     # 退出码 0，回执照样挂「没有合格的办公文件」。

@@ -326,6 +326,10 @@ SANDBOX_FONTS_NOTE = (
     "Each project keeps one computer across commands: packages, browsers and files you install stay there "
     "for later commands. The platform installs nothing for you — install what the project needs yourself. "
     "If the computer was recycled (idle too long), the command receipt says so; reinstall then. "
+    # ⚠ 2026-10-09 线上 Django 借阅登记：电脑被回收后预览面板叫醒，新电脑上没装 Django，起不来（devcontainer_setup 头注）。
+    "Declare how to install the project's dependencies in .devcontainer/devcontainer.json as postCreateCommand "
+    "(e.g. {\"postCreateCommand\": \"pip install -r requirements.txt\"}): whenever the project gets a new computer "
+    "(the first one, or after a recycle) the platform runs it before your command or dev server. "
     # ⚠ 2026-09-28 第 81～83 轮（webapp-testing 点击测试）：pip install playwright + 下载 Chromium 都成功，
     #   Chromium 起不来——libnspr4.so 缺失。E2B 探针：uid 1000，libnspr4 / libnss3 都不在，apt-get 要 root，
     #   而平台拒 sudo（project_sudo_forbidden）。三轮各烧 15 分钟重新发现这件事。
@@ -803,7 +807,9 @@ _DESCRIPTIONS = {
         "`npm install && npm run dev -- --host 0.0.0.0`, `./mvnw spring-boot:run`, `dotnet run --urls http://0.0.0.0:5000`; "
         "install dependencies inside the command or with shell_exec first. Listen on 0.0.0.0. port is optional: the preview shows "
         "whichever port that command's processes listen on (HOST=0.0.0.0, and PORT=<port> when you give one, are exported). "
-        "Later starts without command reuse the last command. This is not a public deployment."),
+        "Later starts without command reuse the last command — on a new computer they run after the project's "
+        ".devcontainer/devcontainer.json postCreateCommand, so put dependency installs there, not only in this command. "
+        "This is not a public deployment."),
     "deploy_apply_deployment": "Start the private preview (same kernel as deploy_expose_port). This is not a public CDN. deployed is always false; previewPrivate is true.",
     "make_manus_page": "Switch the preview to one existing file. file may be a source .html, or a collected deliverable — .pptx/.docx/.xlsx or .md/.txt/.csv (the officeFiles path). A missing path fails. In an office workspace, omitting file shows the newest collected office file; in a web project it shows the project page. This does not start Vite.",
     "read_file": "Read one saved source file. path is project-relative. Default (no offset/limit) returns path and a short excerpt, not the full text. Optional offset/limit are 0-based line counts for a window. Same store as file_read. sudo=true is rejected.",

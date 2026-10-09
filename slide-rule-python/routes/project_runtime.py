@@ -197,8 +197,41 @@ def _wake_idempotency_key(store, project_id: str, revision: str, owner_id: str) 
     runtime_status = newest.runtime.status if newest.runtime else None
     if (newest.cancelRequested or newest.status in _WAKE_DONE_OP
             or runtime_status in _WAKE_DONE):
-        return f"{prefix}:{int(time.time())}"
+        # 纳秒：同一秒里两次叫醒（上一台刚失败、面板马上又叫）用秒数会撞上同一把键，交回的是刚失败的那条。
+        return f"{prefix}:{time.time_ns()}"
     return newest.idempotencyKey
+
+
+#: 自动叫醒连续失败几次、且错误一样、期间工程没有任何别的动作，就不再开新电脑。
+WAKE_FAILURE_LIMIT = 2
+
+
+def _wake_keeps_failing(store, project_id: str, revision: str, owner_id: str):
+    """这一版源码上最近几次启动都以同一个错误失败、之后工程什么都没动：交回最后那次失败，不再起新电脑。
+
+    ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：电脑被回收后，开着的预览面板 08:37～08:48 每
+      30 秒叫醒一次，24 次全是同一个 ImportError——每一次都开一台新电脑、装环境、失败、拆掉。同样的源码、同样的命令，
+      第 3 次不会比第 2 次好。只拦自动叫醒（本入口）；模型自己起服务器（deploy_expose_port）不走这里。
+      改了源码（版本变了）或期间跑过命令 / 改过文件，就放行。
+    """
+    starts, latest_other, cursor = [], "", ""
+    while True:
+        page = store.list_project_operations(project_id, owner_id=owner_id, after_id=cursor, limit=100)
+        for operation in page:
+            if operation.kind == "runtime.start" and operation.expectedRevision == revision:
+                starts.append(operation)
+            elif operation.kind != "runtime.start":
+                latest_other = max(latest_other, operation.createdAt)
+        if len(page) < 100:
+            break
+        cursor = page[-1].operationId
+    recent = sorted(starts, key=lambda item: item.createdAt)[-WAKE_FAILURE_LIMIT:]
+    if len(recent) < WAKE_FAILURE_LIMIT or any(item.status != "failed" for item in recent):
+        return None
+    codes = {item.runtime.errorCode if item.runtime else None for item in recent}
+    if len(codes) != 1 or None in codes or latest_other > recent[0].createdAt:
+        return None
+    return recent[-1]
 
 
 @router.post("/projects/{project_id}/preview/wake", status_code=202, response_model=ProjectOperationSnapshot)
@@ -214,6 +247,9 @@ def wake_project_preview(project_id: str, request: Request, viewer: CurrentUser)
         project = store.get_project(project_id, owner_id=owner_id)
         state = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
         approval = _approved_reference(state)
+        failing = _wake_keeps_failing(store, project_id, project.currentRevision, owner_id)
+        if failing is not None:
+            return _snapshot_response(store.snapshot_operation(failing.operationId, owner_id=owner_id))
         body = StartRuntimeRequest(
             expectedRevision=project.currentRevision,
             approvalRef=approval,

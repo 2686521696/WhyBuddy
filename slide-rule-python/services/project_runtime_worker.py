@@ -59,6 +59,7 @@ from services.project_office_artifacts import ProjectOfficeArtifactStore, office
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
 from services.project_acceptance import normalize_acceptance_requirements, suite_for_template
+from services.devcontainer_setup import setup_command
 from services.project_tool_contracts import sandbox_shell_script
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 from services.skill_hydrate import hydrate_owner_into
@@ -142,7 +143,8 @@ class _Expired(Exception):
 #:   Sentry 里冒出 3 个 `WorkspaceProviderError: project_command_failed`——全是模型自己的 check / build / 校验脚本
 #:   退出码 2，下一步就改好了。上一版注释写着「模型自己的命令退出码非 0 不走这条」，是错的：退出码非 0 正是
 #:   在这条分支里抛 project_command_failed。照这样，每个正常任务都往问题列表里塞几条，真出事的那条被淹掉。
-APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_install_failed", "project_process_exited"})
+APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_install_failed", "project_process_exited",
+                               "project_setup_failed"})
 
 
 #: 命令以这些错误码结束时拆掉电脑，不留给下一件事：电脑本身坏了（E2B 起不来 / 连不上 / 清理失败），
@@ -558,9 +560,10 @@ class _RuntimeTask:
     def operation(self):
         return self.store.get_operation(self.operation_id, owner_id=self.owner_id)
 
-    def save(self, phase, *, status="running", error=None):
+    def save(self, phase, *, status="running", error=None, runtime_status=None):
+        """runtime_status：对外的运行状态跟内部阶段不同名时用（准备命令对外就是「正在安装依赖」）。"""
         self.heartbeat.check()
-        self.runtime = self.runtime.model_copy(update={"status": phase, "errorCode": error,
+        self.runtime = self.runtime.model_copy(update={"status": runtime_status or phase, "errorCode": error,
             "health": "revision_verified" if phase == "ready" else "unknown", "lastHeartbeat": _timestamp()})
         self.result["phase"] = phase
         if self.original.kind == "runtime.exec":
@@ -954,6 +957,7 @@ class _RuntimeTask:
                 #   try_hydrate_running_project 直接写进在跑的沙盒。增强类，fail-open（§七）。
                 self.result["skillFiles"] = hydrate_owner_into(
                     self.provider.write_files, self.handle, self.owner_id)
+                self._prepare_new_computer(files)
             self.heartbeat.renew(mounted_revision=self.runtime.revision)
             self.check()
             if skip_install:
@@ -1286,6 +1290,52 @@ class _RuntimeTask:
         if path not in downloads and len(downloads) < MAX_DELIVERED_FILES:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
+
+    def _prepare_new_computer(self, files) -> None:
+        """新电脑开好、源码写进去之后：先跑工程在 devcontainer.json 里声明的准备命令（devcontainer_setup 头注）。
+
+        跑在这条操作自己的终端里，输出进同一条日志（模型看得见）。失败就是 project_setup_failed，后面的命令 / 启动
+        不跑——依赖没装上还硬起服务器，只会换一个更难懂的报错。没声明就什么都不做（工程自己的事，平台不猜）。
+        """
+        line, source = setup_command(files)
+        if source is None:
+            return
+        self.result["setupSource"] = source
+        if line is None:
+            self.result["setupError"] = "devcontainer_json_unreadable"
+            raise WorkspaceProviderError("project_setup_failed")
+        try:
+            line = sandbox_shell_script(line)
+        except ValueError as exc:                       # sudo、过长：跟模型自己敲的命令同一关
+            self.result["setupError"] = str(exc)
+            raise WorkspaceProviderError("project_setup_failed") from None
+        self.result["setupCommand"] = line
+        self.result["phaseDeadline"] = time.time() + self.supervisor.install_timeout
+        # 对外沿用「正在安装依赖」（前端已有的状态，不新增取值）；内部阶段单独叫 preparing：worker 重启时
+        # 恢复逻辑不认它，按派发不确定收场（fail-closed），不会把它当成 npm ci 那一步接着跑。
+        self.save("preparing", runtime_status="installing")
+        self._start_visible("setup", line, timeout_seconds=900)
+        pid = self._process("setup")
+        while True:
+            self.check()
+            self.logs(pid)
+            if not self.provider.is_process_running(self.handle, pid):
+                break
+            if time.time() >= self.result["phaseDeadline"]:
+                self.result["setupError"] = "timeout"
+                raise WorkspaceProviderError("project_setup_failed")
+            self.sleep(tight=self._is_console_pid(pid))
+        prepared = self.provider.process_result(self.handle, pid)
+        while True:
+            previous = self.log_offsets.get(pid, 0)
+            if self.logs(pid) == previous:
+                break
+        self._persist_process_output(pid, prepared)
+        self.result["setupExitCode"] = prepared.exit_code
+        if prepared.exit_code != 0:
+            raise WorkspaceProviderError("project_setup_failed", result=prepared)
+        self.check()
+        self.supervisor.authorizer(self.store, self.original, self.owner_id)
 
     def _stopped_in_place(self) -> bool:
         """取消时只停这件事自己的进程（服务器、安装、命令；预览隧道由 revoke 停），确认都不在了才算停干净。

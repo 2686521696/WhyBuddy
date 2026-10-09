@@ -124,6 +124,56 @@ def test_wake_after_cancel_requested_opens_a_new_start(setup, monkeypatch):
     assert second.json()["operation"]["operationId"] != first_id
 
 
+def _fail(setup, operation_id, code="project_process_exited"):
+    operation = setup.store.get_operation(operation_id, owner_id="u1")
+    failed = operation.model_copy(update={"status": "failed", "runtime": RuntimeInstance(
+        runtimeId="rt-" + operation_id, workspaceId="ws-1", projectId=setup.project.projectId,
+        revision=setup.project.currentRevision, status="failed", port=8000, errorCode=code,
+        lastHeartbeat="2026-10-09T08:37:49Z")})
+    setup.store._q("update wb_project_operation set payload=$1 where id=$2", [failed.model_dump_json(), operation_id])
+
+
+def _wake(setup):
+    response = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert response.status_code == 202, response.text
+    return response.json()["operation"]["operationId"]
+
+
+def _starts(setup):
+    return [op for op in setup.store.list_project_operations(setup.project.projectId, owner_id="u1", limit=100)
+            if op.kind == "runtime.start"]
+
+
+# ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：开着的预览面板每 30 秒叫醒一次，24 次全是同一个
+#   ImportError，每次开一台新电脑（routes/project_runtime._wake_keeps_failing 头注）。
+def test_wake_stops_opening_computers_after_the_same_failure_twice(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = _wake(setup)
+    _fail(setup, first)
+    second = _wake(setup)
+    assert second != first                                                   # 失败一次：照旧再起（前提）
+    _fail(setup, second)
+    again = _wake(setup)
+    assert again == second and len(_starts(setup)) == 2                      # 同一个错第二次：不再开新电脑
+
+
+def test_wake_tries_again_once_something_changed(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = _wake(setup); _fail(setup, first)
+    second = _wake(setup); _fail(setup, second)
+    setup.store.create_operation(setup.project.projectId, owner_id="u1", kind="runtime.exec",
+        expected_revision=setup.project.currentRevision, approval_ref=setup.body["approvalRef"],
+        idempotency_key="pip-install", input={"command": "shell", "script": "pip install django"})
+    assert _wake(setup) not in {first, second}                               # 期间跑过命令：放行
+
+
+def test_wake_keeps_trying_when_the_failures_differ(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = _wake(setup); _fail(setup, first, "project_setup_failed")
+    second = _wake(setup); _fail(setup, second, "project_process_exited")
+    assert _wake(setup) not in {first, second}
+
+
 def test_wake_without_approved_plan_stays_closed(setup, monkeypatch):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     setup.state.controlTranscript = [
