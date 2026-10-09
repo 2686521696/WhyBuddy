@@ -321,10 +321,11 @@ SANDBOX_FONTS_NOTE = (
     # ⚠ 2026-09-28：第 32、36、39、72、80 轮都先敲了 rg，每次 command not found 再换 grep——
     #   回执事后会点名（_missing_program），可每回都白花一发。事先说清。
     "ripgrep (rg) is not installed; search with grep -rn. "
-    # ⚠ 2026-09-28 第 81 轮：网页工程里 pip install playwright + 下载 Chromium 成功，下一条命令全没了。
-    "In a web (Vite) project every command gets a fresh sandbox (source tree + npm ci) that is reclaimed "
-    "when it ends — packages, browsers or files you install outside the source tree are gone for the next "
-    "command, so install and use them in the same command. An office workspace keeps its sandbox. "
+    # ⚠ 2026-09-28 第 81 轮：那时网页工程每条命令一台新沙盒，pip install playwright 下一条就没了，这里只好教「装 && 跑」。
+    #   2026-10-09 起一个工程一台电脑（worker 头注），这句改成实情：装的东西留着；被回收时回执会说。
+    "Each project keeps one computer across commands: packages, browsers and files you install stay there "
+    "for later commands. The platform installs nothing for you — install what the project needs yourself. "
+    "If the computer was recycled (idle too long), the command receipt says so; reinstall then. "
     # ⚠ 2026-09-28 第 81～83 轮（webapp-testing 点击测试）：pip install playwright + 下载 Chromium 都成功，
     #   Chromium 起不来——libnspr4.so 缺失。E2B 探针：uid 1000，libnspr4 / libnss3 都不在，apt-get 要 root，
     #   而平台拒 sudo（project_sudo_forbidden）。三轮各烧 15 分钟重新发现这件事。

@@ -261,7 +261,8 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
         failed = supervisor.submit_command(project.projectId, owner_id=TEST_USER_ID,
             expected_revision=broken["revision"], approval_ref=setup.ref, idempotency_key="bad", command="check")
         eventually(lambda: setup.store.get_operation(failed.operationId, owner_id=TEST_USER_ID).status == "failed")
-        eventually(lambda: setup.store.get_lease(project.projectId, owner_id=TEST_USER_ID).sandboxId is None)
+        # 2026-10-09 起命令失败也留下这个工程的电脑（一个工程一台电脑），修好再跑接着用同一台。
+        assert provider.handles and provider.created == 1
         harness = ControlHarness(monkeypatch)
         seen = []
 
@@ -300,7 +301,7 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
         assert len(seen) == 7 and len(harness.llm_calls) == 8
         assert seen[-1]["revision"] == seen[3]["revision"]
         assert events[-1]["type"] == "complete" and not harness.helper_calls
-        assert not provider.handles
+        assert list(provider.handles) == ["sandbox-1"] and provider.created == 1  # 两条命令同一台电脑
     finally:
         supervisor.shutdown()
 

@@ -1,4 +1,9 @@
-"""Actual durable dispatch and recovery for fixed project commands."""
+"""Actual durable dispatch and recovery for fixed project commands.
+
+⚠ 2026-10-09 一个工程一台电脑：这里原来钉着「命令先 npm ci、跑完拆掉沙盒」。那是按「像不像 Vite 工程」猜出来的
+  生命周期（Django 工程留着模板的 package.json，pip 装的东西下一条命令就没了）。现在命令不分工程类型：不先装、
+  跑完（成功或失败）留下电脑给下一条；取消、电脑本身出错照旧拆。固定命令的配方见 fixed_command_line。
+"""
 
 import threading
 import time
@@ -9,7 +14,7 @@ from project_actor_support import project_actor
 from models.v5_state import V5SessionState
 from services import persistence
 from services.project_authority import approved_reference
-from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
+from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation, fixed_command_line
 from services.project_store import ProjectConflict, ProjectStore
 from services.workspace_provider import ProcessLogChunk, ProcessResult, WorkspaceProviderError
 from test_project_runtime_worker import Provider, eventually, setup, state
@@ -58,19 +63,19 @@ def submit(worker, project, *, command="check", key="command-1"):
 
 
 @pytest.mark.parametrize("command", ["check", "build", "test"])
-def test_command_runs_fixed_script_returns_real_result_and_reclaims_workspace(command_setup, command):
+def test_command_runs_fixed_script_returns_real_result_and_keeps_the_computer(command_setup, command):
     store, project, provider, worker, _ = command_setup
     operation = submit(worker, project, command=command)
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.kind == "runtime.exec" and finished.status == "completed"
     assert finished.result["command"] == command and finished.result["exitCode"] == 0
     assert finished.result["errorCode"] is None
-    assert provider.commands == ["npm ci --ignore-scripts", f"npm run {command}"]
-    assert not provider.handles and provider.created == 1
+    assert provider.commands == [fixed_command_line(command)]                    # 没有单独的 npm ci
+    assert provider.handles and provider.created == 1                             # 电脑留给下一条命令
     assert submit(worker, project, command=command).operationId == operation.operationId
     assert any(e.type == "runtime.log" and e.payload["text"] == "actual command output\n"
         for e in store.list_events(operation.operationId, owner_id="alice"))
-    eventually(lambda: store.get_lease(project.projectId, owner_id="alice").sandboxId is None)
+    assert store.get_lease(project.projectId, owner_id="alice").sandboxId == "sandbox-1"
 
 
 @pytest.mark.parametrize("exit_code,error", [(9, "project_command_failed"), (None, "project_command_result_unknown")])
@@ -81,7 +86,7 @@ def test_nonzero_or_unknown_exit_never_reports_success(command_setup, exit_code,
     failed = eventually(lambda: state(store, operation, "failed"))
     assert failed.status == "failed" and failed.result["errorCode"] == error
     assert failed.result["exitCode"] == exit_code and failed.result["command"] == "check"
-    assert not provider.handles
+    assert provider.handles                                                       # 命令失败不是电脑坏了：留着
 
 
 @pytest.mark.parametrize("command", ["", "lint", "build --if-present", "check; exit 0", None, []])
@@ -99,7 +104,7 @@ def test_sandbox_script_runs_the_raw_line_not_npm_run_shell(command_setup):
         approval_ref="plan-1", idempotency_key="ls-1", command="shell", script="ls src")
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.status == "completed" and finished.result["command"] == "ls src"
-    assert provider.commands == ["npm ci --ignore-scripts", "ls src"]
+    assert provider.commands == ["ls src"]
 
 
 def test_pty_stdin_reaches_the_running_command(command_setup):
@@ -112,7 +117,7 @@ def test_pty_stdin_reaches_the_running_command(command_setup):
 
     provider.write_console = write_console
     operation = submit(worker, project)
-    eventually(lambda: provider.commands[-1:] == ["npm run check"])
+    eventually(lambda: provider.commands[-1:] == [fixed_command_line("check")])
     worker.enqueue_stdin(operation.operationId, owner_id="alice", text="yes", press_enter=True)
     eventually(lambda: provider.stdin == [("44", "yes", True)])
     provider.command_running = False
@@ -128,10 +133,10 @@ def test_reusing_idempotency_key_for_a_different_command_conflicts(command_setup
         submit(worker, project, command="build")
 
 
-@pytest.mark.parametrize("phase", ["installing", "executing"])
-def test_command_restart_reconnects_saved_pid_without_dispatching_twice(command_setup, phase):
+def test_command_restart_reconnects_saved_pid_without_dispatching_twice(command_setup):
+    """命令没有单独的安装阶段了（见模块头），重启只需要接上「executing」那一个。"""
+    phase = "executing"
     store, project, provider, first, url = command_setup
-    provider.install_running = phase == "installing"
     provider.command_running = True
     operation = submit(first, project)
     eventually(lambda: state(store, operation, phase))
@@ -145,25 +150,22 @@ def test_command_restart_reconnects_saved_pid_without_dispatching_twice(command_
         second.start()
         eventually(lambda: state(reopened, operation, phase))
         assert provider.commands == previous and provider.created == 1
-        provider.install_running = False
-        eventually(lambda: state(reopened, operation, "executing"))
         provider.command_running = False
         finished = eventually(lambda: state(reopened, operation, "stopped"))
         assert finished.status == "completed" and finished.result["exitCode"] == 0
-        assert provider.commands == ["npm ci --ignore-scripts", "npm run check"]
-        assert not provider.handles
+        assert provider.commands == [fixed_command_line("check")]                # 没有派发第二次
+        assert provider.handles
     finally:
         second.shutdown()
         reopened.close()
 
 
-@pytest.mark.parametrize("phase", ["installing", "executing"])
-def test_command_cancellation_stops_remote_work_without_fabricating_an_exit(command_setup, phase):
+def test_command_cancellation_stops_remote_work_without_fabricating_an_exit(command_setup):
+    """取消照旧拆电脑：取消要停掉一切远程活，留下电脑等于留下那个还在跑的进程。"""
     store, project, provider, worker, _ = command_setup
-    provider.install_running = phase == "installing"
     provider.command_running = True
     operation = submit(worker, project)
-    eventually(lambda: state(store, operation, phase))
+    eventually(lambda: state(store, operation, "executing"))
     worker.cancel(operation.operationId, owner_id="alice")
     cancelled = eventually(lambda: state(store, operation, "stopped"))
     assert cancelled.status == "cancelled" and cancelled.result["exitCode"] is None
@@ -195,20 +197,32 @@ def test_unknown_command_dispatch_is_never_replayed(command_setup, monkeypatch):
     failed = eventually(lambda: state(store, operation, "failed"))
     assert failed.runtime.errorCode == "runtime_dispatch_uncertain"
     assert failed.result["exitCode"] is None
-    assert provider.commands == ["npm ci --ignore-scripts", "npm run check"] and not provider.handles
+    assert provider.commands == [fixed_command_line("check")] and not provider.handles
 
 
-def test_successful_command_waits_for_cleanup_before_reporting_completion(command_setup):
+def test_cancelled_command_waits_for_cleanup_before_reporting_cancelled(command_setup):
+    """成功的命令不拆电脑，也就没有清理要等；要拆的那几种（这里是取消）仍得等拆干净再报结果。"""
     store, project, provider, worker, _ = command_setup
     provider.cleanup_error = True
+    provider.command_running = True
     operation = submit(worker, project)
+    eventually(lambda: state(store, operation, "executing"))
+    worker.cancel(operation.operationId, owner_id="alice")
     pending = eventually(lambda: state(store, operation, "reconciling"))
-    assert pending.status == "interrupted" and pending.result["exitCode"] == 0
-    assert pending.result["errorCode"] == "project_cleanup_pending" and provider.handles
+    assert pending.status == "interrupted" and pending.result["errorCode"] == "project_cleanup_pending"
+    assert provider.handles
     provider.cleanup_error = False
+    done = eventually(lambda: state(store, operation, "stopped"))
+    assert done.status == "cancelled" and not provider.handles
+
+
+def test_successful_command_needs_no_cleanup(command_setup):
+    store, project, provider, worker, _ = command_setup
+    provider.cleanup_error = True                                                  # 拆的话会失败——但根本不该拆
+    operation = submit(worker, project)
     completed = eventually(lambda: state(store, operation, "stopped"))
     assert completed.status == "completed" and completed.result["errorCode"] is None
-    assert provider.commands == ["npm ci --ignore-scripts", "npm run check"] and not provider.handles
+    assert provider.handles
 
 
 def test_command_budget_expiry_is_a_failure_not_a_completed_build(command_setup):
@@ -237,28 +251,9 @@ def test_provider_missing_completion_record_is_failure_with_no_invented_exit(com
     assert failed.result["errorCode"] == "e2b_process_result_unavailable" and not provider.handles
 
 
-def test_install_failure_is_reported_separately_from_command_result(command_setup):
-    store, project, provider, worker, _ = command_setup
-    provider.install_code = 13
-    operation = submit(worker, project)
-    failed = eventually(lambda: state(store, operation, "failed"))
-    assert failed.result["installExitCode"] == 13 and failed.result["exitCode"] is None
-    assert failed.result["command"] == "check" and failed.result["errorCode"] == "project_dependency_install_failed"
-    assert provider.commands == ["npm ci --ignore-scripts"] and not provider.handles
-
-
-def test_plan_revocation_during_install_prevents_command_dispatch(command_setup):
-    store, project, provider, worker, _ = command_setup
-    provider.install_running = True
-    operation = submit(worker, project)
-    eventually(lambda: state(store, operation, "installing"))
-    def revoked(*args):
-        raise PermissionError("project_plan_approval_required")
-    worker.authorizer = revoked
-    provider.install_running = False
-    failed = eventually(lambda: state(store, operation, "failed"))
-    assert failed.result["errorCode"] == "project_plan_approval_required"
-    assert provider.commands == ["npm ci --ignore-scripts"] and not provider.handles
+# ⚠ 2026-10-09：这里原来有「命令前 npm ci 失败单独报」「安装期间撤销计划不许派发命令」两条。命令没有单独的
+#   安装阶段了（见模块头）；固定命令的 npm install 是那一行命令自己的一部分，失败就是那条命令失败、原文进回执。
+#   开发服务器（runtime.start）的安装阶段与这两条判据仍在 test_project_runtime_worker。
 
 
 @pytest.mark.parametrize("approved", [True, False])
@@ -361,32 +356,11 @@ def test_office_readme_tree_skips_npm_even_if_revision_says_vite(command_setup):
     assert "npm ci --ignore-scripts" not in provider.commands
 
 
-def test_readme_only_bash_skips_npm_when_skip_helper_returns_false(command_setup, monkeypatch):
-    """⚠ 2026-09-22 Z8NPKNM14C：助手若返回 False，只有 README 的 bash 仍不许 lockfile。
-
-    把 worker 里 `bare → skip_install = True` 删掉，本条变红。
+def test_a_web_project_without_a_lockfile_can_still_run_commands(command_setup):
+    """⚠ 2026-10-09 反过来了：这里原来钉着「网页工程缺锁文件，命令一律 fail-closed」——那是给每条命令前的 npm ci
+    设的闸。命令不再先 npm ci，锁文件闸只剩开发服务器自己的配方用；模型完全可以先跑 npm install 生成锁文件。
+    （原 Z8NPKNM14C 的「助手返回 False」那条随助手一起删了：没有助手可猜了。）
     """
-    import services.project_runtime_worker as worker_mod
-    from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
-
-    monkeypatch.setattr(worker_mod, "skip_vite_dependency_install", lambda **_k: False)
-    store, _, provider, worker, _ = command_setup
-    project = store.create_project(
-        "session-office-skip-false", owner_id="alice",
-        files=office_workspace_files(),
-        template_version=WORKSPACE_TEMPLATE_VERSION, plan_ref="plan-1")
-    operation = worker.submit_command(
-        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
-        approval_ref="plan-1", idempotency_key="skip-false", command="shell",
-        script="echo hello")
-    finished = eventually(lambda: state(store, operation, "stopped"))
-    assert finished.status == "completed" and finished.result["exitCode"] == 0
-    assert provider.commands == ["echo hello"]
-    assert "npm ci --ignore-scripts" not in provider.commands
-
-
-def test_vite_exec_without_lockfile_still_fails(command_setup):
-    """反向：网页工程缺锁文件仍 fail-closed。把 skip 写成「没有 lockfile 就跳过」必须红。"""
     store, _, provider, worker, _ = command_setup
     project = store.create_project(
         "session-vite-nolock", owner_id="alice",
@@ -395,10 +369,9 @@ def test_vite_exec_without_lockfile_still_fails(command_setup):
     operation = worker.submit_command(
         project.projectId, owner_id="alice", expected_revision=project.currentRevision,
         approval_ref="plan-1", idempotency_key="no-lock", command="shell",
-        script="python3 --version")
-    failed = eventually(lambda: state(store, operation, "failed"))
-    assert failed.result["errorCode"] == "project_lockfile_or_reserved_path_invalid"
-    assert provider.created == 0 and provider.commands == []
+        script="npm install")
+    done = eventually(lambda: state(store, operation, "stopped"))
+    assert done.status == "completed" and provider.commands == ["npm install"]
 
 
 def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
@@ -406,7 +379,7 @@ def test_office_bash_reuses_one_sandbox_and_names_the_pptx(command_setup):
     模型只好把文件 base64 塞进日志。
 
     第二条办公命令不得再 create。删掉 reused / keepSandbox，created 变成 2，本条变红。
-    Vite 工程仍拆掉，见 test_command_runs_fixed_script_returns_real_result_and_reclaims_workspace。
+    ⚠ 2026-10-09 起网页工程也一样（一个工程一台电脑），见 test_command_runs_fixed_script_returns_real_result_and_keeps_the_computer。
     """
     from services.deliverable_kind import WORKSPACE_TEMPLATE_VERSION, office_workspace_files
     from services.project_tools import _command_pointer, operation_snapshot

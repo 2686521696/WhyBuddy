@@ -9,6 +9,7 @@ still use start_process.
 
 from project_actor_support import project_actor  # noqa: F401 — fixture for imported setups
 
+from services.project_runtime_worker import fixed_command_line
 from services.workspace_provider import ProcessLogChunk, ProcessResult
 from test_project_command_worker import command_setup, submit
 from test_project_runtime_worker import Provider, eventually, setup, state
@@ -56,7 +57,7 @@ def test_exec_types_install_and_command_into_console_not_start_process(command_s
     operation = submit(worker, project)
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.status == "completed" and finished.result["exitCode"] == 0
-    assert provider.console_commands == ["npm ci --ignore-scripts", "npm run check"]
+    assert provider.console_commands == [fixed_command_line("check")]             # 2026-10-09 起命令前不再单独 npm ci
     assert provider.commands == []
     events = store.list_events(operation.operationId, owner_id="alice")
     console = [e for e in events if e.type == "runtime.console"]
@@ -120,7 +121,7 @@ def test_provider_without_console_keeps_start_process_path(command_setup):
     operation = submit(worker, project)
     finished = eventually(lambda: state(store, operation, "stopped"))
     assert finished.status == "completed"
-    assert provider.commands == ["npm ci --ignore-scripts", "npm run check"]
+    assert provider.commands == [fixed_command_line("check")]
     events = store.list_events(operation.operationId, owner_id="alice")
     assert any(e.type == "runtime.log" for e in events)
     assert not any(e.type == "runtime.console" for e in events)

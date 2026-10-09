@@ -4,8 +4,11 @@
   package.json 加了 chart.js，每条命令先跑的 npm ci 按锁文件拒装（原因在日志开头，800 字的尾巴里没有）。模型手改
   锁文件五次，最后悄悄删掉 chart.js 自己画，收尾却写「使用 Chart.js 绘制折线图」。下面 ROUND135_NPM 是那一次安装的原样输出。
 
-判据走真 worker（test_project_command_worker 夹具）跑一条 check，回执走真 command_receipt_from。
+判据走真 worker（test_project_command_worker 夹具）跑一条 npm ci，回执走真 command_receipt_from。
 把 command_receipt_from 里挂 _lockfile_out_of_sync_sentence 的那两行删掉，第一条变红。
+
+⚠ 2026-10-09 一个工程一台电脑：平台不再在每条命令前替模型跑 npm ci（worker 头注），这句话改由模型自己跑的
+  npm ci 失败触发；建议也跟着反过来——先 npm install 把锁文件更新好，不再劝「把 package.json 改回去」。
 """
 
 from __future__ import annotations
@@ -30,23 +33,24 @@ ROUND135_NPM = (
 
 def _receipt(command_setup, output):
     store, project, provider, worker, _ = command_setup
-    provider.install_code = 1
+    provider.install_code = 1                           # 假沙盒把 npm ci 记成进程 42，退出码取 install_code
 
     def logs(handle, pid, *, offset=0):
         content = (output if pid == "42" else "").encode()
         return ProcessLogChunk(content[offset:].decode(), len(content))
     provider.read_process_logs = logs
     operation = worker.submit_command(project.projectId, owner_id="alice", expected_revision=project.currentRevision,
-        approval_ref="plan-1", idempotency_key="r135-check", command="check")
+        approval_ref="plan-1", idempotency_key="r135-ci", command="shell", script="npm ci --ignore-scripts")
     failed = eventually(lambda: state(store, operation, "failed"))
-    assert failed.runtime.errorCode == "project_dependency_install_failed"
+    assert failed.runtime.errorCode == "project_command_failed"
     return command_receipt_from(ProjectTools(store, None, "alice"), operation.operationId)
 
 
 def test_the_round135_lockfile_mismatch_is_said_in_words(command_setup):
     hint = _receipt(command_setup, ROUND135_NPM)["hint"]
     assert "chart.js" in hint and "@kurkle/color" in hint and "package-lock.json" in hint
-    assert "别说用了它" in hint and "改回去" in hint
+    assert "npm install" in hint and "别说用了它" in hint
+    assert "改回去" not in hint                     # 不再把模型劝回第 135 轮那条路
 
 
 def test_other_install_failures_are_not_blamed_on_the_lock(command_setup):

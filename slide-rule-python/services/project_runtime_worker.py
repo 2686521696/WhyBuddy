@@ -54,7 +54,6 @@ from services.deliverable_kind import (
     office_e2b_template,
     workspace_e2b_template,
     orch_trace,
-    skip_vite_dependency_install,
 )
 from services.project_office_artifacts import ProjectOfficeArtifactStore, office_artifact_download_url
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
@@ -144,6 +143,22 @@ class _Expired(Exception):
 #:   退出码 2，下一步就改好了。上一版注释写着「模型自己的命令退出码非 0 不走这条」，是错的：退出码非 0 正是
 #:   在这条分支里抛 project_command_failed。照这样，每个正常任务都往问题列表里塞几条，真出事的那条被淹掉。
 APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_install_failed", "project_process_exited"})
+
+
+#: 命令以这些错误码结束时拆掉电脑，不留给下一件事：电脑本身坏了（E2B 起不来 / 连不上 / 清理失败），
+#: 或者说不清里面还有没有活在跑（派发不确定、拿不到进程号、预算到点时命令还在跑）——留下它，下一条命令
+#: 就和一个看不见的进程挤在同一台电脑里。
+_DISCARD_COMPUTER_PREFIXES = ("e2b_", "project_provider", "runtime_dispatch", "project_cleanup",
+                              "project_process_identity", "runtime_budget")
+
+
+def fixed_command_line(command: str) -> str:
+    """project_exec 的固定命令（check / build / test）在沙盒里真跑的那一行。
+
+    固定命令本身就是 npm 脚本，自己带上「先 npm install」——这是这条命令的配方，不是平台在猜项目类型。
+    npm install 不像 npm ci 那样拒绝跟锁文件对不上的 package.json（第 135 轮），改出来的锁文件随命令写回源码。
+    """
+    return f"npm install --no-audit --no-fund --ignore-scripts && npm run {command}"
 
 
 def _initial_port(original) -> int:
@@ -833,24 +848,14 @@ class _RuntimeTask:
                 raise ValueError("project_lockfile_or_reserved_path_invalid")
             revision = self.store.get_revision(
                 self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
-            skip_install = skip_vite_dependency_install(
-                operation_kind=self.original.kind,
-                template_version=revision.templateVersion,
-                files=files,
-            )
-            # ⚠ 2026-09-22 Z8NPKNM14C：树只有 README.md，skip 助手按源码应返回
-            #   True，真机仍 lockfile。没有 package.json 就不是 Vite 开箱，
-            #   不把这一发交给「助手返回了 False」。
-            bare = "package.json" not in files and "package-lock.json" not in files
-            if bare and self.original.kind == "runtime.exec":
-                skip_install = True
-            # ⚠ 2026-09-24 MB5NJX8X2D：办公模板上后来有了 package.json，
-            #   助手若仍返回 False，就会 npm ci 并拆掉沙盒。模板说了算。
-            if (
-                str(revision.templateVersion) == WORKSPACE_TEMPLATE_VERSION
-                and self.original.kind == "runtime.exec"
-            ):
-                skip_install = True
+            # ⚠ 2026-10-09 一个工程一台电脑（线上 Django 读书打卡 sr-20261009025847-AW1KHE4BSY）：这里原来按「像不像
+            #   Vite 工程」（有没有 package.json、是不是办公模板）决定一条命令要不要换一台新电脑、先 npm ci、跑完拆掉。
+            #   Django 工程留着模板的 package.json，就被当成 Vite：pip 装的 Django 下一条命令就没了，模型每条都重装，
+            #   漏一次就失败。第 81 轮（装的 Playwright 活不过下一条）、第 135 轮（每条命令前的 npm ci 拒装 chart.js，
+            #   模型改锁文件五次后悄悄删掉）是同一个根上长出来的。平台不再猜语言、不替模型装依赖：命令一律接着用
+            #   这个工程那台电脑，装什么由模型自己决定。只有模板的 Vite 开发服务器（runtime.start 不带命令）保留它自己的
+            #   npm ci——那是这个启动配方的一部分，不是对项目类型的猜测。
+            skip_install = self.original.kind == "runtime.exec"
             self.result["gate"] = (
                 f"template={revision.templateVersion} "
                 f"files={sorted(str(n) for n in files)} skip={bool(skip_install)}"
@@ -861,7 +866,6 @@ class _RuntimeTask:
                 template=revision.templateVersion,
                 files=sorted(str(n) for n in files),
                 skip=bool(skip_install),
-                bare=bare,
             )
             if "package-lock.json" not in files and not skip_install and not self._custom_command:
                 # ⚠ 2026-09-21 XSGAMK9PYZ：源码只有 README.md / workspace-1，
@@ -881,8 +885,9 @@ class _RuntimeTask:
             #   pip 和刚写出的 pptx 下一条就没了，模型只好把文件 base64
             #   塞进日志。没有 package.json 的工作区留下同一个沙盒。
             reused = False
-            # 自定义命令起服务：复用这个工程开着的那台（模型先用命令装好的依赖在里面）。
-            if (skip_install or self._custom_command) and self.handle is not None:
+            # 一个工程一台电脑：不管是命令还是开发服务器，都接着用这个工程开着的那台（装过的依赖都在里面）。
+            prior_computer = self.handle is not None
+            if self.handle is not None:
                 try:
                     self.provider.connect(self.handle)
                     reused = True
@@ -917,12 +922,14 @@ class _RuntimeTask:
             self.heartbeat.handle = self.handle
             if skip_install:
                 self.result["keepSandbox"] = True
+            if not reused and self.original.kind == "runtime.exec" and (prior_computer or self._had_a_computer_before()):
+                # 之前有过电脑、这次却是新开的（闲置太久被回收、或连不上）：照实告诉模型，别让它以为装过的还在。
+                self.result["freshComputer"] = True
             restore_application_data(self)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
             # 留住这台沙盒的工作区才谈得上「命令在沙盒里改了源码」：记下刚写进去的样子，命令跑完对一遍。
-            self._synced_hashes = ({name: content_hash(text) for name, text in files.items() if isinstance(text, str)}
-                                   if skip_install else None)
+            self._synced_hashes = {name: content_hash(text) for name, text in files.items() if isinstance(text, str)}
             # 命令结束时把沙盒里改动的源码收回成新版本（_write_back_sources）：要知道写进去的是哪一版、哪些字节。
             self._synced_texts = {name: text for name, text in files.items() if isinstance(text, str)}
             self._mount_session_uploads()
@@ -946,7 +953,7 @@ class _RuntimeTask:
             self.check()
             if skip_install:
                 self.save("executing")
-                visible = script if isinstance(script, str) else f"npm run {command}"
+                visible = script if isinstance(script, str) else fixed_command_line(command)
                 self._start_visible("command", visible, timeout_seconds=900)
                 phase = "executing"
             elif self._custom_command:
@@ -1274,6 +1281,23 @@ class _RuntimeTask:
         if path not in downloads and len(downloads) < MAX_DELIVERED_FILES:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
+
+    def _had_a_computer_before(self) -> bool:
+        """这个工程在这条之前有没有开过电脑（更早的命令或开发服务器派发出去过）。说不清就当没有：宁可少说一句。"""
+        cursor = ""
+        try:
+            for _ in range(50):
+                page = self.store.list_project_operations(
+                    self.original.projectId, owner_id=self.owner_id, after_id=cursor, limit=100)
+                if any(op.operationId != self.operation_id and op.kind in {"runtime.exec", "runtime.start"}
+                       and op.status != "queued" and op.createdAt <= self.original.createdAt for op in page):
+                    return True
+                if len(page) < 100:
+                    return False
+                cursor = page[-1].operationId
+        except Exception as exc:                       # 增强类的一句提示：查不到不拖垮命令（§7）
+            logger.warning("project prior computer lookup exception=%s", type(exc).__name__)
+        return False
 
     def _write_back_sources(self) -> bool:
         """命令在沙盒里生成、改动、删掉的源码文件，收回成工程的新版本（services.project_source_scan 头注）。
@@ -1603,12 +1627,15 @@ class _RuntimeTask:
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.revoke(self)
             checkpoint_application_data(self, final=True)
-            # 办公命令成功或脚本失败都留下沙盒。Vite 工程仍拆掉。
+            # 一个工程一台电脑：命令跑完（成功或失败）都留下它，下一条命令接着用；电脑本身出了问题才拆。
+            # 开发服务器停了、命令被取消，照旧拆——取消要停掉一切远程活（cancel 系列判据），这条安全设计不动；
+            # 下一件事开到新电脑上时，回执照实说（freshComputer）。
             keep = (
                 bool(self.result.get("keepSandbox"))
                 and self.handle is not None
                 and self.original.kind == "runtime.exec"
                 and status in {"completed", "failed"}
+                and not str(code or "").startswith(_DISCARD_COMPUTER_PREFIXES)
             )
             if self.handle is not None and not keep:
                 self.provider.destroy(self.handle)

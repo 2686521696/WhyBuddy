@@ -13,6 +13,7 @@ import re
 import pytest
 from project_actor_support import project_actor
 
+from services.project_runtime_worker import fixed_command_line
 from services.vite_preview_hosts import REGISTER_PATH, injected_preview_dev_command
 from test_project_preview_runtime import scanner
 from test_project_runtime_worker import setup, submit, eventually, state
@@ -168,8 +169,8 @@ def test_build_operations_do_not_add_or_require_preview_hosts(scanner, monkeypat
         expected_revision=scanner.project.currentRevision, approval_ref="plan-1",
         idempotency_key="build-without-preview", command="build")
     eventually(lambda: state(scanner.store, operation, "executing"))
-    eventually(lambda: len(scanner.provider.commands) == 2)
-    assert scanner.provider.commands == ["npm ci --ignore-scripts", "npm run build"]
+    eventually(lambda: len(scanner.provider.commands) == 1)
+    assert scanner.provider.commands == [fixed_command_line("build")]
     assert not scanner.sent
     worker.cancel(operation.operationId, owner_id="alice")
     eventually(lambda: state(scanner.store, operation, "stopped"))

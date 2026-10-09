@@ -756,9 +756,9 @@ def operation_snapshot(snapshot):
     written = saved.get("sourceWriteBack")
     if isinstance(written, dict) and written:
         result["sourceWriteBack"] = _bounded_write_back(written)
-    if operation.kind == "runtime.exec" and operation.status in _TERMINAL and not saved.get("keepSandbox"):
-        # 网页工程每条命令一台新沙盒，跑完就回收（worker：「Vite 工程仍拆掉」）。见 _command_pointer。
-        result["sandboxReclaimed"] = True
+    if operation.kind == "runtime.exec" and saved.get("freshComputer") is True:
+        # 一个工程一台电脑；这条命令却开在一台新电脑上（上一台闲置被回收、或连不上）。见 _command_pointer。
+        result["freshComputer"] = True
     if operation.kind == "runtime.patch":
         # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
         #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
@@ -1258,16 +1258,14 @@ def _command_pointer(result, excerpt="", full_command=None):
         hint = (f"这条命令在沙盒里改了工程源码文件：{named}。改动只在沙盒里，工程源码还是旧版；"
                 "下一条命令开跑前会按工程源码把它们重写回去，这次的改动就没了。"
                 "要留住：用 file_write 把改后的完整内容写回（或者改用 file_str_replace 改源码再跑）。" + hint)
-    if (result.get("sandboxReclaimed") and result.get("exitCode") in (0, "0")
-            and _only_installs(command_text)):
-        # ⚠ 2026-09-28 隔离真机第 81 轮 sr-20260928021545-B6CQ0CM50T（番茄钟网页，追问「用 webapp-testing 把添加、完成、删除
-        #   点一遍」）：`python3 -m pip install playwright && python3 -m playwright install chromium`
-        #   成功、Chromium 下载完；五分钟后 `import playwright` → ModuleNotFoundError，下一条的日志
-        #   里又是一遍 npm ci。网页工程每条命令一台新沙盒（源码树 + npm ci），跑完回收——装的东西
-        #   活不过这一条。模型当成办公工作区那样「装一次一直在」，15 分钟没点成一下。
+    if result.get("freshComputer"):
+        # ⚠ 2026-09-28 隔离真机第 81 轮 sr-20260928021545-B6CQ0CM50T（番茄钟网页）：pip install playwright 成功，
+        #   五分钟后 `import playwright` → ModuleNotFoundError——那时网页工程每条命令一台新沙盒、跑完回收，回执只在
+        #   「只装依赖」的命令上提醒一句。2026-10-09 起一个工程一台电脑，装的东西一直在；只有电脑真被回收了
+        #   （闲置太久、连不上）才换新的，那一次照实说，不管这条命令是不是在装东西——模型下一步要用的东西可能就没了。
         hint = (
-            "这台沙盒在命令结束时已经回收：网页工程每条命令都是一台新沙盒（源码树 + npm ci），"
-            "这条装的东西下一条命令里不在。要用它，就把安装和使用写进同一条命令（装 && 跑）。"
+            "这条命令开在一台新电脑上：这个工程之前那台已经回收了（闲置太久或连不上）。工程源码都在，"
+            "但之前装的依赖、没写回源码的文件都不在了——要用就重装。"
             + hint
         )
     hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
@@ -1445,7 +1443,7 @@ def _lockfile_out_of_sync_sentence(store, operation_id, owner, error_code) -> st
       800 字」，npm 那句原因在日志开头、被截掉了。模型去手改 package-lock.json 五次，最后悄悄删掉 chart.js、
       自己用 canvas 画，收尾写「使用 Chart.js 绘制折线图」——工程里一行 chart.js 都没有。
     """
-    if error_code != "project_dependency_install_failed" or store is None:
+    if error_code not in {"project_dependency_install_failed", "project_command_failed"} or store is None:
         return ""
     events, after = [], 0
     try:
@@ -1464,9 +1462,12 @@ def _lockfile_out_of_sync_sentence(store, operation_id, owner, error_code) -> st
         return ""
     names = list(dict.fromkeys(_LOCK_MISSING.findall(text)))[:6]
     named = "、".join(names) if names else "新加的依赖"
-    return (f"依赖没装上：package.json 里的 {named} 不在 package-lock.json 里。网页工程每条命令先跑 npm ci，它只按锁文件装，"
-            "对不上就拒装——这条命令本身没跑，之后每条也都会卡在这一步；npm install 同样要先过这一步，这里更新不了锁文件。"
-            "要让工程能跑，把 package.json 里这几项改回去；这个库用不上，就照实告诉用户没装上、用什么代替了，别说用了它。")
+    # ⚠ 2026-10-09：平台不再在每条命令前替模型跑 npm ci（一个工程一台电脑，见 worker 头注），npm install 也就不再被
+    #   挡在前面——它会照 package.json 装上、把锁文件更新好，随命令写回源码。原来那句「npm install 也更新不了锁文件、
+    #   把 package.json 改回去」现在是错的，会把模型劝回第 135 轮那条路上。
+    return (f"依赖没装上：package.json 里的 {named} 不在 package-lock.json 里，npm ci 只按锁文件装，对不上就拒装。"
+            "先跑一次 npm install（它照 package.json 装上并更新 package-lock.json，改动随命令写回源码），再跑原来的命令；"
+            "要是这个库确实装不上，就照实告诉用户没装上、用什么代替了，别说用了它。")
 
 
 _SKILL_PATH_IN_COMMAND = re.compile(r"\.sliderule/skills/[A-Za-z0-9][\w.-]{0,63}/[^\s'\"`;|&<>()]+")

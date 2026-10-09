@@ -208,38 +208,6 @@ def orch_trace(event: str, **fields: Any) -> None:
         return
 
 
-def skip_vite_dependency_install(*, operation_kind: Any, template_version: Any,
-                                 files: Any) -> bool:
-    """办公工作区跑 bash，不许先 npm ci。
-
-    ⚠ 2026-09-21 真机 sr-20260921102816-KWETH78PZ0：办公计划建成
-      whybuddy-workspace-1（只有 README），shell_exec / bash 开箱仍要
-      package-lock.json + npm ci → project_lockfile_or_reserved_path_invalid。
-      project_start 已经拒了，真机做 PPT 走的是 bash。Vite 工程缺锁文件
-      仍 fail-closed。
-
-    ⚠ 2026-09-21 sr-20260921170121-13ME64TF8Z：`echo hello` 仍是同一错。
-      树是 README + generate_kickoff_pptx.py，没有 package.json。上一版
-      只认 template_version==whybuddy-workspace-1，revision 上那格空或
-      仍是 vite 时闸不响。Vite 工程必有 package.json，缺锁文件仍 fail-closed。
-
-    ⚠ 2026-09-24 sr-20260924153920-MB5NJX8X2D：办公区被锁文件闸打死之后，
-      模型补了 package.json 和 lock。上一版一看见这两个文件就返回 False，
-      于是每条命令拆沙盒、跑 npm ci。模板已经是 whybuddy-workspace-1 时，
-      包文件是模型自己放进来的脚本依赖，不是 Vite 开箱。
-    """
-    if str(operation_kind or "") != "runtime.exec":
-        return False
-    if str(template_version or "") == WORKSPACE_TEMPLATE_VERSION:
-        return True
-    names = {str(name) for name in files} if isinstance(files, Mapping) else set()
-    if "package-lock.json" in names or "package.json" in names:
-        return False
-    if not isinstance(files, Mapping):
-        return False
-    return True
-
-
 def reject_tasks_template(kind: Any, template_id: Any) -> str | None:
     """办公文件禁止任务清单模板。返回错误码；放行则 None。"""
     if str(template_id or "").strip() != TASKS_TEMPLATE_ID:

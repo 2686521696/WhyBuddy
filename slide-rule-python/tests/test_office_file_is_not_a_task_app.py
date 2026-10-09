@@ -45,7 +45,6 @@ from services.deliverable_kind import (
     office_workspace_files,
     plan_deliverable_kind,
     reject_tasks_template,
-    skip_vite_dependency_install,
 )
 from services.project_authority import approved_reference
 from services.project_creation import create_session_project
@@ -96,46 +95,8 @@ def test_leaf_defaults_unknown_to_web_app():
     assert "一行" not in WORKSPACE_README
     assert office_file_uses_task_delivery(OFFICE_FILE)
     assert not office_file_uses_task_delivery(WEB_APP)
-    assert skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version=WORKSPACE_TEMPLATE_VERSION,
-        files=files,
-    )
-    assert not skip_vite_dependency_install(
-        operation_kind="runtime.start",
-        template_version=WORKSPACE_TEMPLATE_VERSION,
-        files=files,
-    )
-    assert not skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version="whybuddy-react-vite-1",
-        files={"package.json": "{}"},
-    )
-    # ⚠ 2026-09-24 MB5NJX8X2D：办公模板上有了 lock，仍跳过 npm。
-    #   把模板判断挪回 package.json 后面，这条变红。
-    assert skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version=WORKSPACE_TEMPLATE_VERSION,
-        files={**files, "package.json": "{}", "package-lock.json": "{}"},
-    )
-    # ⚠ 13ME64TF8Z：revision 不是 workspace-1，树却是办公文件。
-    assert skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version="whybuddy-react-vite-1",
-        files={"README.md": WORKSPACE_README,
-               "scripts/generate_kickoff_pptx.py": "print(1)\n"},
-    )
-    assert skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version=None,
-        files={"README.md": WORKSPACE_README},
-    )
-    # ⚠ XSGAMK9PYZ：template 是 workspace-1，files 形状哪怕古怪也要 skip。
-    assert skip_vite_dependency_install(
-        operation_kind="runtime.exec",
-        template_version=WORKSPACE_TEMPLATE_VERSION,
-        files=None,
-    )
+    # 2026-10-09 起命令不再按「像不像 Vite 工程」决定装不装、换不换电脑（skip_vite_dependency_install 已删）：
+    # 办公工作区不跑 npm ci 由 test_one_computer_per_project 的真工人判据钉着。
 
 
 def test_write_plan_persists_office_file_kind(monkeypatch):
@@ -453,10 +414,8 @@ def test_live_path_gates_are_in_source_after_stripping_comments():
     run_body = _fn_body(WORKER_SRC.read_text(encoding="utf-8"), "run")
     run_body = re.sub(r'""".*?"""', "", run_body, flags=re.S)
     run_body = re.sub(r"#.*", "", run_body)
-    skip_at = run_body.find("skip_vite_dependency_install")
-    npm_at = run_body.find("npm ci --ignore-scripts")
-    assert 0 <= skip_at < npm_at
-    assert "not skip_install" in run_body
+    # 只有模板的 Vite 开发服务器（runtime.start 不带命令）还跑 npm ci；命令一律不跑（test_one_computer_per_project）。
+    assert 'skip_install = self.original.kind == "runtime.exec"' in run_body
 
 
 def test_project_create_tool_description_does_not_advertise_tasks_as_the_real_app():
