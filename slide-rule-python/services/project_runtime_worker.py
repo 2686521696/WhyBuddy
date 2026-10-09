@@ -146,6 +146,15 @@ class _Expired(Exception):
 APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_install_failed", "project_process_exited"})
 
 
+def _initial_port(original) -> int:
+    """运行记录里的端口。自定义命令没说端口时先记 0（还不知道），起来之后按真在听的那个填上。"""
+    given = original.input if isinstance(original.input, dict) else {}
+    if isinstance(given.get("command"), str):
+        port = given.get("port")
+        return int(port) if isinstance(port, int) and not isinstance(port, bool) else 0
+    return int(given.get("port", 5173))
+
+
 class ProjectRuntimeSupervisor:
     def __init__(self, store: ProjectStore, provider_factory: Callable[[], WorkspaceProvider], *,
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None] = authorize_operation,
@@ -213,10 +222,27 @@ class ProjectRuntimeSupervisor:
             raise RuntimeError("runtime_workers_still_stopping")
 
     def submit(self, project_id: str, *, owner_id: str, expected_revision: str,
-               approval_ref: str, idempotency_key: str, port: int = 5173) -> ProjectOperation:
+               approval_ref: str, idempotency_key: str, port: int | None = None,
+               command: str | None = None) -> ProjectOperation:
+        """起这个工程的开发服务器（一个工程一台）。
+
+        command 是模型给的启动命令（任意语言：python manage.py runserver、go run .、npm run dev …），
+        port 可不填——起来之后哪个端口在听就预览哪个（_RuntimeTask._generic_ready）。都不给：这个工程上一次
+        用自定义命令起过，就照原样再起（预览面板「叫醒」、browser_navigate 不知道该用什么命令）；否则是模板的
+        Vite（npm ci + npm run dev，5173）。
+
+        ⚠ 2026-10-09：之前只有 Vite 这一条——Go / Django / Spring Boot 的工程没有 package-lock，开箱就被锁文件闸
+          打回；端口写死 5173，预览只认这一个门。
+        """
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        if isinstance(port, bool) or not 1024 <= port <= 65535:
+        if command is None and port is None:
+            command, port = self._last_start_profile(project_id, owner_id)
+        if command is not None:
+            command = sandbox_shell_script(command)
+        elif port is None:
+            port = 5173
+        if port is not None and (isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535):
             raise ValueError("invalid_preview_port")
         # Authorization is checked before persistence and again by the worker.
         project = self.store.get_project(project_id, owner_id=owner_id)
@@ -245,9 +271,32 @@ class ProjectRuntimeSupervisor:
                     return active
             operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
                 idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
-                input={"port": port})
+                input={"port": port} if command is None else {"port": port, "command": command})
         self._wake.set()
         return operation
+
+    def _last_start_profile(self, project_id: str, owner_id: str) -> tuple[str | None, int | None]:
+        """这个工程最近一次用自定义命令起服务器的 (命令, 端口)；从没用过返回 (None, None)。"""
+        # 列表按操作号排（随机串，不是时间）：翻完，按创建时间挑最近那条。
+        latest, cursor = None, ""
+        try:
+            for _ in range(50):
+                page = self.store.list_project_operations(project_id, owner_id=owner_id, after_id=cursor, limit=100)
+                for operation in page:
+                    given = operation.input if operation.kind == "runtime.start" and isinstance(operation.input, dict) else {}
+                    if (isinstance(given.get("command"), str) and given["command"].strip()
+                            and (latest is None or operation.createdAt > latest.createdAt)):
+                        latest = operation
+                if len(page) < 100:
+                    break
+                cursor = page[-1].operationId
+        except Exception:
+            logger.warning("last start profile lookup failed", exc_info=True)
+            return None, None
+        if latest is None:
+            return None, None
+        port = latest.input.get("port")
+        return latest.input["command"], port if isinstance(port, int) and not isinstance(port, bool) else None
 
     def submit_command(self, project_id: str, *, owner_id: str, expected_revision: str,
                        approval_ref: str, idempotency_key: str, command: str = "check",
@@ -470,7 +519,7 @@ class _RuntimeTask:
         self.operation_id = original.operationId
         self.runtime = original.runtime or RuntimeInstance(runtimeId="rt-" + original.operationId,
             workspaceId=lease.workspaceId, projectId=original.projectId, revision=original.expectedRevision,
-            status="provisioning", port=int(original.input.get("port", 5173)), lastHeartbeat=_timestamp(),
+            status="provisioning", port=_initial_port(original), lastHeartbeat=_timestamp(),
             expiresAt=time.time() + supervisor.lifetime_seconds)
         self.handle = WorkspaceHandle(lease.workspaceId, lease.sandboxId) if lease.sandboxId else None
         self.heartbeat = _LeaseHeartbeat(self.store, None, original.projectId, owner_id, lease, supervisor.lease_ttl)
@@ -639,7 +688,58 @@ class _RuntimeTask:
             lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner)
         self.log_offsets[pid] = next_offset
 
+    @property
+    def _custom_command(self) -> str | None:
+        """模型给的启动命令（runtime.start 的 input.command）。没有 = 模板的 Vite。"""
+        given = self.original.input if self.original.kind == "runtime.start" and isinstance(self.original.input, dict) else {}
+        command = given.get("command")
+        return command if isinstance(command, str) and command.strip() else None
+
+    def _serving(self, pid, revision: str | None = None) -> bool:
+        """开发服务器在不在给这一版提供服务。开箱就绪、健康巡检、源码同步之后，三处同一个判断（§4）。
+
+        Vite：页面 200 且 public/ 下的修订标记就是这一版（provider.probe）。自定义命令：服务器不会替我们发修订标记，
+        改成「这个进程（含子进程）在监听、那个端口回得出 HTTP」——哪个端口在听就认哪个（_custom_ready）。
+        """
+        if not self._custom_command:
+            return self.provider.probe(self.handle, self.runtime.port, expected_revision=revision or self.runtime.revision)
+        return self._custom_ready(pid)
+
+    def _custom_ready(self, pid) -> bool:
+        lister = getattr(self.provider, "listening_ports", None)
+        prober = getattr(self.provider, "probe_http", None)
+        if not callable(lister) or not callable(prober):
+            return False
+        try:
+            ports = [port for port in lister(self.handle, pid) if isinstance(port, int) and 1024 <= port <= 65535]
+        except Exception:
+            logger.warning("listening port scan failed", exc_info=True)
+            return False
+        self.result["listeningPorts"] = sorted(ports)[:8]
+        wanted = self.original.input.get("port")
+        order = ([wanted] if wanted in ports else []) + [port for port in sorted(ports) if port != wanted]
+        for port in order:
+            try:
+                answered = prober(self.handle, port)
+            except Exception:
+                answered = False
+            if answered:
+                if port != self.runtime.port:
+                    self.runtime = self.runtime.model_copy(update={"port": port})
+                if isinstance(wanted, int) and wanted != port:
+                    self.result["requestedPort"] = wanted       # 说了 3000、实际开在 8000：认实际的，回执里照实说
+                else:
+                    self.result.pop("requestedPort", None)
+                return True
+        return False
+
     def development_server_command(self):
+        custom = self._custom_command
+        if custom:
+            # 监听所有网卡（预览从隧道进来，不是 localhost）；说了端口就递给 PORT（Express、Next、Puma 认它）。
+            wanted = self.original.input.get("port")
+            exported = "export HOST=0.0.0.0" + (f" PORT={int(wanted)}" if isinstance(wanted, int) else "")
+            return f"{exported}; {custom}"
         server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
         hosts = self._vite_allowed_hosts()
         # Env alone is the Vite CLI merge. Agent `createViteServer` skips it
@@ -763,7 +863,7 @@ class _RuntimeTask:
                 skip=bool(skip_install),
                 bare=bare,
             )
-            if "package-lock.json" not in files and not skip_install:
+            if "package-lock.json" not in files and not skip_install and not self._custom_command:
                 # ⚠ 2026-09-21 XSGAMK9PYZ：源码只有 README.md / workspace-1，
                 #   bash 仍 lockfile。打印当时那一发，别再对着测试里的 dict 猜。
                 self.result["gate"] = (
@@ -781,7 +881,8 @@ class _RuntimeTask:
             #   pip 和刚写出的 pptx 下一条就没了，模型只好把文件 base64
             #   塞进日志。没有 package.json 的工作区留下同一个沙盒。
             reused = False
-            if skip_install and self.handle is not None:
+            # 自定义命令起服务：复用这个工程开着的那台（模型先用命令装好的依赖在里面）。
+            if (skip_install or self._custom_command) and self.handle is not None:
                 try:
                     self.provider.connect(self.handle)
                     reused = True
@@ -848,6 +949,16 @@ class _RuntimeTask:
                 visible = script if isinstance(script, str) else f"npm run {command}"
                 self._start_visible("command", visible, timeout_seconds=900)
                 phase = "executing"
+            elif self._custom_command:
+                # 模型自己的启动命令：不 npm ci（装依赖是命令自己的事：npm install && npm run dev、pip install …），
+                # 起来之后认端口。第一次编译慢（Spring Boot、.NET），给到安装那档的时限。
+                self.result["phaseDeadline"] = time.time() + max(self.supervisor.ready_timeout,
+                                                                 self.supervisor.install_timeout)
+                self.save("starting")
+                started = self.provider.start_process(self.handle, self.development_server_command(),
+                                                      timeout_seconds=900)
+                self._register("server", started.process_id)
+                phase = "starting"
             else:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.install_timeout
                 self.save("installing")
@@ -913,18 +1024,18 @@ class _RuntimeTask:
                 self.logs(pid)
                 if not self.provider.is_process_running(self.handle, pid):
                     raise WorkspaceProviderError("project_process_exited")
-                if self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision):
+                if self._serving(pid):
                     break
                 if time.time() >= self.result["phaseDeadline"]:
                     raise WorkspaceProviderError("project_readiness_timeout")
                 self.sleep()
             self.result["readyAt"] = time.time()
-        elif not self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision):
+        elif not self._serving(pid):
             raise WorkspaceProviderError("project_recovery_health_failed")
         previous = published_preview_url(self.runtime.previewUrl)
         self._remember_published_preview()
         now = published_preview_url(self.runtime.previewUrl)
-        if phase != "starting" and now and previous != now:
+        if phase != "starting" and now and previous != now and not self._custom_command:
             # 2026-09-16 TicketStream：刚拿到发布地址时停掉旧进程再起一次，
             # 让 __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS 带上 E2B 发布域。
             # 2026-09-18：中继 Host 必须一直在名单里，不能被这次重启换掉。
@@ -959,8 +1070,7 @@ class _RuntimeTask:
                 continue
             self.logs(pid)
             if time.time() >= next_health:
-                if (not self.provider.is_process_running(self.handle, pid)
-                        or not self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision)):
+                if not self.provider.is_process_running(self.handle, pid) or not self._serving(pid):
                     raise WorkspaceProviderError("project_runtime_health_failed")
                 self._remember_published_preview()
                 self.save("ready")

@@ -353,6 +353,63 @@ finally:
         os.close(root_fd)
 '''
 
+# ⚠ 2026-10-09：自定义启动命令（Django、Go、Spring Boot …）不知道会开在哪个端口。照 Codespaces / bolt 的做法认
+#   「哪个端口在听」——但只认我们起的那棵进程树（/proc/<pid>/fd 的 socket inode 对 /proc/net/tcp*），
+#   code-interpreter 自己的 Jupyter（49999）之类不会被当成应用。
+_LISTENING_PORTS_SCRIPT = r'''
+import json, os, sys
+root = int(sys.argv[1])
+children = {}
+for name in os.listdir("/proc"):
+    if not name.isdigit():
+        continue
+    try:
+        with open("/proc/" + name + "/stat") as fh:
+            data = fh.read()
+        children.setdefault(int(data[data.rindex(")") + 2:].split()[1]), []).append(int(name))
+    except Exception:
+        pass
+tree, stack = set(), [root]
+while stack:
+    pid = stack.pop()
+    if pid not in tree:
+        tree.add(pid)
+        stack += children.get(pid, [])
+inodes = set()
+for pid in tree:
+    try:
+        for fd in os.listdir("/proc/%d/fd" % pid):
+            try:
+                link = os.readlink("/proc/%d/fd/%s" % (pid, fd))
+            except OSError:
+                continue
+            if link.startswith("socket:["):
+                inodes.add(link[8:-1])
+    except OSError:
+        pass
+ports = set()
+for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try:
+        lines = open(table).read().splitlines()[1:]
+    except OSError:
+        continue
+    for line in lines:
+        fields = line.split()
+        if len(fields) > 9 and fields[3] == "0A" and fields[9] in inodes:
+            ports.add(int(fields[1].rsplit(":", 1)[1], 16))
+print(json.dumps(sorted(ports)))
+'''
+
+_HTTP_PROBE_SCRIPT = r'''
+import sys, urllib.error, urllib.request
+try:
+    urllib.request.urlopen("http://127.0.0.1:" + sys.argv[1] + "/", timeout=5).read(1)
+except urllib.error.HTTPError:
+    pass
+except Exception:
+    sys.exit(1)
+'''
+
 _START_SCRIPT = r'''
 import json, os, subprocess, sys
 if os.getpgrp() != os.getpid():
@@ -1311,6 +1368,22 @@ except Exception:
     sys.exit(1)
 '''
         result = self.run(handle, _python(script) + " " + str(port) + " " + shlex.quote(expected_revision), timeout_seconds=15)
+        return result.exit_code == 0
+
+    def listening_ports(self, handle: WorkspaceHandle, process_id: str) -> list[int]:
+        """这个进程（含它起的子进程）在监听的 TCP 端口。只认这棵进程树：沙盒自带的 Jupyter 等不算。"""
+        result = self.run(handle, _python(_LISTENING_PORTS_SCRIPT) + " " + str(_pid(process_id)), timeout_seconds=15)
+        try:
+            ports = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            return []
+        return [port for port in ports if isinstance(port, int) and not isinstance(port, bool)] if isinstance(ports, list) else []
+
+    def probe_http(self, handle: WorkspaceHandle, port: int) -> bool:
+        """这个端口回得出 HTTP 响应（任何状态码都算：纯接口服务的 / 是 404 也是起来了）。"""
+        if isinstance(port, bool) or not 1024 <= port <= 65535:
+            raise ValueError("invalid_runtime_probe")
+        result = self.run(handle, _python(_HTTP_PROBE_SCRIPT) + " " + str(port), timeout_seconds=15)
         return result.exit_code == 0
 
     def renew(self, handle: WorkspaceHandle, *, timeout_seconds: int = 900) -> None:

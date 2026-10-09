@@ -33,7 +33,8 @@ router = APIRouter(tags=["Project runtime"])
 
 class StartRuntimeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    port: int = Field(default=5173, ge=1024, le=65535)
+    # 不给：这个工程上次用自定义命令起过就照原样，否则模板的 Vite 5173（supervisor.submit 头注）。
+    port: int | None = Field(default=None, ge=1024, le=65535)
     expectedRevision: str = Field(min_length=1, max_length=256)
     approvalRef: str = Field(min_length=1, max_length=512)
     idempotencyKey: str = Field(min_length=1, max_length=256, pattern=r"\S")

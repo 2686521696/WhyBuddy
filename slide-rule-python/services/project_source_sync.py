@@ -135,7 +135,8 @@ def _sync_next_source_patch(task, *, recovering=False) -> bool:
     before = task.store.read_files(child.projectId, base.revision, owner_id=task.owner_id)
     args = PatchArguments.model_validate({"approvalRef": child.approvalRef,
         "expectedRevision": child.expectedRevision, "changes": child.input["changes"]})
-    after, changed = prepare_source_patch(before, [item.model_dump() for item in args.changes], live=True)
+    after, changed = prepare_source_patch(before, [item.model_dump() for item in args.changes], live=True,
+                                          custom_server=bool(task._custom_command))
     if not intent:
         intent = {"operationId": child.operationId, "baseRevision": base.revision,
             "targetRevision": task.store.publication_revision_id(child.projectId, child.operationId),
@@ -204,7 +205,8 @@ def _sync_next_source_patch(task, *, recovering=False) -> bool:
         pid = task._process("server")
         if not task.provider.is_process_running(task.handle, pid):
             raise WorkspaceProviderError("project_process_exited")
-        if task.provider.probe(task.handle, task.runtime.port, expected_revision=target):
+        # 跟开箱就绪、健康巡检同一个判断（_RuntimeTask._serving）：自定义命令的服务器不发修订标记。
+        if task._serving(pid, target):
             break
         if time.time() >= intent.get("healthDeadline", 0):
             raise WorkspaceProviderError("project_source_sync_health_failed")

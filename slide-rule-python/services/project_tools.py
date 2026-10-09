@@ -32,7 +32,7 @@ from services.project_creation import (
 from services.project_manifest import (
     canonical_json, content_hash, file_content_matches, file_name_matches,
     file_tree_matches, kernel_str_replace_changes, kernel_write_changes,
-    prepare_source_patch, source_path, workspace_file_path,
+    CUSTOM_SERVER_RELOAD_NOTE, is_custom_server_runtime, prepare_source_patch, source_path, workspace_file_path,
 )
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_source_operations import ProjectSourceOperations
@@ -285,6 +285,21 @@ BROWSER_ERROR_TEXT = {
 
 
 PREVIEW_NOTE = "用户在界面右侧的预览面板里看这一页。给用户的回复里不要写预览地址或主机名，说「在右侧预览里看」。"
+
+
+#: 自定义命令起的服务器（Django、Go、Spring Boot …）：独立浏览器验收现在只会构建、起 Vite 工程，这里先照实拒。
+CUSTOM_SERVER_VERIFY_UNSUPPORTED = "project_verification_custom_server_unsupported"
+CUSTOM_SERVER_VERIFY_TEXT = (
+    "这个服务器是用你自己的启动命令起的。独立浏览器验收目前只会构建并起模板的 Vite 工程，验不了它——"
+    "不是你的代码错了，别为此改代码。现在能做的：用 browser_view / browser_click 在预览里自己看、点一遍，"
+    "跑工程自带的测试（shell_exec），然后照实告诉用户「没有经过独立验收」。"
+)
+
+
+class _HintedError(ValueError):
+    def __init__(self, code: str, hint: str):
+        super().__init__(code)
+        self.hint = hint
 
 
 _WRITE_BACK_SKIP_TEXT = {"binary": "二进制", "too_large": "超过 512KB", "project_too_large": "工程总量超过 8MB"}
@@ -1714,6 +1729,8 @@ class ProjectTools:
                 parent = self.store.get_operation(parsed.runtimeOperationId, owner_id=self.owner_id)
                 if parent.projectId != project.projectId or parent.sessionId != session_id:
                     raise ProjectNotFound("project_operation_not_found")
+                if isinstance(parent.input, dict) and isinstance(parent.input.get("command"), str):
+                    raise _HintedError(CUSTOM_SERVER_VERIFY_UNSUPPORTED, CUSTOM_SERVER_VERIFY_TEXT)
                 requirements = approved_acceptance_requirements(authority)
                 try:
                     operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,
@@ -2115,9 +2132,12 @@ class ProjectTools:
     def _active_runtime(self, project):
         return self.store.active_runtime_start(project.projectId, owner_id=self.owner_id)
 
-    def _runtime_for_view(self, project, params, port):
-        """看页面 / 开端口 / 启动：交给 supervisor.submit，它会复用现成的那台。"""
-        operation = self.supervisor.submit(project.projectId, **params, port=port)
+    def _runtime_for_view(self, project, params, port, command=None):
+        """看页面 / 开端口 / 启动：交给 supervisor.submit，它会复用现成的那台。
+
+        port、command 都不给：上次用自定义命令起过就照原样（supervisor.submit 头注），否则模板的 Vite。
+        """
+        operation = self.supervisor.submit(project.projectId, **params, port=port, command=command)
         result = self._snapshot(operation.operationId)
         if operation.idempotencyKey != params["idempotency_key"]:
             result["runtimeReused"] = True
@@ -2178,8 +2198,8 @@ class ProjectTools:
                 operation = self._poll_operation(operation, block)
             return command_receipt_from(self, operation.operationId)
         if name in {"deploy_expose_port", "deploy_apply_deployment"}:
-            port = getattr(parsed, "port", None) or 5173
-            result = self._runtime_for_view(project, params, port)
+            result = self._runtime_for_view(project, params, getattr(parsed, "port", None),
+                                            getattr(parsed, "command", None))
             if name == "deploy_apply_deployment":
                 result["deployed"] = False
                 result["public"] = False
@@ -2188,13 +2208,13 @@ class ProjectTools:
         if name == "browser_navigate":
             if not leaked_browser_url_allowed(parsed.url):
                 raise ValueError("project_browser_external_url_forbidden")
-            return {**self._runtime_for_view(project, params, 5173), "url": model_page_path(parsed.url),
+            return {**self._runtime_for_view(project, params, None), "url": model_page_path(parsed.url),
                     "previewPrivate": True, "previewNote": PREVIEW_NOTE}
         # browser_restart：停掉当前那台，再起一台。明确要求重启才走这里。
         active = self._active_runtime(project)
         if active is not None:
             self.supervisor.cancel(active.operationId, owner_id=self.owner_id)
-        operation = self.supervisor.submit(project.projectId, **params, port=5173)
+        operation = self.supervisor.submit(project.projectId, **params)   # 上次怎么起的就怎么起（submit 头注）
         return self._snapshot(operation.operationId)
 
     def _leaked_observe(self, project, name, parsed):
@@ -2481,14 +2501,15 @@ class ProjectTools:
             # write into its sandbox from a control/HTTP request thread.
             changes = [change.model_dump() for change in args.changes]
             before = self.store.read_files(project.projectId, args.expectedRevision, owner_id=self.owner_id)
-            prepare_source_patch(before, changes, live=True)
             parent_id = active.processRefs["operationId"]
+            custom = is_custom_server_runtime(self.store.get_operation(parent_id, owner_id=self.owner_id))
+            prepare_source_patch(before, changes, live=True, custom_server=custom)
             key = "live-patch-" + content_hash(canonical_json({"runtimeOperationId": parent_id, **args.model_dump()}))
             operation = self.supervisor.submit_patch(parent_id, owner_id=self.owner_id,
                 expected_revision=args.expectedRevision, approval_ref=args.approvalRef,
                 idempotency_key=key, changes=changes)
             return {"projectId": project.projectId, "runtimeOperationId": parent_id,
-                **self._snapshot(operation.operationId)}
+                **self._snapshot(operation.operationId), **({"hint": CUSTOM_SERVER_RELOAD_NOTE} if custom else {})}
         lease = self.store.acquire_lease(project.projectId, owner_id=self.owner_id,
             lease_owner="patch-" + uuid.uuid4().hex, ttl_seconds=120)
         try:

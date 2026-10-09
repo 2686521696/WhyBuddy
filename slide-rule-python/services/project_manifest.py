@@ -89,12 +89,17 @@ def apply_file_changes(files: Mapping[str, str], changes: Mapping[str, str | Non
     return updated
 
 
-def prepare_source_patch(files: Mapping[str, str], changes: list[dict], *, live: bool = False) -> tuple[dict[str, str], list[str]]:
+def prepare_source_patch(files: Mapping[str, str], changes: list[dict], *, live: bool = False,
+                         custom_server: bool = False) -> tuple[dict[str, str], list[str]]:
     """Validate the model's exact before/after contract before any side effect.
 
     A running Vite process can consume source/assets. Dependency and startup
     configuration changes need a separately managed reinstall/restart; silently
     writing them would make the saved revision differ from installed execution.
+
+    ⚠ 2026-10-09 custom_server：模型自己的启动命令起的服务器（Django、Go、Spring Boot …）没有「src/ 才能热改」
+      这条——Django 的 shop/views.py 改了自己就重载，Go 的 main.go 改了要重启，平台替不了框架判断。照写进去，
+      回执里照实说「不会热重载的框架要重启才生效」（is_custom_server_runtime 的调用处）。
     """
     replacements = {}
     for change in changes:
@@ -108,7 +113,8 @@ def prepare_source_patch(files: Mapping[str, str], changes: list[dict], *, live:
             raise ValueError("project_file_hash_conflict")
         replacements[path] = change["content"]
     changed = [path for path, content in replacements.items() if files.get(path) != content]
-    if live and any(path != "index.html" and not path.startswith(("src/", "public/", "tests/")) for path in changed):
+    if live and not custom_server and any(path != "index.html" and not path.startswith(("src/", "public/", "tests/"))
+                                          for path in changed):
         raise ValueError("project_live_patch_requires_restart")
     return apply_file_changes(files, replacements), changed
 
@@ -292,3 +298,17 @@ def file_name_matches(paths: list[str], directory: str, glob: str) -> list[str]:
         if fnmatch.fnmatch(name, glob) or fnmatch.fnmatch(path, glob):
             found.append(path)
     return found
+
+
+#: 自定义命令的服务器跑着时改了文件：写进去了，生不生效看框架。照实说，不替框架打包票。
+CUSTOM_SERVER_RELOAD_NOTE = (
+    "改动已经写进在跑的服务器目录。会自己重载的（Django runserver、Flask debug、nodemon、Vite、Rails）马上生效；"
+    "go run、Spring Boot、dotnet run、cargo run 这类要 browser_restart 重启开发服务器才生效。"
+)
+
+
+def is_custom_server_runtime(operation) -> bool:
+    """这次开发服务器是不是模型自己的启动命令起的（runtime.start 的 input.command）。"""
+    given = getattr(operation, "input", None)
+    return (getattr(operation, "kind", None) == "runtime.start" and isinstance(given, dict)
+            and isinstance(given.get("command"), str) and bool(given["command"].strip()))

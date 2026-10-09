@@ -134,6 +134,12 @@ WORKSPACE_TOOLCHAINS_FACT = (
     "Java 21（java、mvn）、Go 1.24（go）、PHP 8.4（php、composer）、Ruby 3.3（ruby、gem）、.NET 8（dotnet）、"
     "Rust 1.85（rustc、cargo）。"
 )
+#: 预览从网关进来：请求里的 Host 是预览域名。检查 Host 的框架不放行，预览就是 400 / Blocked host。
+PREVIEW_HOST_FACT = (
+    "右侧预览经网关转发到开发服务器，请求里的 Host 是预览域名、不是 localhost；"
+    "会检查 Host 的框架要放行所有主机才打得开预览（Django ALLOWED_HOSTS = ['*']、Rails config.hosts.clear、"
+    "webpack / Angular 开发服务器 allowedHosts: 'all'）。服务器要监听 0.0.0.0。"
+)
 DEFAULT_TOOLCHAINS_FACT = (
     "这台工程电脑只有 Python 3.13（python3、pip）、Node 20（node、npm、npx）和 Java 11（java），"
     "没有 Go、PHP、Ruby、.NET、Rust，也没有 Maven。"
@@ -142,7 +148,7 @@ DEFAULT_TOOLCHAINS_FACT = (
 
 def workspace_toolchains_fact() -> str:
     """按这台电脑真用的镜像说实话：配了全家桶镜像说全家桶，没配说默认镜像有什么、缺什么。"""
-    return WORKSPACE_TOOLCHAINS_FACT if workspace_e2b_template() else DEFAULT_TOOLCHAINS_FACT
+    return (WORKSPACE_TOOLCHAINS_FACT if workspace_e2b_template() else DEFAULT_TOOLCHAINS_FACT) + PREVIEW_HOST_FACT
 
 
 def operation_left_on_lease(store, lease, owner_id: str):

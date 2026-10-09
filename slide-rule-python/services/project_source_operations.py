@@ -23,7 +23,7 @@ from services.deliverable_kind import (
 from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.revision_turns import label_revisions
 from services.scope_authority import latest_control_plan
-from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
+from services.project_manifest import CUSTOM_SERVER_RELOAD_NOTE, canonical_json, content_hash, is_custom_server_runtime, prepare_source_patch, source_path
 from services.project_store import MAX_REVISIONS, ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 
 
@@ -149,7 +149,8 @@ class ProjectSourceOperations:
             return {"projectId": project_id, "revision": prior.revision, "operationId": None, "status": "completed"}
         lease = self.store.get_lease(project_id, owner_id=self.owner_id)
         active = lease is not None and lease.expiresAt > time.time() and lease.processRefs.get("operationId")
-        prepare_source_patch(before, changes, live=bool(active))
+        custom = bool(active) and is_custom_server_runtime(self.store.get_operation(active, owner_id=self.owner_id))
+        prepare_source_patch(before, changes, live=bool(active), custom_server=custom)
         guard_control_run()
         if not changes:
             if project.currentRevision != expected_revision:
@@ -167,7 +168,8 @@ class ProjectSourceOperations:
                 changes=changes)
             result = operation.result or {}
             return {"projectId": project_id, "revision": result.get("revision"),
-                "operationId": operation.operationId, "status": operation.status}
+                "operationId": operation.operationId, "status": operation.status,
+                **({"hint": CUSTOM_SERVER_RELOAD_NOTE} if custom else {})}
         lease = self.store.acquire_lease(project_id, owner_id=self.owner_id,
             lease_owner="source-" + uuid.uuid4().hex, ttl_seconds=120)
         try:

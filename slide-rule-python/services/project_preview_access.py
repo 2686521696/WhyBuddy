@@ -112,6 +112,19 @@ def _digest(secret: str) -> str:
     return hashlib.sha256(secret.encode("ascii")).hexdigest()
 
 
+def _port_is_the_authorized_one(operation, runtime) -> bool:
+    """预览的那个端口是不是这次运行该开的那个。
+
+    Vite：就是启动时说的那个（默认 5173）。自定义启动命令（Django、Go、Spring Boot …）：端口是工人起来之后从
+    这次运行自己那棵进程树里认出来的（_RuntimeTask._custom_ready），写进 runtime.port——认它；说过的端口只是提示。
+    ⚠ 2026-10-09 之前只认 input.port（默认 5173），自定义命令开在 8000 的服务器永远拿不到预览票。
+    """
+    given = operation.input if isinstance(operation.input, dict) else {}
+    if isinstance(given.get("command"), str) and given["command"].strip():
+        return True
+    return runtime.port == given.get("port", 5173)
+
+
 class ProjectPreviewAccess:
     def __init__(self, store: ProjectStore, *,
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None],
@@ -152,7 +165,7 @@ class ProjectPreviewAccess:
                 # mounted revision and is still exact-version scoped.
                 or project.currentRevision != runtime.revision
                 or lease.mountedRevision != runtime.revision or type(runtime.port) is not int
-                or not 1024 <= runtime.port <= 65535 or runtime.port != operation.input.get("port", 5173)):
+                or not 1024 <= runtime.port <= 65535 or not _port_is_the_authorized_one(operation, runtime)):
             raise PreviewAccessDenied("project_preview_unavailable")
         # The host's existing approval function rechecks durable session/plan and
         # revision.planRef. Injection avoids a cycle when the worker issues grants.
