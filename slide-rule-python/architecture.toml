@@ -342,6 +342,8 @@ modules = [
   # 子代理（2026-10-05，对标 Claude Code Task）：只读工作区工具与循环；问模型由控制面注入。依赖 deliverable_kind（util）。
   "services.subagent",
   "services.project_access",
+  # 2026-10-09：只 import project_preview_config（util）；provider 与预览票由启动时注入。
+  "services.project_browser_remote",
   # 模型自己攒的记忆（抄 grok xai-grok-memory 的分寸，不抄它那套向量索引）。
   # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
   # 不另开数据库、也不共用它那张表）。只依赖 util，碰不到驱动器 → core。
@@ -891,6 +893,8 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
     "services.project_preview_access",
     "services.project_preview_config",
     "services.vite_preview_hosts",
+    # 2026-10-09：模型自己看页面借验收那台远程浏览器——给这次运行发预览票、交给 workspace 里的 provider 做一个动作。
+    "services.project_browser_remote",
 ]
 
 

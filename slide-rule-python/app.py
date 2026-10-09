@@ -134,7 +134,9 @@ from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize
 from services.e2b_workspace_provider import E2BWorkspaceProvider
 from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
 from services.project_rollout import project_worker_enabled
+from services.project_browser_interact import local_playwright_available
 from services.project_browser_provider import E2BProjectBrowserProvider
+from services.project_browser_remote import RemoteBrowserInteractor
 from services.project_preview_access import ProjectPreviewAccess
 from services.project_preview_config import preview_configuration_enabled
 from services.project_preview_runtime import ProjectPreviewRuntime
@@ -381,8 +383,27 @@ def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
             # Existing project commands remain available. No grant is issued
             # until a built agent is installed by the runtime owner.
             print("[startup] project preview agent bundle unavailable")
+    print(f"[startup] model browser tools: {_install_model_browser(supervisor)}")
     supervisor.start()
     return supervisor
+
+
+def _install_model_browser(supervisor) -> str:
+    """模型自己看页面用哪台浏览器。本机有就用本机；没有就借验收那台远程浏览器（services.project_browser_remote）。
+
+    ⚠ 2026-10-09 线上：Python 镜像没有 node 和浏览器，又没人注入 browser_interactor——browser_view 在线上
+      从来没通过（回 project_browser_driver_unavailable），只有验收能开浏览器。启动行把选了哪条写出来，
+      下次不用靠一趟真任务才发现。
+    """
+    if local_playwright_available():
+        return "local"
+    missing = E2BProjectBrowserProvider().availability_error()
+    if missing:
+        return "none (" + missing + ")"
+    if supervisor.preview_runtime is None:
+        return "none (project_browser_preview_unavailable)"
+    supervisor.browser_interactor = RemoteBrowserInteractor(supervisor.preview_access, E2BProjectBrowserProvider)
+    return "remote"
 
 
 #: 启动时接不上工程库/控制面：第一次重试等几秒，之后翻倍，封顶一分钟。测试里调小。

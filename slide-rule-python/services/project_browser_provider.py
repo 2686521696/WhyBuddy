@@ -25,6 +25,7 @@ from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 from config.settings import settings
+from services.project_browser_interact import browser_action_script, decode_browser_action
 from services.project_verification_gate import SUITE_ASSERTIONS
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 6 * 1024 * 1024
 REMOTE_ROOT = "/home/user/whybuddy-browser"
 METADATA_KIND = "whybuddy-project-verification-v1"
+#: 模型自己看页面（browser_view / 点击 / 输入）开的那台：跟验收分开记，清理只动自己那一类。
+ACTION_METADATA_KIND = "whybuddy-project-browser-action-v1"
 BUNDLE = Path(__file__).resolve().parents[2] / "server/project-verification/browser-runner.mjs"
 ERROR_CODES = frozenset({"project_browser_not_configured", "project_browser_key_missing",
     "project_browser_unavailable", "project_browser_input_invalid", "project_browser_auth_failed",
@@ -203,12 +206,12 @@ class E2BProjectBrowserProvider:
         return Sandbox
 
     @staticmethod
-    def _metadata(verification_id):
-        return {"whybuddy_kind": METADATA_KIND, "whybuddy_verification_id": verification_id}
+    def _metadata(verification_id, kind=METADATA_KIND):
+        return {"whybuddy_kind": kind, "whybuddy_verification_id": verification_id}
 
-    def _discover(self, verification_id):
+    def _discover(self, verification_id, kind=METADATA_KIND):
         from e2b import SandboxQuery
-        metadata = self._metadata(verification_id)
+        metadata = self._metadata(verification_id, kind)
         pages = self._sdk().list(query=SandboxQuery(metadata=metadata), limit=100,
             api_key=self._api_key, request_timeout=10)
         found = set()
@@ -225,7 +228,7 @@ class E2BProjectBrowserProvider:
         """Destroy only this verification's resources; no reconnect or replay."""
         return self._cleanup(verification_id, check_callback)[0]
 
-    def _cleanup(self, verification_id, check_callback=None):
+    def _cleanup(self, verification_id, check_callback=None, kind=METADATA_KIND):
         observed = False
         if not _identifier(verification_id) or not self._api_key:
             return False, observed
@@ -235,7 +238,7 @@ class E2BProjectBrowserProvider:
                 if check_callback:
                     check_callback()
                 stage = "cleanup_discover"
-                found = self._discover(verification_id)
+                found = self._discover(verification_id, kind)
                 observed = observed or bool(found)
                 for sandbox_id in found:
                     if check_callback:
@@ -243,7 +246,7 @@ class E2BProjectBrowserProvider:
                     stage = "cleanup_kill"
                     self._sdk().kill(sandbox_id, api_key=self._api_key, request_timeout=10)
                 stage = "cleanup_confirm"
-                if not self._discover(verification_id):
+                if not self._discover(verification_id, kind):
                     return True, observed
             return False, observed
         except Exception as exc:
@@ -382,3 +385,65 @@ class E2BProjectBrowserProvider:
         if control_error is not None and result["cleanupConfirmed"]:
             raise control_error
         return result
+
+    def interact(self, *, entry_url: str, page_url: str, action: dict, timeout_seconds: int = 60) -> dict:
+        """模型自己看一眼 / 点一下：一台新沙盒、一个动作、用完即毁。不是证据，不进验收。
+
+        ⚠ 2026-10-09 线上读书打卡 sr-20261009000607-914M1G425B：browser_view 回
+          project_browser_driver_unavailable。交互工具只会在 Python 容器里本机起 Playwright，
+          而 Python 镜像里没有 node 也没有浏览器——线上模型的「自己看一眼」从来没通过，只有验收那台能用。
+          这里借验收同一个模板、同一套网络围栏（只放行预览自己的主机）、同一种凭票进门；
+          跑的是本机同一份动作脚本（project_browser_interact.browser_action_script），换的只是从哪儿 require。
+        """
+        missing = self.availability_error()
+        if missing:
+            raise ValueError("project_browser_driver_unavailable")
+        try:
+            page, entry = urlsplit(page_url), urlsplit(entry_url)
+            if (page.scheme != "https" or not page.hostname or page.username or page.password
+                    or entry.scheme != page.scheme or entry.netloc != page.netloc
+                    or entry.path != "/_whybuddy/authorize" or set(parse_qs(entry.query)) != {"ticket"}
+                    or not isinstance(action, dict) or not action.get("op")):
+                raise ValueError()
+            job = json.dumps({**action, "url": page_url, "entryUrl": entry_url}, ensure_ascii=False)
+        except (ValueError, TypeError):
+            raise ValueError("project_browser_input_invalid") from None
+        action_id = "act-" + os.urandom(16).hex()
+        sandbox, stdout, stage = None, None, "create"
+        try:
+            from e2b import ALL_TRAFFIC
+            sandbox = self._sdk().create(template=self.template, timeout=int(timeout_seconds + 60),
+                metadata=self._metadata(action_id, ACTION_METADATA_KIND), network={"allow_public_traffic": False,
+                    "allow_out": [page.hostname], "deny_out": [ALL_TRAFFIC]},
+                api_key=self._api_key, request_timeout=20)
+            stage = "upload"
+            # 放在验收脚本同一个目录：模板装好的 @playwright/test 从这里按 node_modules 规则找得到。
+            sandbox.files.write(REMOTE_ROOT + "/interact.cjs", browser_action_script('require("@playwright/test")'),
+                request_timeout=20)
+            sandbox.files.write(REMOTE_ROOT + "/action.json", job, request_timeout=20)
+            stage = "execute"
+            try:
+                done = sandbox.commands.run("node " + REMOTE_ROOT + "/interact.cjs " + REMOTE_ROOT + "/action.json",
+                    cwd=REMOTE_ROOT, envs={"NODE_ENV": "production", "NODE_OPTIONS": "", "NODE_PATH": "",
+                        "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright"}, timeout=timeout_seconds, request_timeout=20)
+                stdout = getattr(done, "stdout", None)
+            except Exception as exc:
+                # 脚本自己失败时退出码 1，SDK 抛异常；它写在 stdout 的那行（{ok:false,error:码}）照样要读。
+                stdout = getattr(exc, "stdout", None)
+                if not isinstance(stdout, str) or not stdout.strip():
+                    raise
+        except Exception as exc:
+            logger.warning("project browser action stage=%s exception=%s", stage, type(exc).__name__)
+            stdout = None
+        finally:
+            if sandbox is not None:
+                try:
+                    sandbox.kill(request_timeout=10)
+                except Exception:
+                    pass
+            self._cleanup(action_id, kind=ACTION_METADATA_KIND)
+        if stdout is None:
+            raise ValueError("project_browser_action_failed")
+        if len(stdout.encode("utf-8")) > MAX_RESULT_BYTES:
+            raise ValueError("project_browser_output_invalid")
+        return decode_browser_action(stdout)

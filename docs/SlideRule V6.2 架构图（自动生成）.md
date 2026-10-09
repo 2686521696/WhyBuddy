@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **367** 个，模块 **367** 个
-- 内部依赖边 **1231** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1140** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **368** 个，模块 **368** 个
+- 内部依赖边 **1235** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1144** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -38,7 +38,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
 | `util` | 163 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 77 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `core` | 78 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -50,9 +50,9 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 ```mermaid
 flowchart TB
   util["util<br/>163 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>77 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  core["core<br/>78 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|169| util
+  core -->|171| util
   flow -->|142| core
   flow -->|179| util
 ```
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>283 个模块<br/>业务"]
+  services["services<br/>284 个模块<br/>业务"]
   routes["routes<br/>16 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -75,7 +75,7 @@ flowchart TB
   app -->|2| config
   app -->|1| models
   app -->|17| routes
-  app -->|30 · 其中 3 条边来自函数体 import| services
+  app -->|32 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -163,7 +163,7 @@ flowchart LR
   persist["persist<br/>14"]
   platform["platform<br/>48"]
   run_control["run_control<br/>4"]
-  runtime["runtime<br/>11"]
+  runtime["runtime<br/>12"]
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
@@ -209,8 +209,8 @@ flowchart LR
   entrypoint -->|1| observability
   entrypoint -->|1| permission
   entrypoint -->|4| persist
-  entrypoint -->|8| platform
-  entrypoint -->|5| runtime
+  entrypoint -->|9| platform
+  entrypoint -->|6| runtime
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
   entrypoint -->|2| workspace
@@ -270,7 +270,7 @@ flowchart LR
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform
-  workspace -->|6| platform
+  workspace -->|7| platform
 ```
 
 

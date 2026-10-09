@@ -2292,9 +2292,16 @@ class ProjectTools:
         if getattr(runtime, "status", None) != "ready":
             return None
         url = getattr(runtime, "previewUrl", None)
+        # 远程浏览器（project_browser_remote）凭这次运行的身份发票、走预览网关进门，不用工人记下的直连主机；
+        # 网关模式下 previewUrl 本来就可能是空的。本机浏览器才要一个能直连的地址。
+        remote = callable(getattr(self.supervisor, "browser_interactor", None))
         if not isinstance(url, str) or not leaked_browser_url_allowed(url):
-            return None
-        return {"url": url, "revision": getattr(runtime, "revision", None)}
+            if not remote:
+                return None
+            url = "/"
+        return {"url": url, "revision": getattr(runtime, "revision", None),
+                "operationId": latest.operationId, "runtimeId": getattr(runtime, "runtimeId", None),
+                "ownerId": self.owner_id}
 
     def _browser_interact(self, project, name, parsed):
         if getattr(parsed, "sudo", False):

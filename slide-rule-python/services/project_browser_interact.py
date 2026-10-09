@@ -22,7 +22,8 @@ from pathlib import Path
 
 _PLAYWRIGHT_JS = r"""
 const fs = require("fs");
-const action = JSON.parse(fs.readFileSync(0, "utf8"));
+// 本机从 stdin 读动作；远程浏览器沙盒里读上传的 job 文件（project_browser_remote，命令行第一个参数）。
+const action = JSON.parse(fs.readFileSync(process.argv[2] || 0, "utf8"));
 const { chromium } = %(require_playwright)s;
 const url = action.url;
 const origin = new URL(url).origin;
@@ -90,6 +91,21 @@ const executablePath = process.env.SLIDERULE_CHROMIUM_PATH || "";
       }
     }
   });
+  // 远程浏览器沙盒（project_browser_remote）：预览在网关后面，先拿一次性票换 cookie 再进——跟验收
+  // browser-runner.mjs 同一套：不跟随跳转，只认 303 → "/"；票据 URL 不打印、不进结果。本机直连不带 entryUrl。
+  if (action.entryUrl) {
+    let entry;
+    try { entry = new URL(action.entryUrl); } catch (_) { throw new Error("project_browser_input_invalid"); }
+    if (entry.origin !== origin || entry.pathname !== "/_whybuddy/authorize") throw new Error("project_browser_input_invalid");
+    let bootstrap;
+    try {
+      bootstrap = await page.context().request.get(action.entryUrl, { maxRedirects: 0, timeout: 15000 });
+    } catch (_) {
+      throw new Error("project_browser_preview_unreachable");
+    }
+    if (bootstrap.status() !== 303) throw new Error("project_browser_preview_forbidden");
+    await bootstrap.dispose();
+  }
   let response;
   try {
     response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
@@ -255,7 +271,7 @@ def run_browser_action(preview_url: str, action: dict, *, timeout_s: int = 30) -
         raise ValueError("project_browser_driver_unavailable")
     payload = {**action, "url": preview_url.strip()}
     pkg = str(_repo_root() / "node_modules" / "@playwright" / "test")
-    script = _PLAYWRIGHT_JS % {"require_playwright": f"require({json.dumps(pkg)})"}
+    script = browser_action_script(f"require({json.dumps(pkg)})")
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "interact.js"
         path.write_text(script, encoding="utf-8")
@@ -270,8 +286,18 @@ def run_browser_action(preview_url: str, action: dict, *, timeout_s: int = 30) -
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValueError("project_browser_action_failed") from exc
+    return decode_browser_action(result.stdout)
+
+
+def browser_action_script(require_playwright: str) -> str:
+    """同一份动作脚本，本机与远程浏览器沙盒共用（§4）：只换「Playwright 从哪儿 require」。"""
+    return _PLAYWRIGHT_JS % {"require_playwright": require_playwright}
+
+
+def decode_browser_action(stdout: str | None) -> dict:
+    """脚本吐出的那一行 JSON → 交给模型的观察。本机与远程同一个出口。"""
     try:
-        body = json.loads((result.stdout or "").strip() or "{}")
+        body = json.loads((stdout or "").strip() or "{}")
     except json.JSONDecodeError as exc:
         raise ValueError("project_browser_action_failed") from exc
     if not isinstance(body, dict) or body.get("ok") is not True:
