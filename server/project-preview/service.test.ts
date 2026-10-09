@@ -42,7 +42,14 @@ const canonical = (value: Record<string, unknown>) => JSON.stringify(Object.from
 // reorders keys: a JSON.stringify comparison or seconds roundtrip must fail.
 async function fixture(options: { precision?: boolean; denyRole?: "browser" | "tunnel" | "binding" } = {}) {
   const observed: IncomingHttpHeaders[] = [];
-  const app = createServer((req, res) => { observed.push(req.headers); res.end(JSON.stringify(req.headers)); });
+  const app = createServer((req, res) => {
+    observed.push(req.headers);
+    // Django 5 默认中间件（SecurityMiddleware + XFrameOptionsMiddleware）给每个页面发的那几条，原样。
+    if (req.url === "/django") res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY",
+      "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cross-Origin-Opener-Policy": "same-origin" });
+    if (req.url === "/csp") res.writeHead(200, { "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'" });
+    res.end(JSON.stringify(req.headers));
+  });
   const appWs = new WebSocketServer({ noServer: true });
   app.on("upgrade", (req, socket, head) => {
     observed.push(req.headers);
@@ -151,6 +158,23 @@ it("protects health/status and prevents a management Authorization value enterin
   expect(JSON.parse(app.body).authorization).toBe("Bearer app-secret");
   const ws = f.socket({ authorization: "Bearer " + gatewayKey }); await once(ws, "open");
   expect(f.observed.at(-1)?.authorization).toBeUndefined();
+});
+
+// ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：首页 200，右栏 iframe 却是破页图标——Django 默认
+//   X-Frame-Options: DENY。走真网关（工作台 origin 已配），看用户浏览器拿到的响应头。见 relay frameableHeaders。
+it("lets only the workbench frame a Django page that says DENY, and keeps the app's other headers", async () => {
+  const f = await fixture(); await f.agent();
+  const page = await send(f.origin, "/django", f.cookie);
+  expect(page.status).toBe(200);
+  expect(page.headers["x-frame-options"]).toBeUndefined();
+  expect(page.headers["content-security-policy"]).toBe("frame-ancestors 'self' https://workbench.example.test");
+  expect(page.headers["x-content-type-options"]).toBe("nosniff");                 // 别的安全头不动
+  expect(page.headers["referrer-policy"]).toBe("same-origin");
+  const csp = await send(f.origin, "/csp", f.cookie);
+  const policies = String(csp.headers["content-security-policy"]);
+  expect(policies).toContain("default-src 'self'");                              // 应用自己的策略还在
+  expect(policies).not.toContain("frame-ancestors 'none'");
+  expect(policies).toContain("frame-ancestors 'self' https://workbench.example.test");
 });
 
 it("preserves Python expiry precision and accepts reordered wire keys through the complete tunnel", async () => {

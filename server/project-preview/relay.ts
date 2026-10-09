@@ -58,6 +58,39 @@ function filteredHeaders(headers: IncomingHttpHeaders, cookies: Set<string>, res
   return result;
 }
 
+/**
+ * 预览页本来就是要嵌在工作台右栏的 iframe 里看的：应用自己的「不许被嵌」换成「只许工作台嵌」。
+ *
+ * ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：服务器日志里首页一直 200，模型自己的浏览器
+ *   （顶层打开，不是嵌入）看着一切正常，用户右栏却是灰底加破页图标、「预览页面没有回应」。Django 默认开着
+ *   XFrameOptionsMiddleware（X-Frame-Options: DENY），浏览器拒绝把它放进 iframe。Spring Security 默认 DENY，
+ *   Rails / Express helmet 默认 SAMEORIGIN（预览 origin 和工作台不同源，一样被拒）——这不是哪个框架的事，
+ *   是「嵌在面板里预览」这件事本身。Codespaces / StackBlitz 的端口预览也是在网关这层处理。
+ *   去掉 X-Frame-Options 和 CSP 里的 frame-ancestors，再由网关补一条只许工作台嵌（防点击劫持的保护还在）。
+ */
+function frameableHeaders(headers: IncomingHttpHeaders, frameAncestors?: string): IncomingHttpHeaders {
+  const result: IncomingHttpHeaders = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (name === "x-frame-options") continue;
+    if ((name === "content-security-policy" || name === "content-security-policy-report-only") && value !== undefined) {
+      const kept = (Array.isArray(value) ? value : [value])
+        .map(policy => policy.split(";").map(part => part.trim())
+          .filter(part => part && !/^frame-ancestors(\s|$)/i.test(part)).join("; "))
+        .filter(Boolean);
+      if (kept.length) result[name] = kept.length === 1 ? kept[0] : kept;
+      continue;
+    }
+    result[name] = value;
+  }
+  if (frameAncestors) {
+    const own = `frame-ancestors 'self' ${frameAncestors}`;
+    const existing = result["content-security-policy"];
+    result["content-security-policy"] = existing === undefined ? own
+      : [...(Array.isArray(existing) ? existing : [existing]), own];
+  }
+  return result;
+}
+
 function refuse(socket: Socket, code = 403): void {
   if (!socket.destroyed) socket.end(`HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 }
@@ -244,7 +277,8 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
       else if (!response.destroyed) response.writeHead(502).end();
     });
     upstream.on("response", incoming => {
-      response.writeHead(incoming.statusCode ?? 502, filteredHeaders(incoming.headers, cookies, true));
+      response.writeHead(incoming.statusCode ?? 502,
+        frameableHeaders(filteredHeaders(incoming.headers, cookies, true), options.frameAncestors));
       incoming.on("error", () => response.destroy());
       incoming.pipe(response);
     });

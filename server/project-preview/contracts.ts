@@ -41,6 +41,8 @@ export interface PreviewRelayOptions {
   beforeRequest?(request: IncomingMessage, response: ServerResponse): Promise<boolean>;
   gatewayCookieNames?: string[];
   limits?: Partial<PreviewRelayLimits>;
+  /** 谁可以把预览页嵌进 iframe（工作台的 origin）。应用自己的「不许被嵌」由网关换成这一条，见 relay frameableHeaders。 */
+  frameAncestors?: string;
 }
 
 export const TUNNEL_CONTROL_PATH = "/_whybuddy/tunnel/control";

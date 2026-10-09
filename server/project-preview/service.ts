@@ -123,6 +123,7 @@ export function createPreviewService(config: PreviewServiceConfig) {
   }
   const relay = createPreviewRelay({
     gatewayCookieNames: [HTTPS_COOKIE, LOCAL_COOKIE],
+    frameAncestors: config.workbenchOrigin,
     async authorizeTunnel(request): Promise<TunnelGrant | null> {
       try {
         const audience = requestAudience(request, config.publicProtocol);
