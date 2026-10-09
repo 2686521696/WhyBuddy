@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import random
 import re
 import shlex
@@ -152,6 +153,19 @@ APP_OUTCOME_CODES = frozenset({"project_command_failed", "project_dependency_ins
 #: 就和一个看不见的进程挤在同一台电脑里。
 _DISCARD_COMPUTER_PREFIXES = ("e2b_", "project_provider", "runtime_dispatch", "project_cleanup",
                               "project_process_identity", "runtime_budget")
+#: 电脑本身坏了 / 说不清：无论怎么结束都拆。（上面那张多一个 runtime_budget：命令到点时还在跑——那种
+#: 先停进程，停干净了照样留下电脑，见 _KEEP_WHEN_STOPPED。）
+_BROKEN_COMPUTER_PREFIXES = tuple(prefix for prefix in _DISCARD_COMPUTER_PREFIXES if prefix != "runtime_budget")
+#: 以这些结局收场时，把这件事自己的进程停干净就留下电脑（之后暂停、叫醒恢复）：用户取消 / 重启、闲置到期、
+#: 时长到期、应用自己的结局。授权被撤（计划、账号）、电脑坏了、说不清的不在这里——照旧拆。
+_KEEP_WHEN_STOPPED = frozenset({"user_cancelled", "runtime_idle_expired", "runtime_budget_exhausted",
+                                "project_readiness_timeout", "project_install_timeout"}) | APP_OUTCOME_CODES
+#: 这些结局之后多半不会马上有下一件事：留下的电脑立刻暂停，不等超时再自动暂停（少烧十几分钟算力）。
+_PAUSE_NOW = frozenset({"runtime_idle_expired", "runtime_budget_exhausted"})
+#: 暂停的电脑最多留多久没人用就真销毁（E2B 暂停不计算力费，但占存储且永不过期）。
+COMPUTER_RETENTION_SECONDS = float(os.getenv("WHYBUDDY_PROJECT_COMPUTER_RETENTION_DAYS") or 7) * 86_400
+#: 保留期清理多久扫一次。
+COMPUTER_SWEEP_INTERVAL_SECONDS = 3600
 
 
 def fixed_command_line(command: str) -> str:
@@ -436,10 +450,52 @@ class ProjectRuntimeSupervisor:
             self._wake.set()
             return operation
 
+    def _sweep_idle_computers(self, now: float | None = None) -> int:
+        """暂停太久没人用的电脑真销毁，清掉租约上的电脑号（下一件事开新电脑、跑准备命令、回执照实说）。
+
+        E2B 暂停的电脑不计算力费，但占存储、永不过期（官方计费页：paused sandbox retention「Unlimited」）。
+        先拿租约再动手：有人正在用就跳过；拿到时发现这期间有人用过（代数不对）也跳过。销毁失败留到下一轮。
+        """
+        now = time.time() if now is None else now
+        swept = 0
+        for project_id, owner_id, idle in self.store.list_idle_computers(released_before=now - COMPUTER_RETENTION_SECONDS):
+            if self._stop.is_set():
+                break
+            if idle.releasedAt is None:                   # 这个字段加上之前释放的：从现在起算保留期
+                self.store.stamp_released(project_id, generation=idle.generation)
+                continue
+            try:
+                held = self.store.acquire_lease(project_id, owner_id=owner_id,
+                                                lease_owner="retention-" + uuid.uuid4().hex, ttl_seconds=120)
+            except ProjectConflict:
+                continue
+            # 列出来之后、拿到之前有人用过（代数跳过了不止一次）：不是闲置的那台了，不动
+            clear, untouched = False, held.generation == idle.generation + 1
+            try:
+                if untouched:
+                    self.provider_factory().destroy(WorkspaceHandle(held.workspaceId, held.sandboxId))
+                    clear, swept = True, swept + 1
+            except Exception as exc:
+                logger.warning("project idle computer sweep failed project=%s exception=%s", project_id,
+                               str(exc) if isinstance(exc, WorkspaceProviderError) else type(exc).__name__)
+            finally:
+                self.store.release_lease(project_id, owner_id=owner_id, lease_owner=held.leaseOwner,
+                                         generation=held.generation, clear_runtime=clear,
+                                         # 销毁没成：沿用原来的起点，下一轮（一小时后）再试；这期间有人用过：从现在重新起算
+                                         released_at=idle.releasedAt if untouched else None)
+        return swept
+
     def _scan_loop(self) -> None:
         # 原来每一跳一行 WARNING、不带调用栈：断一整天 Sentry 里也没有一条问题（OutageLog 头注，跟控制回合那条循环成对）。
         outage = OutageLog(logger, "project runtime scan")
+        next_sweep = time.monotonic() + 60
         while not self._stop.is_set():
+            if time.monotonic() >= next_sweep:
+                next_sweep = time.monotonic() + COMPUTER_SWEEP_INTERVAL_SECONDS
+                try:
+                    self._sweep_idle_computers()
+                except Exception as exc:                  # 清理是旁路：炸了不拖垮派活（§7），下一轮再来
+                    logger.warning("project idle computer sweep exception=%s", type(exc).__name__)
             try:
                 with self._lock:
                     self._workers = {key: value for key, value in self._workers.items() if value.is_alive()}
@@ -1337,6 +1393,18 @@ class _RuntimeTask:
         self.check()
         self.supervisor.authorizer(self.store, self.original, self.owner_id)
 
+    def _pause_now(self) -> None:
+        """留下的电脑立刻暂停。增强类：暂停不了就等提供方超时自动暂停（E2B 建电脑时设好了），不拖垮收尾（§7）。"""
+        pause = getattr(self.provider, "pause", None)
+        if not callable(pause):
+            return
+        try:
+            pause(self.handle)
+            self.result["computerPaused"] = True
+        except Exception as exc:
+            logger.warning("project computer pause failed operation=%s exception=%s", self.operation_id,
+                           str(exc) if isinstance(exc, WorkspaceProviderError) else type(exc).__name__)
+
     def _stopped_in_place(self) -> bool:
         """取消时只停这件事自己的进程（服务器、安装、命令；预览隧道由 revoke 停），确认都不在了才算停干净。
 
@@ -1709,17 +1777,21 @@ class _RuntimeTask:
             # ⚠ 2026-10-09 线上 React 记账 sr-20261009053036-7SEDNJN15H：第一版只留命令的电脑，开发服务器一停就拆。
             #   模型 browser_restart（= 取消再起）之后，新电脑上没有 node_modules，`vite: not found`；回执也没说换了电脑。
             #   取消要停掉的是「这件事的远程活」，不是整台电脑：能把这件事自己的进程逐个停干净、确认都不在了，就留下电脑
-            #   （_stopped_in_place）；停不干净、说不清，照旧拆。闲置到期仍拆（回收资源），下一件事回执照实说。
-            stopped_in_place = status == "cancelled" and code == "user_cancelled" and self._stopped_in_place()
-            if stopped_in_place:
+            #   （_stopped_in_place）；停不干净、说不清，照旧拆。
+            # ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：闲置到期仍拆，叫醒开到新电脑上，准备命令装回了
+            #   依赖，SQLite 里用户登记的数据没了（no such table）。闲置 / 到期 / 应用自己的结局同样停进程留电脑，然后暂停
+            #   （e2b_workspace_provider.PAUSE_ON_TIMEOUT 头注）；保留期过了才真销毁（_sweep_idle_computers）。
+            broken = str(code or "").startswith(_BROKEN_COMPUTER_PREFIXES)
+            finished_command = (self.original.kind == "runtime.exec" and status in {"completed", "failed"}
+                                and bool(self.result.get("keepSandbox"))
+                                and not str(code or "").startswith(_DISCARD_COMPUTER_PREFIXES))
+            keep = self.handle is not None and not broken and (
+                finished_command or (str(code or "") in _KEEP_WHEN_STOPPED and self._stopped_in_place()))
+            if keep:
                 self.result["keepSandbox"] = True
-            keep = (
-                bool(self.result.get("keepSandbox"))
-                and self.handle is not None
-                and (status in {"completed", "failed"} and self.original.kind == "runtime.exec" or stopped_in_place)
-                and not str(code or "").startswith(_DISCARD_COMPUTER_PREFIXES)
-            )
-            if not keep:
+                if str(code or "") in _PAUSE_NOW:
+                    self._pause_now()
+            else:
                 self.result.pop("keepSandbox", None)           # 租约照这个决定清不清电脑号（release_lease），两处得一致
             if self.handle is not None and not keep:
                 self.provider.destroy(self.handle)

@@ -601,6 +601,16 @@ class _ConsoleSession:
         self.killed = False
 
 
+#: 超时（没人续期）就暂停，不销毁；只存硬盘，不存内存。
+#: ⚠ 2026-10-09 线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG：闲置的电脑到时被销毁，叫醒开到新电脑上，准备命令装回了
+#:   依赖，可 SQLite 里用户登记的数据、没进源码的文件都没了（no such table）。照 Codespaces / Replit：闲置暂停，叫醒恢复。
+#:   真 E2B 实测（universal 镜像）：超时自动转 paused；connect() 即恢复，文件、pip 装的包、SQLite 数据都在；只存硬盘时
+#:   恢复 1～10 秒（连内存一起存 0.3 秒，但每台占的存储大）。平台每次启动都重新起进程，用不着内存里的状态。
+#:   恢复过一次的电脑再超时照样暂停（这个设置跟着电脑走，不用每次 connect 再设），两次写的文件都在。
+#:   暂停不计算力费，只占存储，所以保留期有上限（ProjectRuntimeSupervisor._sweep_idle_computers）。
+PAUSE_ON_TIMEOUT = {"on_timeout": {"action": "pause", "keep_memory": False}}
+
+
 class E2BWorkspaceProvider:
     def __init__(self, *, api_key: str | None = None):
         self._api_key = (api_key or os.getenv("E2B_API_KEY") or "").strip()
@@ -622,7 +632,8 @@ class E2BWorkspaceProvider:
             sandbox = _sandbox_class().create(template=template, timeout=timeout_seconds,
                 api_key=self._api_key,
                 network={"allow_public_traffic": rollout_mode() == "internal"},
-                metadata={"whybuddy_workspace_id": workspace_id})
+                metadata={"whybuddy_workspace_id": workspace_id},
+                lifecycle=PAUSE_ON_TIMEOUT)
         except Exception as exc:
             raise WorkspaceProviderError("e2b_create_failed") from exc
         sandbox_id = str(getattr(sandbox, "sandbox_id", "") or "")
@@ -1404,6 +1415,20 @@ except Exception:
         result = self.run(handle, _python(_PROCESS_SCRIPT) + " " + process_id + " stop", timeout_seconds=20)
         if result.exit_code != 0 or result.stdout.strip() != "false":
             raise WorkspaceProviderError("e2b_stop_failed", result=result)
+
+    def pause(self, handle: WorkspaceHandle) -> None:
+        """立刻暂停（只存硬盘），不等超时。下次 connect() 就恢复。已经暂停 / 不在了都不算错。"""
+        for pid, console in list(self._consoles.items()):
+            if console.sandbox_id == handle.sandbox_id:
+                self._kill_console(console)
+                self._consoles.pop(pid, None)
+        try:
+            _sandbox_class().pause(handle.sandbox_id, keep_memory=False, api_key=self._api_key)
+        except Exception as exc:
+            if any(kind.__name__ == "SandboxNotFoundException" for kind in type(exc).__mro__):
+                raise WorkspaceProviderError(SANDBOX_GONE) from exc
+            raise WorkspaceProviderError("e2b_pause_failed") from exc
+        self._sandboxes.pop(handle.sandbox_id, None)
 
     def destroy(self, handle: WorkspaceHandle) -> None:
         for pid, console in list(self._consoles.items()):

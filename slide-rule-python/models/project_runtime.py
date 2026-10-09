@@ -170,6 +170,9 @@ class WorkspaceLease(ProjectContract):
     mountedRevision: str | None = None
     provider: Literal["e2b"] = "e2b"
     processRefs: dict[str, Any] = Field(default_factory=dict)
+    #: 释放租约时电脑还留着（暂停）的那一刻。到期时间释放后归零，看不出「多久没人用」——保留期按它算
+    #: （ProjectRuntimeSupervisor._sweep_idle_computers）。拿到租约干活时清空。
+    releasedAt: float | None = None
 
 
 OperationStatus = Literal[

@@ -325,7 +325,10 @@ SANDBOX_FONTS_NOTE = (
     #   2026-10-09 起一个工程一台电脑（worker 头注），这句改成实情：装的东西留着；被回收时回执会说。
     "Each project keeps one computer across commands: packages, browsers and files you install stay there "
     "for later commands. The platform installs nothing for you — install what the project needs yourself. "
-    "If the computer was recycled (idle too long), the command receipt says so; reinstall then. "
+    # ⚠ 2026-10-09 起闲置的电脑暂停、叫醒原样恢复（e2b_workspace_provider.PAUSE_ON_TIMEOUT 头注），只有长时间没用才清理。
+    "An idle computer is paused and comes back intact (files, installs, local databases) when the project is used again; "
+    "only after about a week unused, or if it cannot be restored, does the project get a new computer — the receipt "
+    "says so; reinstall then. "
     # ⚠ 2026-10-09 线上 Django 借阅登记：电脑被回收后预览面板叫醒，新电脑上没装 Django，起不来（devcontainer_setup 头注）。
     "Declare in .devcontainer/devcontainer.json as postCreateCommand every step a clean checkout needs before it can "
     "run on a new computer (e.g. {\"postCreateCommand\": \"pip install -r requirements.txt\"}): whenever the project gets a new computer "

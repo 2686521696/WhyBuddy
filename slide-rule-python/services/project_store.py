@@ -511,14 +511,45 @@ class ProjectStore:
             raise ProjectConflict("workspace_lease_lost")
         return lease
 
+    def list_idle_computers(self, *, released_before: float, limit: int = 50) -> list[tuple[str, str, WorkspaceLease]]:
+        """租约已释放、电脑还留着、释放早于 released_before 的工程：(project_id, owner_id, lease)。保留期清理用。
+
+        没有 releasedAt 的（这个字段加上之前就释放的）也交回去，由调用方补记一个起点，而不是当成「永远不清」。
+        """
+        rows = self._q("select l.project_id, p.owner_id, l.payload from wb_project_lease l join wb_project p on p.id=l.project_id "
+                       "where l.expires_at <= $1 order by l.project_id", [time.time()])
+        found: list[tuple[str, str, WorkspaceLease]] = []
+        for row in rows:
+            lease = WorkspaceLease.model_validate_json(row["payload"])
+            if lease.sandboxId and (lease.releasedAt is None or lease.releasedAt < released_before):
+                found.append((row["project_id"], row["owner_id"], lease))
+                if len(found) >= limit:
+                    break
+        return found
+
+    def stamp_released(self, project_id: str, *, generation: int) -> None:
+        """给没有 releasedAt 的已释放租约补记释放时间（从现在起算保留期）。租约这期间被人拿走就什么都不做。"""
+        rows = self._q("select payload from wb_project_lease where project_id=$1 and generation=$2 and expires_at <= $3",
+                       [project_id, generation, time.time()])
+        if not rows:
+            return
+        lease = WorkspaceLease.model_validate_json(rows[0]["payload"])
+        if lease.releasedAt is not None:
+            return
+        self._q("update wb_project_lease set payload=$1 where project_id=$2 and generation=$3 and expires_at <= $4",
+                [lease.model_copy(update={"releasedAt": time.time()}).model_dump_json(), project_id, generation, time.time()])
+
     def release_lease(self, project_id: str, *, owner_id: str, lease_owner: str, generation: int,
-                      clear_runtime: bool = False) -> None:
+                      clear_runtime: bool = False, released_at: float | None = None) -> None:
+        """released_at：沿用原来的释放时间（保留期清理没清成时用，免得每试一次保留期就重新起算）。"""
         prior = self.get_lease(project_id, owner_id=owner_id)
         if prior is None or prior.generation != generation or prior.leaseOwner != lease_owner:
             raise ProjectConflict("workspace_lease_lost")
-        updates: dict[str, Any] = {"expiresAt": 0.0}
+        updates: dict[str, Any] = {"expiresAt": 0.0, "releasedAt": None}
         if clear_runtime:
             updates.update(sandboxId=None, mountedRevision=None, processRefs={})
+        elif prior.sandboxId:
+            updates["releasedAt"] = released_at or time.time()   # 电脑留着（暂停）：从这一刻起算保留期
         released = prior.model_copy(update=updates)
         rows = self._q("update wb_project_lease set expires_at=0,payload=$1 where project_id=$2 and generation=$3 and lease_owner=$4 returning project_id",
             [released.model_dump_json(), project_id, generation, lease_owner])
