@@ -109,3 +109,16 @@ def test_file_write_on_a_running_custom_server_lands_and_says_reload_depends(dja
     result = django.tools.execute("file_write", {"file": "shop/views.py", "content": "TITLE = '新品'\n"}, django.state)
     assert result["ok"], result
     assert "要 browser_restart 重启" in str(result.get("hint", "")), result
+
+
+def test_a_port_without_a_command_restarts_the_last_command_not_vite(django):
+    """⚠ 2026-10-09 线上 Django 读书打卡 sr-20261009053152-ZQEZHCJN4Z：模型 deploy_expose_port({"port": 8000})
+    没带命令，平台套了模板的 Vite 配方（npm ci + npm run dev），`Missing script: "dev"`。参数照线上那一发原样。"""
+    first = _started(django)
+    assert django.tools.execute("project_cancel", {"operationId": first().operationId}, django.state)["ok"]
+    eventually(lambda: first().status == "cancelled")
+    result = django.tools.execute("deploy_expose_port", {"port": 8000}, django.state)
+    assert result["ok"], result
+    op = django.store.get_operation(result["operationId"], owner_id="alice")
+    assert op.input["command"] == START and op.input["port"] == 8000
+    assert not any(cmd.startswith("npm ci") or "npm run dev" in cmd for cmd in django.provider.commands)

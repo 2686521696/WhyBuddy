@@ -242,17 +242,22 @@ class ProjectRuntimeSupervisor:
         """起这个工程的开发服务器（一个工程一台）。
 
         command 是模型给的启动命令（任意语言：python manage.py runserver、go run .、npm run dev …），
-        port 可不填——起来之后哪个端口在听就预览哪个（_RuntimeTask._generic_ready）。都不给：这个工程上一次
-        用自定义命令起过，就照原样再起（预览面板「叫醒」、browser_navigate 不知道该用什么命令）；否则是模板的
-        Vite（npm ci + npm run dev，5173）。
+        port 可不填——起来之后哪个端口在听就预览哪个（_RuntimeTask._generic_ready）。没给命令：这个工程上一次
+        用自定义命令起过，就照原样再起（预览面板「叫醒」、browser_navigate 不知道该用什么命令，模型只说了端口）；
+        否则是模板的 Vite（npm ci + npm run dev，5173）。
 
         ⚠ 2026-10-09：之前只有 Vite 这一条——Go / Django / Spring Boot 的工程没有 package-lock，开箱就被锁文件闸
           打回；端口写死 5173，预览只认这一个门。
         """
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        if command is None and port is None:
-            command, port = self._last_start_profile(project_id, owner_id)
+        if command is None:
+            # ⚠ 2026-10-09 线上 Django 读书打卡 sr-20261009053152-ZQEZHCJN4Z：模型 deploy_expose_port({"port": 8000})
+            #   没带命令。第一版只在「端口也没给」时才照上次的命令起，给了端口就落到模板的 Vite 配方——在 Django 工程上
+            #   npm ci + npm run dev，`Missing script: "dev"`。没给命令就照上次的命令起，端口是模型这次说的那个。
+            last_command, last_port = self._last_start_profile(project_id, owner_id)
+            if last_command is not None:
+                command, port = last_command, port if port is not None else last_port
         if command is not None:
             command = sandbox_shell_script(command)
         elif port is None:
