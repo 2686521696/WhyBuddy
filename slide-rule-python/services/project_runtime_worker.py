@@ -33,7 +33,7 @@ from services.project_browser_verification import (
     finish_pending_verifications, recover_project_verifications, run_next_project_verification,
 )
 from services.project_authority import approved_reference
-from services.project_creation import load_authorized_session
+from services.project_creation import load_authorized_session, sync_session_project
 from services.project_preview_config import (
     origin_for_runtime,
     preview_configuration_enabled,
@@ -822,6 +822,8 @@ class _RuntimeTask:
             # 留住这台沙盒的工作区才谈得上「命令在沙盒里改了源码」：记下刚写进去的样子，命令跑完对一遍。
             self._synced_hashes = ({name: content_hash(text) for name, text in files.items() if isinstance(text, str)}
                                    if skip_install else None)
+            # 命令结束时把沙盒里改动的源码收回成新版本（_write_back_sources）：要知道写进去的是哪一版、哪些字节。
+            self._synced_texts = {name: text for name, text in files.items() if isinstance(text, str)}
             self._mount_session_uploads()
             self._mount_delivered_files()
             if not reused:
@@ -1000,7 +1002,9 @@ class _RuntimeTask:
         self._persist_process_output(pid, executed)
         # 命令结束后都扫。失败也可能已经写出 .pptx；收集 fail-open。
         self._collect_office_artifacts()
-        self._note_sandbox_only_edits()
+        # 命令改的源码收回成新版本；收不回来（冲突、超限、扫不了）才退回老办法：点名「只改在沙盒里」。
+        if not self._write_back_sources():
+            self._note_sandbox_only_edits()
         if executed.exit_code is None:
             raise WorkspaceProviderError("project_command_result_unknown", result=executed)
         if executed.exit_code != 0:
@@ -1161,6 +1165,80 @@ class _RuntimeTask:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
 
+    def _write_back_sources(self) -> bool:
+        """命令在沙盒里生成、改动、删掉的源码文件，收回成工程的新版本（services.project_source_scan 头注）。
+
+        ⚠ 2026-10-09：源码权威在库里，每条命令开跑前按库里那版重写沙盒——官方脚手架（npm create vue、
+          django-admin startproject、cargo new、dotnet new）、`npm install 某包` 改的 package.json，下一条命令全被
+          还原，通用 Agent 只能一个文件一个文件 file_write。退出码不看：脚手架成功、后面的 npm install 失败，
+          脚手架生成的文件照样在，还原掉才是丢东西。
+
+        增强类，fail-open（§七）：扫不了、写不进（版本被别的写入抢先、超出源码库上限）就返回 False，照旧点名；
+        二进制 / 超大的文件不收，在回执里点名，不假装收了。返回 True = 沙盒和源码已经一致（收了或本来就没变）。
+        """
+        synced = getattr(self, "_synced_texts", None)
+        collector = getattr(self.provider, "collect_source_changes", None)
+        if synced is None or not callable(collector) or self.handle is None:
+            return False
+        skip = set(_RuntimeTask._uploaded_originals(self))
+        try:
+            skip |= {str(row.get("path") or "") for row in
+                     ProjectOfficeArtifactStore(self.store).list(self.original.projectId, owner_id=self.owner_id)}
+        except Exception:
+            logger.warning("delivered file listing failed before source write-back", exc_info=True)
+        try:
+            report = collector(self.handle, {name: content_hash(text) for name, text in synced.items()},
+                               skip_paths=sorted(p for p in skip if p))
+        except Exception:
+            logger.warning("source write-back scan failed", exc_info=True)
+            self.result["sourceWriteBack"] = {"error": "project_source_scan_failed"}
+            return False
+        changed = {path: text for path, text in (report.get("changed") or {}).items()
+                   if isinstance(path, str) and isinstance(text, str)}
+        deleted = [path for path in report.get("deleted") or [] if isinstance(path, str) and path in synced]
+        skipped = [item for item in report.get("skipped") or []
+                   if isinstance(item, dict) and not is_office_artifact_path(str(item.get("path") or ""))][:8]
+        receipt = {"changed": sorted(changed)[:20], "changedCount": len(changed), "deleted": deleted[:20]}
+        if skipped:
+            receipt["skipped"] = skipped
+        if report.get("truncated"):
+            receipt["truncated"] = True
+        if not changed and not deleted:
+            if skipped:
+                self.result["sourceWriteBack"] = receipt
+            return True
+        files = {**synced, **changed}
+        for path in deleted:
+            files.pop(path, None)
+        try:
+            base = self.store.get_revision(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
+            saved = self.store.commit_revision(self.original.projectId, owner_id=self.owner_id,
+                expected_revision=self.original.expectedRevision, files=files, template_version=base.templateVersion,
+                plan_ref=self.original.approvalRef, spec_revision=base.specRevision,
+                lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner)
+        except (ProjectConflict, ValueError) as exc:
+            # 命令跑着的时候别的写入先落了库（版本对不上），或收回来的超出源码库上限：不覆盖，照实说没收。
+            receipt["error"] = str(exc)[:120] or type(exc).__name__
+            self.result["sourceWriteBack"] = receipt
+            return False
+        except Exception:
+            logger.warning("source write-back commit failed", exc_info=True)
+            receipt["error"] = "project_source_write_back_failed"
+            self.result["sourceWriteBack"] = receipt
+            return False
+        try:
+            # 会话上的版本指针是可修复的投影（project_creation 头注）：版本已经落库，指针没跟上不算没收回。
+            sync_session_project(self.store, self.original.sessionId, owner_id=self.owner_id,
+                                 approval_ref=self.original.approvalRef)
+        except Exception:
+            logger.warning("session pointer not synced after source write-back", exc_info=True)
+        self._synced_texts = files
+        receipt["revision"] = saved.revision
+        self.result["sourceWriteBack"] = receipt
+        logger.info("project %s command wrote back %d files, deleted %d", self.original.projectId,
+                    len(changed), len(deleted))
+        return True
+
     def _note_sandbox_only_edits(self):
         """命令在沙盒里改了工程源码文件：记下来，回执照实说「只在沙盒里、下一条命令会被还原」。
 
@@ -1171,6 +1249,8 @@ class _RuntimeTask:
           文件重写进沙盒——考勤表格那段被还原，重新生成后 7 张表。用户要的改动悄悄没了，没有一句报错。
           源码是权威，这条不改；只在命令结束时对一遍哈希，把「只改在沙盒里」的文件点名。
           增强类，对不上、跑不了都当没有（fail-open，§七）。
+        ⚠ 2026-10-09 起这是后备：命令改的源码先由 _write_back_sources 收回成新版本，收不回来（版本冲突、超出源码库
+          上限、扫不了）才走到这里点名。
         """
         synced = getattr(self, "_synced_hashes", None)
         runner = getattr(self.provider, "run", None)

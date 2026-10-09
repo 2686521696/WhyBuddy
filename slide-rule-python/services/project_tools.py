@@ -287,6 +287,51 @@ BROWSER_ERROR_TEXT = {
 PREVIEW_NOTE = "用户在界面右侧的预览面板里看这一页。给用户的回复里不要写预览地址或主机名，说「在右侧预览里看」。"
 
 
+_WRITE_BACK_SKIP_TEXT = {"binary": "二进制", "too_large": "超过 512KB", "project_too_large": "工程总量超过 8MB"}
+
+
+def _bounded_write_back(written: dict) -> dict:
+    out = {}
+    for key in ("changed", "deleted"):
+        if isinstance(written.get(key), list):
+            out[key] = [str(item)[:240] for item in written[key][:20] if isinstance(item, str)]
+    for key in ("changedCount",):
+        if isinstance(written.get(key), int):
+            out[key] = written[key]
+    for key in ("revision", "error"):
+        if isinstance(written.get(key), str):
+            out[key] = written[key][:120]
+    if isinstance(written.get("skipped"), list):
+        out["skipped"] = [{"path": str(item.get("path"))[:240], "reason": str(item.get("reason"))[:40]}
+                          for item in written["skipped"][:8] if isinstance(item, dict)]
+    if written.get("truncated") is True:
+        out["truncated"] = True
+    return out
+
+
+def _write_back_sentence(written: dict) -> str:
+    """命令在沙盒里改的源码收回了没有（worker _write_back_sources 头注）：收了说收了哪些，没收说为什么、怎么办。"""
+    changed = written.get("changed") or []
+    count = written.get("changedCount") or len(changed)
+    named = "、".join(changed[:8]) + (f" 等 {count} 个" if count > len(changed[:8]) else "")
+    gone = "、".join((written.get("deleted") or [])[:8])
+    skipped = "；".join(f"{item['path']}（{_WRITE_BACK_SKIP_TEXT.get(item['reason'], item['reason'])}）"
+                       for item in (written.get("skipped") or [])[:8])
+    parts = []
+    if written.get("error"):
+        parts.append(f"这条命令在沙盒里改了源码（{named or gone}），但没能收回成新版本（{written['error']}）："
+                     "改动只在沙盒里，下一条命令开跑前会按工程源码重写回去。要留住就用 file_write 写回。")
+    elif written.get("revision"):
+        parts.append(f"这条命令在沙盒里生成 / 改动的源码已经收回成新版本 {written['revision']}"
+                     + (f"：{named}" if named else "") + (f"；删掉的：{gone}" if gone else "") + "。")
+    if skipped:
+        parts.append(f"没收进源码的：{skipped}——源码库只收 512KB 以内的文本，这些下一条命令开跑时不在沙盒里，"
+                     "要用就在同一条命令里重新生成，或换成文本形式。")
+    if written.get("truncated"):
+        parts.append("工程目录里文件太多，只看了前 5000 个。")
+    return "".join(parts)
+
+
 def model_page_path(url) -> str | None:
     """给模型的页面地址只留路径，不留主机。
 
@@ -687,6 +732,9 @@ def operation_snapshot(snapshot):
         result["uploadsSkipped"] = [str(item)[:240] for item in skipped[:8] if isinstance(item, str)]
     if saved.get("officeScan") in {"empty", "failed"}:
         result["officeScan"] = saved["officeScan"]
+    written = saved.get("sourceWriteBack")
+    if isinstance(written, dict) and written:
+        result["sourceWriteBack"] = _bounded_write_back(written)
     if operation.kind == "runtime.exec" and operation.status in _TERMINAL and not saved.get("keepSandbox"):
         # 网页工程每条命令一台新沙盒，跑完就回收（worker：「Vite 工程仍拆掉」）。见 _command_pointer。
         result["sandboxReclaimed"] = True
@@ -1179,6 +1227,9 @@ def _command_pointer(result, excerpt="", full_command=None):
         pairs = "；".join(f"{new}（旧的 {old} 还在）" for new, old in list(siblings.items())[:4])
         hint = (f"这次写成了新文件：{pairs}。用户那边现在是两份。要改的是同一份，就写回原来的文件名"
                 "（去掉脚本里「已存在就换个名字」那段）；下面的「和上一版比」是跟旧的那份比的。" + hint)
+    written = result.get("sourceWriteBack")
+    if isinstance(written, dict) and written:
+        hint = _write_back_sentence(written) + hint
     drifted = result.get("sandboxOnlyEdits")
     if isinstance(drifted, list) and drifted:
         # ⚠ 2026-09-29 第 107 轮 sr-20260929070420-W29Y3BK1EP：沙盒里改的源码下一条命令就被还原（worker _note_sandbox_only_edits 头注）。

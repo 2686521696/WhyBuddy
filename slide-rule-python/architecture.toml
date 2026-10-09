@@ -141,6 +141,8 @@ modules = [
   "services.archetype_legal",
   "services.project_rollout",
   "services.project_preview_config",
+  # 2026-10-09：叶子，只有一段脚本字符串和请求拼装。
+  "services.project_source_scan",
   # 预览 Host 注入是纯字符串/命令拼装：不碰 E2B、不读存储。worker 启动
   # Vite 时引用；Agent 源码接不接 allowedHosts 都走这一份。
   "services.vite_preview_hosts",
@@ -875,6 +877,8 @@ modules = [
   "services.project_workspace_artifacts",
   "services.e2b_workspace_provider",
   "services.project_browser_provider",
+  # 2026-10-09：命令跑完扫沙盒工程目录的脚本（字符串，沙盒里跑）——provider 用它把命令改的源码交回工人。
+  "services.project_source_scan",
 ]
 
 [component.runtime]

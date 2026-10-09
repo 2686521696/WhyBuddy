@@ -29,7 +29,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from services.session_uploads import WORKSPACE_ROOT, sanitize_filename
-from services.project_manifest import build_manifest
+from services.project_manifest import MAX_FILE_BYTES, MAX_PROJECT_BYTES, build_manifest
+from services.project_source_scan import SCAN_SCRIPT, scan_request
 from services.project_tool_contracts import SHELL_COMMAND_MAX_CHARS
 from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import (
@@ -765,6 +766,32 @@ class E2BWorkspaceProvider:
                 continue
             out.append({"path": path, "data": data})
         return out
+
+    def collect_source_changes(self, handle, synced_hashes, *, skip_paths=()):
+        """命令跑完：沙盒工程目录里跟写进去时不一样的源码文件（services.project_source_scan 头注）。
+
+        失败抛 provider 错，由工人 fail-open——收不回来就照旧点名「只改在沙盒里」，不假装收了。
+        """
+        try:
+            payload = json.dumps(scan_request(PROJECT_ROOT, synced_hashes, max_file=MAX_FILE_BYTES,
+                max_total=MAX_PROJECT_BYTES, skip_paths=skip_paths), ensure_ascii=False)
+            process = self._sandbox(handle).commands.run(_python(SCAN_SCRIPT), cwd="/home/user",
+                background=True, stdin=True, timeout=180)
+            for offset in range(0, len(payload), 32 * 1024):
+                process.send_stdin(payload[offset:offset + 32 * 1024])
+            process.close_stdin()
+            reply = process.wait()
+            # JSON 转义最坏把中文翻到 6 倍；上限给到总量的 6 倍再加点名单的余量。
+            if (reply.exit_code != 0 or not isinstance(reply.stdout, str)
+                    or len(reply.stdout.encode()) > MAX_PROJECT_BYTES * 6 + 512 * 1024):
+                raise ValueError("invalid_source_scan_reply")
+            value = json.loads(reply.stdout)
+            if (not isinstance(value, dict) or not isinstance(value.get("changed"), dict)
+                    or not isinstance(value.get("deleted"), list) or not isinstance(value.get("skipped"), list)):
+                raise ValueError("invalid_source_scan_reply")
+            return value
+        except Exception:
+            raise WorkspaceProviderError("project_source_scan_failed") from None
 
     def read_application_data(self, handle):
         value = self._artifact_io(handle, "read-data")
