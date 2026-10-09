@@ -266,9 +266,12 @@ def test_parent_cancel_reclaims_browser_then_runtime_and_preserves_source(live, 
     eventually(lambda: live.parent().status == "cancelled")
     assert snapshot.effectiveStatus == "cancelled" and snapshot.deliveryEligible is False
     assert child in browser.cleaned and revoked == ["grant-fixture"]
-    assert not live.provider.handles and live.parent().runtime.status == "stopped"
+    # ⚠ 2026-10-09 一个工程一台电脑：取消停掉的是这台运行自己的进程，电脑留给下一件事（worker._stopped_in_place）。
+    #   原来这里钉着「电脑拆掉、租约上的电脑号清空」。现在钉：服务器进程停了、电脑和租约上的电脑号都还在。
+    assert live.parent().runtime.status == "stopped"
+    assert live.provider.handles and live.parent().result.get("keepSandbox") is True
     assert live.store.read_files(live.project["projectId"], owner_id="alice") == live.files
-    eventually(lambda: not live.store.get_lease(live.project["projectId"], owner_id="alice").sandboxId)
+    eventually(lambda: live.store.get_lease(live.project["projectId"], owner_id="alice").sandboxId in live.provider.handles)
 
 
 @pytest.mark.parametrize("revoked", ["account", "plan"])

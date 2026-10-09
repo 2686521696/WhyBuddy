@@ -690,6 +690,11 @@ def _snapshot_office_facts(facts: dict) -> dict:
     return kept
 
 
+#: 一件事开到了新电脑上时说给模型听的那句（命令回执、开发服务器回执共用）。
+FRESH_COMPUTER_NOTE = ("这个工程之前那台电脑已经回收了（闲置太久或连不上）。工程源码都在，"
+                       "但之前装的依赖、没写回源码的文件都不在了——要用就重装。")
+
+
 def operation_snapshot(snapshot):
     operation = snapshot["operation"]
     result = {"operationId": operation.operationId, "kind": operation.kind,
@@ -756,9 +761,12 @@ def operation_snapshot(snapshot):
     written = saved.get("sourceWriteBack")
     if isinstance(written, dict) and written:
         result["sourceWriteBack"] = _bounded_write_back(written)
-    if operation.kind == "runtime.exec" and saved.get("freshComputer") is True:
-        # 一个工程一台电脑；这条命令却开在一台新电脑上（上一台闲置被回收、或连不上）。见 _command_pointer。
+    if saved.get("freshComputer") is True and operation.kind in {"runtime.exec", "runtime.start"}:
+        # 一个工程一台电脑；这件事却开在一台新电脑上（上一台闲置被回收、或连不上）。命令的回执在 _command_pointer
+        # 里挂这句；开发服务器（deploy_expose_port / browser_*）的回执没有 hint 那一层，直接带上这句（§4 同一句话）。
         result["freshComputer"] = True
+        if operation.kind == "runtime.start":
+            result["freshComputerNote"] = FRESH_COMPUTER_NOTE
     if operation.kind == "runtime.patch":
         # ⚠ 2026-09-24 真机 sr-20260924094114：回执同时给 revision 和
         #   parentRevision。模型把后者读成「源码版本又跳回了」，写一次核一次、
@@ -1263,11 +1271,7 @@ def _command_pointer(result, excerpt="", full_command=None):
         #   五分钟后 `import playwright` → ModuleNotFoundError——那时网页工程每条命令一台新沙盒、跑完回收，回执只在
         #   「只装依赖」的命令上提醒一句。2026-10-09 起一个工程一台电脑，装的东西一直在；只有电脑真被回收了
         #   （闲置太久、连不上）才换新的，那一次照实说，不管这条命令是不是在装东西——模型下一步要用的东西可能就没了。
-        hint = (
-            "这条命令开在一台新电脑上：这个工程之前那台已经回收了（闲置太久或连不上）。工程源码都在，"
-            "但之前装的依赖、没写回源码的文件都不在了——要用就重装。"
-            + hint
-        )
+        hint = "这条命令开在一台新电脑上：" + FRESH_COMPUTER_NOTE + hint
     hidden = _hidden_command_failure(excerpt, result.get("exitCode"), result.get("command"))
     # 只在看的命令本来就不产出文件：第 24 轮 `python3 -c "import docx; print('python-docx ok')"`
     # 退出码 0，回执照样挂「没有合格的办公文件」。

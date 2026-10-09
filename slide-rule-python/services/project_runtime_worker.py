@@ -922,7 +922,7 @@ class _RuntimeTask:
             self.heartbeat.handle = self.handle
             if skip_install:
                 self.result["keepSandbox"] = True
-            if not reused and self.original.kind == "runtime.exec" and (prior_computer or self._had_a_computer_before()):
+            if not reused and (prior_computer or self._had_a_computer_before()):
                 # 之前有过电脑、这次却是新开的（闲置太久被回收、或连不上）：照实告诉模型，别让它以为装过的还在。
                 self.result["freshComputer"] = True
             restore_application_data(self)
@@ -1282,6 +1282,29 @@ class _RuntimeTask:
             downloads[path] = office_artifact_download_url(self.original.projectId, artifact_id)
         self.result["officeDownloads"] = downloads
 
+    def _stopped_in_place(self) -> bool:
+        """取消时只停这件事自己的进程（服务器、安装、命令；预览隧道由 revoke 停），确认都不在了才算停干净。
+
+        说不清（有派发到一半的子任务、provider 不会停进程、停了还在跑、任何异常）一律 False：照旧拆电脑（fail-closed）。
+        """
+        stop = getattr(self.provider, "stop", None)
+        if self.handle is None or not callable(stop):
+            return False
+        if any(isinstance(value, dict) and value.get("dispatching") for value in self.result.values()):
+            return False
+        try:
+            for key, pid in dict(self.heartbeat.lease.processRefs).items():
+                if key in {"operationId", "preview"} or key.endswith("Console") or not pid:
+                    continue
+                if self.provider.is_process_running(self.handle, str(pid)):
+                    stop(self.handle, str(pid))
+                if self.provider.is_process_running(self.handle, str(pid)):
+                    return False
+        except Exception as exc:
+            logger.warning("project stop in place failed operation=%s exception=%s", self.operation_id, type(exc).__name__)
+            return False
+        return True
+
     def _had_a_computer_before(self) -> bool:
         """这个工程在这条之前有没有开过电脑（更早的命令或开发服务器派发出去过）。说不清就当没有：宁可少说一句。"""
         cursor = ""
@@ -1628,15 +1651,21 @@ class _RuntimeTask:
                 self.supervisor.preview_runtime.revoke(self)
             checkpoint_application_data(self, final=True)
             # 一个工程一台电脑：命令跑完（成功或失败）都留下它，下一条命令接着用；电脑本身出了问题才拆。
-            # 开发服务器停了、命令被取消，照旧拆——取消要停掉一切远程活（cancel 系列判据），这条安全设计不动；
-            # 下一件事开到新电脑上时，回执照实说（freshComputer）。
+            # ⚠ 2026-10-09 线上 React 记账 sr-20261009053036-7SEDNJN15H：第一版只留命令的电脑，开发服务器一停就拆。
+            #   模型 browser_restart（= 取消再起）之后，新电脑上没有 node_modules，`vite: not found`；回执也没说换了电脑。
+            #   取消要停掉的是「这件事的远程活」，不是整台电脑：能把这件事自己的进程逐个停干净、确认都不在了，就留下电脑
+            #   （_stopped_in_place）；停不干净、说不清，照旧拆。闲置到期仍拆（回收资源），下一件事回执照实说。
+            stopped_in_place = status == "cancelled" and code == "user_cancelled" and self._stopped_in_place()
+            if stopped_in_place:
+                self.result["keepSandbox"] = True
             keep = (
                 bool(self.result.get("keepSandbox"))
                 and self.handle is not None
-                and self.original.kind == "runtime.exec"
-                and status in {"completed", "failed"}
+                and (status in {"completed", "failed"} and self.original.kind == "runtime.exec" or stopped_in_place)
                 and not str(code or "").startswith(_DISCARD_COMPUTER_PREFIXES)
             )
+            if not keep:
+                self.result.pop("keepSandbox", None)           # 租约照这个决定清不清电脑号（release_lease），两处得一致
             if self.handle is not None and not keep:
                 self.provider.destroy(self.handle)
             if self.provider is None:

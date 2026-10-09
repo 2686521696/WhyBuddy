@@ -83,3 +83,71 @@ def test_both_shell_descriptions_say_one_computer_and_no_implicit_installs():
             text = fn["description"]
             assert "one computer" in text and "installs nothing for you" in text, fn["name"]
             assert "fresh sandbox" not in text, fn["name"]
+
+
+# ── 开发服务器重启：停的是服务器，不是电脑 ──────────────────────────────────────────────────────────
+# ⚠ 2026-10-09 线上 React 记账 sr-20261009053036-7SEDNJN15H：第一版只留命令的电脑。模型 browser_restart
+#   （= 取消再起）之后新电脑上没有 node_modules，`sh: 1: vite: not found`，回执也没说换了电脑。
+#   走真工具 browser_restart（ProjectTools → supervisor.cancel + submit），不自己拼「取消」。
+
+import itertools  # noqa: E402
+
+import pytest  # noqa: E402
+
+from services.project_tools import FRESH_COMPUTER_NOTE  # noqa: E402
+from services.workspace_provider import ProcessResult  # noqa: E402
+from test_custom_dev_server_through_the_tools import START, DjangoProvider, _started  # noqa: E402
+from test_custom_dev_server_through_the_tools import django as _django_world  # noqa: E402,F401
+
+
+class StoppableProvider(DjangoProvider):
+    """跟 E2B 一样会停单个进程（stop 停整棵进程树）；stop_works=False 时停不掉——那就得拆电脑。"""
+
+    stop_works = True
+
+    def __init__(self):
+        super().__init__()
+        self.pids, self.stopped = itertools.count(100), set()
+
+    def start_process(self, handle, command, **kwargs):
+        self.commands.append(command)
+        return ProcessResult(str(next(self.pids)))
+
+    def stop(self, handle, process_id):
+        if self.stop_works:
+            self.stopped.add(process_id)
+
+    def is_process_running(self, handle, pid):
+        return pid not in self.stopped and super().is_process_running(handle, pid)
+
+
+@pytest.fixture
+def restartable(monkeypatch):
+    provider = StoppableProvider()
+    monkeypatch.setattr("test_custom_dev_server_through_the_tools.DjangoProvider", lambda: provider)
+    return provider
+
+
+def _restart(world):
+    restarted = world.tools.execute("browser_restart", {}, world.state)
+    assert restarted["ok"], restarted
+    op = lambda: world.store.get_operation(restarted["operationId"], owner_id="alice")  # noqa: E731
+    eventually(lambda: op().runtime and op().runtime.status == "ready")
+    return op(), operation_snapshot(world.store.snapshot_operation(restarted["operationId"], owner_id="alice"))
+
+
+def test_browser_restart_keeps_the_computer_and_says_nothing(restartable, _django_world):
+    first = _started(_django_world)
+    again, snap = _restart(_django_world)
+    assert first().status == "cancelled" and again.operationId != first().operationId
+    assert restartable.created == 1 and len(restartable.handles) == 1            # 同一台：装过的都在
+    assert "freshComputer" not in snap and "freshComputerNote" not in snap
+
+
+def test_a_server_that_will_not_stop_costs_the_computer_and_the_receipt_says_so(restartable, _django_world):
+    restartable.stop_works = False                                               # 停不干净：说不清，就拆
+    _started(_django_world)
+    _, snap = _restart(_django_world)
+    assert restartable.created == 2
+    assert snap.get("freshComputer") is True and snap.get("freshComputerNote") == FRESH_COMPUTER_NOTE
+    assert START in restartable.commands[-1]                                     # 照上次的命令再起
