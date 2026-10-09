@@ -194,9 +194,12 @@ def test_lease_failure_after_remote_dispatch_is_rethrown_without_additional_prov
     assert managed.world.store.get_operation(managed.task.operation_id, owner_id="u1").result["preview"]["phase"] == "dispatching"
 
 
-def test_provider_timeout_is_blocked_and_never_replayed_implicitly(managed):
+def test_provider_timeout_is_blocked_and_never_replayed_implicitly(managed, caplog):
     managed.provider.failure = WorkspaceProviderError("transport_lost")
-    managed.manager.ensure(managed.task)
+    with caplog.at_level("WARNING", logger="services.project_preview_runtime"):
+        managed.manager.ensure(managed.task)
+    # ⚠ 2026-10-09 线上那次失败一个字的日志都没有：现在失败的码要留下来
+    assert any("dispatch failed" in r.getMessage() and "transport_lost" in r.getMessage() for r in caplog.records)
     managed.provider.failure = None
     managed.manager.ensure(managed.task)
     assert [call[0] for call in managed.provider.calls] == ["start"]

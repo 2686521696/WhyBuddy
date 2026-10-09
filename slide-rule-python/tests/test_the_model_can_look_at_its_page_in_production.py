@@ -49,11 +49,14 @@ def _ready_runtime(setup, project, preview_url=None):
     return op
 
 
-def _as_if_ready(monkeypatch, op_id, runtime_id="rt-reading", preview_url=None):
+def _as_if_ready(monkeypatch, op_id, runtime_id="rt-reading", preview_url=None, preview=None):
     """工人记下的运行状态照真机 browser_view 回执：status ready、health revision_verified。"""
     runtime = SimpleNamespace(status="ready", runtimeId=runtime_id, revision=None, previewUrl=preview_url)
-    latest = SimpleNamespace(operationId=op_id, status="running", runtime=runtime)
-    monkeypatch.setattr(pt.ProjectTools, "_latest_operation", lambda self, project, kinds=None: latest)
+    latest = SimpleNamespace(operationId=op_id, status="running", runtime=runtime,
+                             result={"preview": preview} if preview else {})
+    real = pt.ProjectTools._latest_operation
+    monkeypatch.setattr(pt.ProjectTools, "_latest_operation",
+        lambda self, project, kinds=None: latest if kinds and "runtime.start" in kinds else real(self, project, kinds=kinds))
 
 
 def test_precondition_production_without_a_driver_sees_nothing(setup, monkeypatch):
@@ -367,3 +370,39 @@ def test_browser_view_reaches_the_remote_browser_with_this_runs_identity(setup, 
     assert result["snapshot"][0]["name"] == "添加书籍"
     assert ("issue", op.operationId, "alice", ORIGIN) in access.calls
     assert "preview.miantuan.test" not in json.dumps(result, ensure_ascii=False)   # 预览主机不进对话
+
+
+
+# ── 预览隧道作废了：告诉模型去重启，而不是「环境问题、别重启」 ─────────────────────────────────────
+
+BLOCKED = {"phase": "blocked", "errorCode": "preview_dispatch_uncertain"}    # 线上 pop-72ed5972… 记下的原样
+
+
+def test_a_blocked_tunnel_tells_the_model_to_restart_not_to_wait(setup, monkeypatch):
+    """⚠ 2026-10-09 线上 Django 读书打卡：隧道建立出错、按设计不自动重来；提示却说「环境问题，别重启服务」，
+    模型收尾跟用户说「右侧预览可继续查看」。"""
+    monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
+    project = create(setup)
+    op = _ready_runtime(setup, project)
+    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview=BLOCKED)
+    monkeypatch.setattr(pt, "local_playwright_available", lambda: False)
+    access = _Access(tunnel=False)                                               # 线上那一刻：隧道授权已收回
+    monkeypatch.setattr(setup.supervisor, "browser_interactor", _interactor(access, _Provider()), raising=False)
+    result = _dispatch(setup, "browser_view", {})
+    assert result["browserError"] == "project_browser_preview_tunnel_blocked", result
+    fed = rc.bound_tool_result({k: v for k, v in result.items() if k not in {"type", "seq", "controlRunId"}}, "browser_view")
+    assert "browser_restart" in fed and "别跟用户说「在右侧预览里看」" in fed and "别为此重启" not in fed, fed[:900]
+    console = _dispatch(setup, "browser_console_view", {})
+    assert console["browserConsoleError"] == "project_browser_preview_tunnel_blocked"
+    assert "browser_restart" in console["browserConsoleHint"]                    # 控制台那一半也说得出为什么
+
+
+def test_a_live_tunnel_that_is_merely_unreachable_is_still_called_unreachable(setup, monkeypatch):
+    """反向：隧道没作废、只是这会儿连不上，照旧是 preview_unreachable——不许把所有失败都说成「去重启」。"""
+    monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
+    project = create(setup)
+    op = _ready_runtime(setup, project)
+    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview={"phase": "active"})
+    monkeypatch.setattr(pt, "local_playwright_available", lambda: False)
+    monkeypatch.setattr(setup.supervisor, "browser_interactor", _interactor(_Access(tunnel=False), _Provider()), raising=False)
+    assert _dispatch(setup, "browser_view", {})["browserError"] == "project_browser_preview_unreachable"

@@ -277,6 +277,12 @@ def present_project_tool_result(body: Any) -> Any:
 BROWSER_ERROR_TEXT = {
     "project_browser_driver_unavailable": "这台主机上的页面浏览器起不来（浏览器组件没装好）。这是运行环境的问题，不是应用代码；"
         "别反复调 browser_*，也别为此改代码或重启服务。开发服务器是否在跑看 runtime 状态，交付以 project_verify 的独立验收为准。",
+    # ⚠ 2026-10-09 线上 Django 读书打卡（sr-20261009025847-AW1KHE4BSY）：这台服务器的预览隧道建立时出错，平台按设计
+    #   不自动重来（project_preview_runtime.ensure）。浏览器工具只回 preview_unreachable，提示还写着「别重启服务」——
+    #   而这时重启恰恰是唯一的恢复办法；模型收尾跟用户说「右侧预览可继续查看」，右侧其实打不开。
+    "project_browser_preview_tunnel_blocked": "这台开发服务器的预览通道没接上（建立时出了错，平台不会自己重试）："
+        "右侧预览和这里都打不开，服务器本身可能是好的。用 browser_restart 重启开发服务器会重新建立预览通道；"
+        "重启成功之前，别跟用户说「在右侧预览里看」。",
     "project_browser_preview_unreachable": "打不开预览地址（网络或预览网关不通）。开发服务器可能仍在正常运行；这是环境问题，"
         "不是代码错误，别为此重启服务或改代码。",
     "project_browser_preview_forbidden": "预览网关拒绝了这台主机的访问（401/403），访问票不被认。这是环境问题，不是应用自己的登录；"
@@ -2342,7 +2348,9 @@ class ProjectTools:
             else:
                 raise ValueError("project_browser_driver_unavailable")
         except ValueError as exc:
-            return {"browserConsoleError": str(exc)[:240]}
+            code = str(exc)[:240]
+            return {"browserConsoleError": code, **({"browserConsoleHint": BROWSER_ERROR_TEXT[code]}
+                                                    if code in BROWSER_ERROR_TEXT else {})}
         if not isinstance(observed, dict) or "consoleCounts" not in observed:
             return {"browserConsoleError": "project_browser_console_unavailable"}
         return {key: observed[key] for key in ("browserConsole", "failedRequests", "consoleCounts")}
@@ -2370,9 +2378,12 @@ class ProjectTools:
             if not remote:
                 return None
             url = "/"
+        saved = getattr(latest, "result", None)
+        preview = saved.get("preview") if isinstance(saved, dict) else None
+        blocked = preview.get("errorCode") if isinstance(preview, dict) and preview.get("phase") == "blocked" else None
         return {"url": url, "revision": getattr(runtime, "revision", None),
                 "operationId": latest.operationId, "runtimeId": getattr(runtime, "runtimeId", None),
-                "ownerId": self.owner_id}
+                "ownerId": self.owner_id, "previewBlocked": blocked}
 
     def _browser_interact(self, project, name, parsed):
         if getattr(parsed, "sudo", False):

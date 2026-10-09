@@ -33,6 +33,9 @@ class RemoteBrowserInteractor:
         operation_id, runtime_id, owner_id = (page.get("operationId"), page.get("runtimeId"), page.get("ownerId"))
         if not all(isinstance(value, str) and value for value in (operation_id, runtime_id, owner_id)):
             raise ValueError("project_browser_preview_not_ready")
+        if page.get("previewBlocked"):
+            # 这次运行的预览隧道已经作废（建立时出错、平台按设计不自动重来）：不是网络抖动，等也等不来，要重启服务器。
+            raise ValueError("project_browser_preview_tunnel_blocked")
         try:
             origin = self.origin_for(runtime_id)
         except ValueError:

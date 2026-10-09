@@ -6,6 +6,8 @@ process dispatch is blocked until an explicit runtime restart; it is not replaye
 """
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 import time
 from typing import Callable
@@ -13,6 +15,8 @@ from typing import Callable
 from services.project_preview_access import ProjectPreviewAccess
 from services.project_preview_config import origin_for_runtime
 from services.workspace_provider import WorkspaceProviderError
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectPreviewRuntime:
@@ -89,10 +93,18 @@ class ProjectPreviewRuntime:
                 expires_at=issued.expires_at)
             if not process.process_id:
                 raise WorkspaceProviderError("preview_process_identity_missing")
-        except WorkspaceProviderError:
+        except WorkspaceProviderError as exc:
+            # ⚠ 2026-10-09 线上 Django 读书打卡（sr-20261009025847-AW1KHE4BSY）：这一步失败了，日志里一个字都没有，
+            #   事后只剩一个 blocked。真 E2B 上照原样重放五次都成功——是哪种失败，只能靠这一行留下来。
+            cause = exc.__cause__
+            logger.warning("project preview tunnel dispatch failed operation=%s code=%s cause=%s:%s",
+                           task.operation_id, exc, type(cause).__name__ if cause else None,
+                           getattr(cause, "__cause__", None).__class__.__name__ if cause is not None else None)
             self.access.revoke_grant(issued.scope.grant_id, owner_id=task.owner_id)
             task.check()
             # A request may have reached envd even if no PID was returned.
+            # 不在这里自动重来（test_provider_timeout_is_blocked_and_never_replayed_implicitly）：恢复的正路是明确重启
+            # 开发服务器——模型那一侧由浏览器工具告诉它（project_browser_preview_tunnel_blocked）。
             task.result["preview"] = {"phase": "blocked", "errorCode": "preview_dispatch_uncertain"}
             task.save("ready")
             return
