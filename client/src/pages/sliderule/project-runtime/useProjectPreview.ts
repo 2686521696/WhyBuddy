@@ -369,8 +369,8 @@ export function useProjectPreview({
 
   useEffect(() => {
     if (!state.ticket) return;
-    // This is the server's fixed maximum browser-access deadline, established
-    // when issuing the ticket. The iframe load event cannot prove redemption;
+    // The server's browser-access deadline: fixed when issuing the ticket, moved
+    // later only by keepalive while someone is watching (extendAccess). The iframe load event cannot prove redemption;
     // the relay owns that check. Ticket expiry only prevents a new exchange.
     const timer = setTimeout(
       () =>
@@ -387,6 +387,25 @@ export function useProjectPreview({
     return () => clearTimeout(timer);
   }, [state.ticket]);
 
+  /**
+   * 有人在看，服务端把浏览器授权往后挪了（keepalive 回来的新到期时刻）：只挪这张票的到期，
+   * 地址不变，iframe 不重载。只认同一条运行的、更晚的时刻。
+   */
+  const extendAccess = useCallback(
+    (operationId: string, accessExpiresAt: string) => {
+      const until = Date.parse(accessExpiresAt);
+      if (!Number.isFinite(until)) return;
+      setState(prev =>
+        prev.ticket &&
+        prev.ticket.operationId === operationId &&
+        until > Date.parse(prev.ticket.accessExpiresAt)
+          ? { ...prev, ticket: { ...prev.ticket, accessExpiresAt } }
+          : prev
+      );
+    },
+    []
+  );
+
   // Clear the old iframe during render, before the new scope's effect runs.
   const current = state.scope === scope;
   return {
@@ -402,5 +421,6 @@ export function useProjectPreview({
     open,
     openExternal,
     wake,
+    extendAccess,
   };
 }

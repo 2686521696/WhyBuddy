@@ -23,6 +23,8 @@ const WIRE_EXPIRY: unique symbol = Symbol("preview_wire_expiry");
 type Scope = PreviewBinding & { ownerId: string; sessionId: string; [WIRE_EXPIRY]: number };
 const HTTPS_COOKIE = "__Host-WhyBuddyPreview";
 const LOCAL_COOKIE = "WhyBuddyPreview";
+/** 只是令牌袋子的寿命；授权到期由 Python 每次请求判（见兑票处注释）。 */
+export const PREVIEW_COOKIE_MAX_AGE_SECONDS = 8 * 3600;
 const safeToken = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
 
@@ -154,10 +156,15 @@ export function createPreviewService(config: PreviewServiceConfig) {
         const audience = (binding as Scope & { audience: string }).audience;
         const result = await call("/authorize", { role: "binding", binding: scopeToWire(binding), audience });
         if (result.ok !== true) return false;
-        const checked = scopeToWire(scopeFromWire(result.binding, audience));
+        const fresh = scopeFromWire(result.binding, audience);
+        const checked = scopeToWire(fresh);
         const expected = scopeToWire(binding);
-        return Object.keys(checked).length === Object.keys(expected).length &&
-          Object.entries(checked).every(([key, value]) => value === (expected as Record<string, unknown>)[key]);
+        // Identity must match exactly; the deadline may have moved later (someone is still watching,
+        // Python extend_browser_access). Never earlier than what the relay holds.
+        const same = Object.keys(checked).length === Object.keys(expected).length &&
+          Object.entries(checked).every(([key, value]) =>
+            key === "expiresAt" || value === (expected as Record<string, unknown>)[key]);
+        return same && fresh.expiresAt >= binding.expiresAt ? fresh.expiresAt : false;
       } catch { return false; }
     },
     async beforeRequest(request, response) {
@@ -202,8 +209,11 @@ export function createPreviewService(config: PreviewServiceConfig) {
         const result = await call("/redeem", { ticket: values[0], audience });
         const scope = scopeFromWire(result.binding, audience);
         if (!safeToken(result.token)) throw new Error("preview_grant_invalid");
-        const maxAge = Math.min(900, Math.floor((scope.expiresAt - Date.now()) / 1000));
-        if (maxAge < 1) throw new Error("preview_grant_expired");
+        if (scope.expiresAt - Date.now() < 1000) throw new Error("preview_grant_expired");
+        // ⚠ 2026-10-10：cookie 原来跟授权同寿（≤5 分钟），授权被「有人在看」续上之后，浏览器先把 cookie
+        //   扔了——照样 403、照样整页重开。cookie 只是装令牌的袋子，到期由 Python 每次请求判；
+        //   这里给它一个跟运行寿命上限同量级的固定值。
+        const maxAge = PREVIEW_COOKIE_MAX_AGE_SECONDS;
         const attributes = config.publicProtocol === "https:"
           ? "; Secure; SameSite=None; Partitioned" : "; SameSite=Lax";
         response.writeHead(303, { Location: "/", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",

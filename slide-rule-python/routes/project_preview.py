@@ -30,7 +30,7 @@ from services.project_preview_config import (
     preview_configuration_enabled,
     published_preview_url,
 )
-from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
+from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
 
 
 router = APIRouter(tags=["Project preview"])
@@ -214,6 +214,34 @@ def issue_project_preview_ticket(operation_id: str, request: Request, response: 
             "projectId": operation.runtime.projectId, "operationId": operation.operationId,
             "runtimeId": operation.runtime.runtimeId, "revision": operation.runtime.revision,
             "ticketExpiresAt": _iso(ticket_expires), "accessExpiresAt": _iso(access_expires)}
+
+
+@router.post("/project-operations/{operation_id}/preview/keepalive")
+def keep_project_preview_alive(operation_id: str, request: Request, response: Response, viewer: CurrentUser):
+    """预览面看得见时前端每分钟打一声：记一次活动（同 /touch），并把这条运行上的浏览器授权往后挪。
+
+    ⚠ 2026-10-10：只打 /touch 时，运行的「没人用」钟续上了，浏览器授权却还是签出时那 5 分钟死钟——
+      人一直在点页面，5 分钟一到网关掐长连接、前端清票重开，iframe 整页重载。两件事是同一个信号，
+      所以在同一个口里做（ProjectPreviewAccess.extend_browser_access 头注）。
+    续授权是增强：失败照旧返回 200 + accessExpiresAt=null，前端按原来的到期时刻处理（§7 fail-open）。
+    """
+    response.headers["Cache-Control"] = "no-store"
+    owner_id = str(viewer.id)
+    access = getattr(request.app.state, "project_preview_access", None)
+    with _errors():
+        # 没配预览网关也得记活动：原来 /touch 不依赖它，换成这个口不许让「没人用」钟失灵。
+        store = access.store if access is not None else get_project_store()
+        operation = store.get_operation(operation_id, owner_id=owner_id)
+        _gate(viewer)
+        store.touch_operation(operation_id, owner_id=owner_id)
+    extended = None
+    try:
+        if access is not None and preview_configuration_enabled() and operation.runtime is not None:
+            extended = access.extend_browser_access(operation_id, owner_id=owner_id,
+                                                    audience=origin_for_project(operation.runtime.projectId))
+    except (PermissionError, ProjectConflict, ProjectStoreUnavailable, ValueError):
+        extended = None
+    return {"operationId": operation_id, "accessExpiresAt": _iso(extended) if extended else None}
 
 
 @router.post("/project-operations/{operation_id}/preview/revoke")

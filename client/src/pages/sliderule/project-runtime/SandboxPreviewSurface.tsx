@@ -1134,6 +1134,7 @@ export function SandboxPreviewSurface({
     view: tab,
     hasTicket: Boolean(preview.entryUrl),
     operationId: preview.snapshot?.operationId,
+    onAccessExtended: preview.extendAccess,
   });
   const showPreviewPick = tab === "preview" && Boolean(preview.entryUrl);
   const previewPickButton = showPreviewPick ? (

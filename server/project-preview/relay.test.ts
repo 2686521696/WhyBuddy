@@ -101,6 +101,8 @@ async function fixture(limits: Partial<PreviewRelayLimits> = {}) {
   const tokens = new Map<string, TunnelGrant>([["tunnel", tunnel]]);
   const browsers = new Map<string, BrowserGrant>([["browser", browser]]);
   const invalid = new Set<string>(); let authorityDown = false;
+  // grantId → the server's current deadline after someone kept watching (Python extend_browser_access)
+  const deadlines = new Map<string, number>();
   const relay = createPreviewRelay({
     authorizeTunnel: async req => tokens.get(String(req.headers.authorization).replace(/^Bearer /, "")) ?? null,
     authorizeBrowser: async req => {
@@ -109,7 +111,8 @@ async function fixture(limits: Partial<PreviewRelayLimits> = {}) {
     },
     validateBinding: async grant => {
       if (authorityDown) throw new Error("authority_unavailable");
-      return !invalid.has(grant.grantId);
+      if (invalid.has(grant.grantId)) return false;
+      return deadlines.get(grant.grantId) ?? true;
     },
     beforeRequest: async (req, res) => {
       if (req.url !== "/_whybuddy/health") return false;
@@ -126,7 +129,7 @@ async function fixture(limits: Partial<PreviewRelayLimits> = {}) {
     cleanup.push(() => instance.close()); return instance;
   }
   const tunnelAgent = await agent();
-  return { app, appWs, observed, binding, tunnel, browser, tokens, browsers, invalid, relay,
+  return { app, appWs, observed, binding, tunnel, browser, tokens, browsers, invalid, deadlines, relay,
     origin, port, agent, tunnelAgent, streamEnded: () => streamEnded,
     authorityDown: () => { authorityDown = true; }, cookie: { cookie: "__Host-WhyBuddyPreview=browser" } };
 }
@@ -281,6 +284,35 @@ describe("private preview outbound tunnel", () => {
     expect(JSON.parse(response.body.toString()).authorization).toBeUndefined();
     const client = browserWs(f.origin); await once(client.ws, "open"); await once(client.ws, "close");
     expect((await http(f.origin, "/headers", f.cookie)).status).toBe(403);
+  });
+
+  // ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：网关到授权时刻就掐 HMR 长连接，
+  //   Vite 客户端重连上后 location.reload()。授权现在会因「有人在看」被 Python 往后挪，长连接得跟着挪。
+  //   变异：trackBrowser 改回到点直接 close → 第一条红；validate 起手照旧检查到期（不只查形状）→ 第一条红
+//   （到期计时器在忙的网关上总是晚到，第一条里故意把事件循环堵 150ms）；不复查 Python 给的时刻是否已过 → 第二条红。
+  it("keeps a watched browser's HMR socket open past its first deadline once the grant was extended", async () => {
+    const f = await fixture({ validateIntervalMs: 5_000 });   // only the deadline path can save it
+    const first = Date.now() + 300;
+    f.browsers.set("browser", { ...f.browser, expiresAt: first });
+    const client = browserWs(f.origin); await once(client.ws, "open");
+    let closedAt = 0; client.ws.on("close", () => { closedAt = Date.now(); });
+    f.deadlines.set(f.browser.grantId, first + 60_000);
+    // A busy gateway fires the deadline timer late: the held grant is already past due when it runs.
+    setTimeout(() => { const end = Date.now() + 150; while (Date.now() < end) { /* block the loop */ } }, 250);
+    await new Promise(resolve => setTimeout(resolve, 700));
+    expect(closedAt).toBe(0);
+    client.ws.send("still-here");
+    await until(() => client.messages.some(message => message.data.toString() === "still-here"));
+  });
+
+  it("closes a watched socket once its extended deadline passes without another extension", async () => {
+    const f = await fixture();
+    const start = Date.now();
+    f.browsers.set("browser", { ...f.browser, expiresAt: start + 250 });
+    const client = browserWs(f.origin); await once(client.ws, "open");
+    f.deadlines.set(f.browser.grantId, start + 700);
+    await once(client.ws, "close");
+    expect(Date.now() - start).toBeGreaterThanOrEqual(650);
   });
 
   it("fences old generations and stale close handlers when replacing a control", async () => {

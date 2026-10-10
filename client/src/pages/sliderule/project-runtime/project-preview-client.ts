@@ -166,6 +166,30 @@ export async function touchProjectOperation(
   );
 }
 
+/**
+ * 预览面看得见时每分钟一声：记活动（同 touch），并把浏览器授权往后挪。返回新的授权到期时刻（ISO），
+ * 没续上返回 null——前端照原来的到期时刻处理。
+ *
+ * ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：原来只打 touch，浏览器授权是签出时的
+ *   5 分钟死钟，到点前端清票重开、iframe 整页重载。服务端同一个口续两件事（routes/project_preview keepalive）。
+ */
+export async function keepProjectPreviewAlive(
+  operationId: string,
+  signal: AbortSignal
+): Promise<string | null> {
+  const id = String(operationId || "").trim();
+  if (!id) return null;
+  const body = await request(
+    `/project-operations/${encodeURIComponent(id)}/preview/keepalive`,
+    signal,
+    "POST"
+  );
+  const until = body?.operationId === id ? body?.accessExpiresAt : null;
+  return typeof until === "string" && Number.isFinite(Date.parse(until))
+    ? until
+    : null;
+}
+
 export async function wakeProjectPreview(
   projectId: string,
   signal: AbortSignal

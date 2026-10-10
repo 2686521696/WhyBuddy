@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { touchProjectOperation } from "./project-preview-client";
+import { keepProjectPreviewAlive } from "./project-preview-client";
 import {
   PREVIEW_PRESENCE_MS,
   shouldKeepPreviewAlive,
@@ -10,13 +10,17 @@ function pageVisible(): boolean {
 }
 
 /**
- * 预览页签开着、票还在、标签看得见 → 立刻 /touch，之后按 PREVIEW_PRESENCE_MS 再报。
+ * 预览页签开着、票还在、标签看得见 → 立刻报一声 keepalive，之后按 PREVIEW_PRESENCE_MS 再报。
  * 切走、藏起、卸掉立刻停。报失败 fail-open，不许拖垮预览面（§7 增强类）。
+ *
+ * 2026-10-10 起这一声同时续浏览器授权：服务端回新的到期时刻，交给 onAccessExtended
+ * （useProjectPreview.extendAccess）把票的到期往后挪——同一张票、同一个地址，iframe 不重载。
  */
 export function usePreviewPresence(input: {
   view: string;
   hasTicket: boolean;
   operationId?: string | null;
+  onAccessExtended?: (operationId: string, accessExpiresAt: string) => void;
 }) {
   const watching = shouldKeepPreviewAlive({
     ...input,
@@ -25,13 +29,19 @@ export function usePreviewPresence(input: {
   const operationId = String(input.operationId || "").trim();
   const watchingRef = useRef(watching);
   watchingRef.current = watching;
+  const extendedRef = useRef(input.onAccessExtended);
+  extendedRef.current = input.onAccessExtended;
 
   const report = useCallback(
     (signal: AbortSignal) => {
       if (!operationId || !watchingRef.current || !pageVisible()) return;
-      void touchProjectOperation(operationId, signal).catch(() => {
-        /* 报时失败不许把预览面打成错误态 */
-      });
+      void keepProjectPreviewAlive(operationId, signal)
+        .then(until => {
+          if (until && !signal.aborted) extendedRef.current?.(operationId, until);
+        })
+        .catch(() => {
+          /* 报时失败不许把预览面打成错误态 */
+        });
     },
     [operationId]
   );

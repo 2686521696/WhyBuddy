@@ -322,13 +322,52 @@ class ProjectPreviewAccess:
         scope, authority = self._authority(saved["operation_id"], saved["owner_id"], audience)
         self._check_saved_scope(saved, scope, authority)
         scope = replace(scope, grant_id=saved["id"], expires_at=min(saved["expires_at"], authority["runtime_expires_at"]))
-        if binding != scope.to_wire() or saved["lease_owner"] != authority["lease_owner"]:
+        # 到期时刻只许「不晚于现在这份」：浏览器授权会被「有人在看」往后挪（extend_browser_access），
+        # 网关手里那份是挪之前的，照旧认；比服务端还晚的（网关自己往后写）照旧拒。其余身份一个字段都不许变。
+        # 返回的 scope 带现在的到期时刻，网关拿它把长连接的掐断时刻往后挪（relay trackBrowser）。
+        current = scope.to_wire()
+        claimed = binding.get("expiresAt")
+        if (type(claimed) not in (int, float) or not claimed <= current["expiresAt"]
+                or {k: v for k, v in binding.items() if k != "expiresAt"} != {k: v for k, v in current.items() if k != "expiresAt"}
+                or saved["lease_owner"] != authority["lease_owner"]):
             raise PreviewAccessDenied("project_preview_binding_changed")
         params = [saved["id"], self.clock()]
         fence = self._fence(scope, authority, params)
         if not self.store._q("select id from wb_project_preview_access where id=$1 and revoked_at is null and expires_at>$2 and " + fence, params):
             raise _PreviewSnapshotChanged()
         return scope
+
+    @_retry_snapshot
+    def extend_browser_access(self, operation_id: str, *, owner_id: str, audience: str) -> float | None:
+        """有人在看（预览面看得见时每分钟一声 keepalive）→ 这条运行上还活着的浏览器授权往后挪。
+
+        ⚠ 2026-10-10 用户：「预览的时候并且在使用操作页面会自动刷新」。浏览器授权签出来就是
+          browser_grant_seconds（300s）死钟：到点网关掐掉热更新长连接、cookie 过期、前端清票重开，
+          iframe 整页重载——人正点着页面，每 5 分钟一次。授权本身照旧短（关了页面 5 分钟内失效），
+          只是「还在看」就续，续到不超过运行本身的寿命。
+
+        只挪没过期、没吊销、身份跟当前运行完全一致的 browser 行；不新签、不复活。返回挪完后最晚的
+        到期时刻，没有可挪的返回 None。
+        """
+        scope, authority = self._authority(operation_id, owner_id, audience)
+        now = self.clock()
+        until = min(now + self.browser_grant_seconds, authority["runtime_expires_at"])
+        identity = [operation_id, owner_id, scope.audience, scope.runtime_id, scope.revision,
+                    scope.generation, authority["lease_owner"], now]
+
+        def same_grants(first: int) -> str:
+            p = lambda offset: "$" + str(first + offset)
+            return (f"operation_id={p(0)} and owner_id={p(1)} and audience={p(2)} and runtime_id={p(3)} "
+                    f"and revision={p(4)} and generation={p(5)} and lease_owner={p(6)} "
+                    f"and kind='browser' and revoked_at is null and expires_at>{p(7)}")
+
+        params = [until, *identity]
+        fence = self._fence(scope, authority, params)
+        self.store._q("update wb_project_preview_access set expires_at=$1 where " + same_grants(2)
+                      + " and expires_at<$1 and " + fence + " returning id", params)
+        rows = self.store._q("select expires_at from wb_project_preview_access where " + same_grants(1), identity)
+        latest = max((float(row["expires_at"]) for row in rows), default=None)
+        return None if latest is None else min(latest, authority["runtime_expires_at"])
 
     def revoke_grant(self, grant_id: str, *, owner_id: str) -> None:
         rows = self.store._q("select operation_id from wb_project_preview_access where id=$1 and owner_id=$2",

@@ -37,7 +37,12 @@ export interface PreviewRelayLimits {
 export interface PreviewRelayOptions {
   authorizeTunnel(request: IncomingMessage): Promise<TunnelGrant | null>;
   authorizeBrowser(request: IncomingMessage): Promise<BrowserGrant | null>;
-  validateBinding(binding: PreviewBinding): Promise<boolean>;
+  /**
+   * Recheck an issued binding. false = gone; true = still valid as held; a number = still valid
+   * and the server's current deadline (epoch ms), which may be LATER than the held one —
+   * 2026-10-10 browser grants are extended while someone is watching (Python extend_browser_access).
+   */
+  validateBinding(binding: PreviewBinding): Promise<boolean | number>;
   beforeRequest?(request: IncomingMessage, response: ServerResponse): Promise<boolean>;
   gatewayCookieNames?: string[];
   limits?: Partial<PreviewRelayLimits>;

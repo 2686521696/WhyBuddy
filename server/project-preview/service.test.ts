@@ -40,7 +40,7 @@ const canonical = (value: Record<string, unknown>) => JSON.stringify(Object.from
 // The authority is a real HTTP peer implementing the Python route wire shape.
 // In particular it checks expiry EXACTLY as Python dict equality does, and
 // reorders keys: a JSON.stringify comparison or seconds roundtrip must fail.
-async function fixture(options: { precision?: boolean; denyRole?: "browser" | "tunnel" | "binding" } = {}) {
+async function fixture(options: { precision?: boolean; denyRole?: "browser" | "tunnel" | "binding"; expiresInMs?: number } = {}) {
   const observed: IncomingHttpHeaders[] = [];
   const app = createServer((req, res) => {
     observed.push(req.headers);
@@ -59,9 +59,11 @@ async function fixture(options: { precision?: boolean; denyRole?: "browser" | "t
   cleanup.push(async () => { for (const ws of appWs.clients) ws.terminate(); appWs.close(); await stop(app); });
   let audience = ""; let unavailable = false; let redeemed = false;
   const expiry = options.precision ? nonRoundTripExpiry() : Math.floor(Date.now() / 1000) + 60;
+  // Python extend_browser_access moves a browser grant later while someone is watching.
+  let browserExpiry = options.expiresInMs ? (Date.now() + options.expiresInMs) / 1000 : expiry;
   const binding = (kind: string) => ({ ownerId: "owner", sessionId: "session", projectId: "project", operationId: "operation",
     workspaceId: "workspace", runtimeId: "runtime", revision: "revision", generation: 1, port: appPort,
-    audience, grantId: kind + "-grant", tunnelId: "tunnel-id", expiresAt: expiry });
+    audience, grantId: kind + "-grant", tunnelId: "tunnel-id", expiresAt: kind === "browser" ? browserExpiry : expiry });
   const calls: Array<{ path: string; body: Record<string, unknown>; authorization?: string }> = [];
   const authority = createServer(async (req, res) => {
     const bytes: Buffer[] = []; for await (const chunk of req) bytes.push(chunk);
@@ -80,7 +82,10 @@ async function fixture(options: { precision?: boolean; denyRole?: "browser" | "t
     else if (body.role === "tunnel" && body.token === tunnelToken) scope = binding("tunnel");
     else if (body.role === "binding") {
       scope = binding(body.binding?.grantId === "browser-grant" ? "browser" : "tunnel");
-      if (canonical(body.binding ?? {}) !== canonical(scope)) return void deny();
+      // As Python validate_binding: identity exact, held deadline may be earlier (extended since), never later.
+      const { expiresAt: held, ...identity } = (body.binding ?? {}) as Record<string, unknown>;
+      const { expiresAt: current, ...expected } = scope;
+      if (canonical(identity) !== canonical(expected) || typeof held !== "number" || held > current) return void deny();
     } else return void deny();
     res.end(JSON.stringify({ ok: options.denyRole !== body.role, binding: body.role === "binding"
       ? Object.fromEntries(Object.entries(scope).reverse()) : scope }));
@@ -103,7 +108,8 @@ async function fixture(options: { precision?: boolean; denyRole?: "browser" | "t
     ws.on("error", () => {}); cleanup.push(() => ws.terminate()); return ws;
   }
   return { service, agent, origin, audience, calls, observed, socket, binding,
-    cookie: { cookie: "__Host-WhyBuddyPreview=" + browserToken }, unavailable: () => { unavailable = true; } };
+    cookie: { cookie: "__Host-WhyBuddyPreview=" + browserToken }, unavailable: () => { unavailable = true; },
+    extendBrowser: (seconds: number) => { browserExpiry = Date.now() / 1000 + seconds; } };
 }
 
 it("serves a runtime-bound editor only after current browser authorization without passing credentials to code", async () => {
@@ -143,6 +149,27 @@ it("redeems one ticket into a bounded HttpOnly partitioned cookie and redirects 
   expect(setCookie).not.toContain("Domain="); expect(setCookie).not.toContain(ticket);
   expect((await send(f.origin, "/_whybuddy/authorize?ticket=" + ticket)).status).toBe(403);
   expect(f.calls.every(call => call.authorization === "Bearer " + gatewayKey)).toBe(true);
+});
+
+// ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：cookie 原来跟授权同寿（≤5 分钟），
+//   授权被「有人在看」续上之后浏览器先把 cookie 扔了；HMR 长连接到原定时刻被掐，Vite 重连后整页 reload。
+//   变异：Max-Age 改回 min(900, 授权剩余) → 第一条红；validateBinding 照旧逐字比 expiresAt → 第二条红。
+it("keeps the cookie past a short grant: the token's validity is Python's per-request call", async () => {
+  const f = await fixture();   // grant ends in ~60s
+  const setCookie = (await send(f.origin, "/_whybuddy/authorize?ticket=" + ticket)).headers["set-cookie"]?.[0] ?? "";
+  expect(Number(/Max-Age=(\d+)/.exec(setCookie)?.[1])).toBeGreaterThanOrEqual(3600);
+});
+
+it("keeps a watched HMR socket open after Python extended the grant, and closes it when that passes", async () => {
+  const f = await fixture({ expiresInMs: 400 }); await f.agent();
+  const ws = f.socket(); await once(ws, "open");
+  let closedAt = 0; ws.on("close", () => { closedAt = Date.now(); });
+  f.extendBrowser(1.2);
+  const extendedUntil = Date.now() + 1200;
+  await new Promise(resolve => setTimeout(resolve, 800));     // well past the first deadline
+  expect(closedAt).toBe(0);
+  await once(ws, "close");
+  expect(closedAt).toBeGreaterThanOrEqual(extendedUntil - 100);
 });
 
 it("protects health/status and prevents a management Authorization value entering app HTTP or WS", async () => {

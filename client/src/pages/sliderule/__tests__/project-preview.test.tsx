@@ -76,8 +76,9 @@ const posts = () =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
 const ticketPosts = () =>
   posts().filter(([url]) => String(url).includes("/preview-ticket"));
+// 「有人在看」那一声：2026-10-10 起打 /preview/keepalive（记活动 + 续浏览器授权），不再打 /touch。
 const touchPosts = () =>
-  posts().filter(([url]) => String(url).includes("/touch"));
+  posts().filter(([url]) => String(url).includes("/preview/keepalive"));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -194,7 +195,7 @@ describe("authorized project preview", () => {
       "/api/sliderule/project-operations/operation-one/preview-ticket"
     );
     expect(touchPosts()[0][0]).toBe(
-      "/api/sliderule/project-operations/operation-one/touch"
+      "/api/sliderule/project-operations/operation-one/preview/keepalive"
     );
     expect(frame()?.getAttribute("src")).toBe(ticket.entryUrl);
     expect(
@@ -769,6 +770,51 @@ describe("authorized project preview", () => {
     });
     expect(frame()).toBeNull();
     expect(ticketPosts()).toHaveLength(1);
+  });
+
+  // ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：授权到期前端清票、自动重开，iframe 整页重载，
+  //   人一直在看也一样。现在 keepalive 回来更晚的到期时刻，就地挪票的到期——同一个 iframe、同一个地址。
+  //   变异：extendAccess 不改状态 → 第一条红；keepProjectPreviewAlive 不比回包的 operationId → 第二条红
+//   （extendAccess 里再比一次票的 operationId 是第二道，正常路径到不了：换运行时轮询先把票清了）。
+  it("someone watching: keepalive moves the access deadline and the same iframe stays mounted", async () => {
+    let watchedUntil = Date.now() + 300_000;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/preview/keepalive")) {
+        watchedUntil = Date.now() + 300_000;
+        return Response.json({ operationId: "operation-one", accessExpiresAt: new Date(watchedUntil).toISOString() });
+      }
+      return Response.json(init?.method === "POST" ? ticket : snapshot);
+    });
+    await render();
+    await click();
+    const mounted = frame();
+    const src = mounted?.getAttribute("src");
+    expect(mounted).not.toBeNull();
+    // 一分钟一分钟地走（一次跳 15 分钟，假时钟会在 keepalive 的回包落地前就跑过到期时刻）
+    for (let minute = 0; minute < 15; minute += 1) {   // 三倍于原来的 5 分钟
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+    }
+    expect(frame()).toBe(mounted);
+    expect(frame()?.getAttribute("src")).toBe(src);
+    expect(ticketPosts()).toHaveLength(1);
+    expect(container.textContent).not.toContain("授权已过期");
+  });
+
+  it("a keepalive answer for another operation cannot extend this iframe's access", async () => {
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/preview/keepalive"))
+        return Response.json({ operationId: "operation-other",
+          accessExpiresAt: new Date(Date.now() + 3_600_000).toISOString() });
+      return Response.json(init?.method === "POST" ? ticket : snapshot);
+    });
+    await render();
+    await click();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300_001);
+    });
+    expect(frame()).toBeNull();
   });
 
   it("the browser access deadline removes the iframe without silently extending access", async () => {

@@ -118,7 +118,9 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
   const revoked = new Map<string, number>();
   const seenGeneration = new Map<string, number>();
   const acceptedSockets = new Set<Socket>();
-  const browserAccess = new Set<{ grant: BrowserGrant; close(): void; validating: boolean }>();
+  type BrowserAccess = { grant: BrowserGrant; close(): void; validating: boolean;
+    timer?: ReturnType<typeof setTimeout>; arm(): void };
+  const browserAccess = new Set<BrowserAccess>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: limits.maxFrameBytes,
     perMessageDeflate: false, handleProtocols: protocols =>
       protocols.has(TUNNEL_PROTOCOL) ? TUNNEL_PROTOCOL : false });
@@ -142,17 +144,52 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
     if (control.listener.listening) control.listener.close();
   }
 
-  async function validate(binding: PreviewBinding): Promise<boolean> {
-    try { return validBinding(binding) && await options.validateBinding(binding) && validBinding(binding); }
-    catch { return false; }
+  /** The server's current deadline (epoch ms) if the binding is still valid, else null. */
+  async function validate(binding: PreviewBinding): Promise<number | null> {
+    try {
+      // Shape only up front: at the held deadline the binding is "expired" here, yet Python may
+      // have moved it (someone kept watching). Whether it is still valid is Python's answer below.
+      if (!validBinding(binding, 0)) return null;
+      const result = await options.validateBinding(binding);
+      if (result === false) return null;
+      const until = typeof result === "number" && Number.isFinite(result)
+        ? Math.max(result, binding.expiresAt) : binding.expiresAt;
+      return until > Date.now() ? until : null;
+    } catch { return null; }
   }
 
+  /**
+   * Long-lived browser connections (Vite HMR websocket, streaming responses) end at the grant deadline.
+   *
+   * ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：这里原来到点就掐。Vite 的 HMR
+   *   客户端发现连接断了、重连上之后会 location.reload()——人正点着页面，整页刷新。现在授权在「有人在看」
+   *   时会被 Python 往后挪：到点先复查一次，挪了就按新时刻再等，没挪才掐。复查仍是 Python 说了算。
+   */
   function trackBrowser(grant: BrowserGrant, close: () => void, onClose: (done: () => void) => void): void {
-    const access = { grant, close, validating: false };
+    const access: BrowserAccess = { grant, close, validating: false, arm: () => {} };
+    const expire = () => {
+      if (access.validating) { access.timer = setTimeout(expire, 50); access.timer.unref(); return; }
+      access.validating = true;
+      void validate(access.grant).then(until => {
+        if (until === null || until <= Date.now()) { access.close(); return; }
+        extendBrowser(access, until);
+        access.arm();
+      }).finally(() => { access.validating = false; });
+    };
+    access.arm = () => {
+      clearTimeout(access.timer);
+      access.timer = setTimeout(expire, Math.min(2_147_483_647, Math.max(1, access.grant.expiresAt - Date.now())));
+      access.timer.unref();
+    };
     browserAccess.add(access);
-    const expire = setTimeout(close, Math.min(2_147_483_647, Math.max(1, grant.expiresAt - Date.now())));
-    expire.unref();
-    onClose(() => { browserAccess.delete(access); clearTimeout(expire); });
+    access.arm();
+    onClose(() => { browserAccess.delete(access); clearTimeout(access.timer); });
+  }
+
+  function extendBrowser(access: BrowserAccess, until: number): boolean {
+    if (until <= access.grant.expiresAt) return false;
+    access.grant = { ...access.grant, expiresAt: until };
+    return true;
   }
 
   function acceptUpstream(control: Control, socket: Socket): void {
@@ -178,7 +215,7 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
 
   async function openControl(request: IncomingMessage, socket: Socket, head: Buffer,
     grant: TunnelGrant): Promise<void> {
-    if (!grant.tunnelId || grant.role !== "tunnel" || !await validate(grant) || stopping ||
+    if (!grant.tunnelId || grant.role !== "tunnel" || await validate(grant) === null || stopping ||
       grant.generation <= (revoked.get(grant.runtimeId) ?? 0) ||
       grant.generation < (seenGeneration.get(grant.runtimeId) ?? 0)) return refuse(socket);
     const id = randomUUID();
@@ -363,15 +400,17 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
       if (!current(control)) { closeControl(control); continue; }
       if (control.validating) continue;
       control.validating = true;
-      void validate(control.grant).then(valid => {
-        if (!valid) closeControl(control);
+      void validate(control.grant).then(until => {
+        if (until === null) closeControl(control);
       }).finally(() => { control.validating = false; });
     }
     for (const access of browserAccess) {
       if (access.validating) continue;
       access.validating = true;
-      void validate(access.grant).then(valid => { if (!valid) access.close(); })
-        .finally(() => { access.validating = false; });
+      void validate(access.grant).then(until => {
+        if (until === null) access.close();
+        else if (extendBrowser(access, until)) access.arm();
+      }).finally(() => { access.validating = false; });
     }
   }, limits.validateIntervalMs);
   timer.unref();
