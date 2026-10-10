@@ -36,6 +36,7 @@ import {
   type SessionStoryTools,
 } from "./session-story";
 import { CLOSING_MARKDOWN } from "./speech-links";
+import { CHAT_PROSE } from "./chat-type-scale";
 import type { UiTurn } from "./types";
 
 function TimelineDot({
@@ -172,7 +173,7 @@ function ToolGroup({
  */
 export function SpeechMarkdown({ text }: { text: string }) {
   return (
-    <div className="min-w-0 space-y-2 [overflow-wrap:anywhere] [&_a]:text-[#2f6bff] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
+    <div className={CHAT_PROSE}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={CLOSING_MARKDOWN}>
         {text}
       </ReactMarkdown>
@@ -300,7 +301,7 @@ export function SessionStory({
       {closing ? (
         <div
           data-testid="session-story-closing"
-          className="min-w-0 space-y-2 text-[14px] leading-[1.7] text-[#171717] [overflow-wrap:anywhere] [&_a]:text-[#2f6bff] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+          className={CHAT_PROSE}
         >
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={CLOSING_MARKDOWN}>
             {closing.text}

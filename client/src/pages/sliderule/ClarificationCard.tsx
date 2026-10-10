@@ -1,5 +1,6 @@
 import React from "react";
 import { Check, ChevronLeft, ChevronRight, MessageCircleQuestion } from "lucide-react";
+import { CHAT_BODY } from "./chat-type-scale";
 
 /**
  * G_READY 澄清问题卡片（多步分页）。
@@ -240,7 +241,7 @@ export function ClarificationCard({
 
       <div className="px-3.5 py-3">
         <div className="flex items-baseline gap-2">
-          <p className="text-[13.5px] font-medium leading-[1.55] text-[#171717]">
+          <p className={`${CHAT_BODY} font-medium leading-[1.55] text-[#171717]`}>
             {q.prompt}
           </p>
           {currentKind ? (

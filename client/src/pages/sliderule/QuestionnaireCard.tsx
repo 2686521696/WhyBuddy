@@ -31,6 +31,7 @@
 import { Check, ChevronLeft, ChevronRight, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { InlineMarkdown } from "./speech-links";
+import { CHAT_BODY } from "./chat-type-scale";
 
 /** 「其他（自己写）」那一项的 label。跟 `services/user_questions.py` 同一份。 */
 export const OTHER_LABEL = "其他（自己写）";
@@ -190,7 +191,7 @@ export function QuestionnaireCard({
       </header>
 
       <div className="px-3.5 py-3" data-testid="sliderule-questionnaire-question">
-        <p className="text-[13.5px] font-medium leading-[1.55] text-[#171717] [&_a]:text-[#2f6bff] [&_a]:underline">
+        <p className={`${CHAT_BODY} font-medium leading-[1.55] text-[#171717] [&_a]:text-[#2f6bff] [&_a]:underline`}>
           <InlineMarkdown text={q.question} />
         </p>
         {multi ? (

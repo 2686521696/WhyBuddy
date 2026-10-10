@@ -55,7 +55,7 @@ export function PlanApprovalPanel({
       </header>
       <div
         data-testid="sliderule-plan-content"
-        className="min-h-0 flex-1 overflow-auto px-3.5 py-3 text-[13.5px] leading-[1.7] text-[#171717] [overflow-wrap:anywhere] [&_h1]:mb-2 [&_h1]:text-[16px] [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:mt-4 [&_h2]:text-[13.5px] [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-[13px] [&_h3]:font-semibold [&_p]:mb-2.5 [&_ul]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-[8px] [&_pre]:bg-[#f3f4f6] [&_pre]:p-3 [&_code]:rounded [&_code]:bg-[#f3f4f6] [&_code]:px-1 [&_table]:w-full [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:px-2 [&_td]:py-1.5 [&_th]:border [&_th]:border-[#e5e7eb] [&_th]:px-2 [&_th]:py-1.5 [&_a]:text-[#2f6bff] [&_a]:underline"
+        className="min-h-0 flex-1 overflow-auto px-3.5 py-3 text-[14px] leading-[1.7] text-[#171717] [overflow-wrap:anywhere] [&_h1]:mb-2 [&_h1]:text-[15px] [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:mt-4 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-[14px] [&_h3]:font-semibold [&_p]:mb-2.5 [&_ul]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-[8px] [&_pre]:bg-[#f3f4f6] [&_pre]:p-3 [&_code]:rounded [&_code]:bg-[#f3f4f6] [&_code]:px-1 [&_table]:w-full [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:px-2 [&_td]:py-1.5 [&_th]:border [&_th]:border-[#e5e7eb] [&_th]:px-2 [&_th]:py-1.5 [&_a]:text-[#2f6bff] [&_a]:underline"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
           {plan.planContent}

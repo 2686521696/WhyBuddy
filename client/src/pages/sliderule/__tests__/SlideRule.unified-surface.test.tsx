@@ -690,6 +690,38 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="message-rail"');
   });
 
+  it("对话栏正文一个字号：你说的话、模型说的话、输入框都是 14px，栏里没有半号", () => {
+    // 2026-10-10 用户：「整体文字大小不协调」。量下来输入框 15、模型 14、你说的话 13.5、思考流 12.5——
+    // 最大的字是输入框占位字。chat-type-scale.ts 头注。反向：栏里不许再出现 13.5 / 12.5 / 15 这几个号。
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [
+        {
+          ...streamingTurn,
+          id: "turn-type",
+          status: "done" as const,
+          steps: [{ id: "sp1", kind: "model_speech", text: "## 验证结果\n\n- 构建通过：`npm run build`" }],
+        },
+      ],
+    });
+    const classOf = (testId: string) => {
+      const m = html.match(new RegExp(`<[^>]*data-testid="${testId}"[^>]*>`));
+      expect(m, testId).not.toBeNull();
+      return /class="([^"]*)"/.exec(m![0])?.[1] ?? "";
+    };
+    for (const id of ["sliderule-user-bubble", "sliderule-composer-input", "sliderule-model-speech"]) {
+      expect(classOf(id).split(/\s+/), id).toContain("text-[14px]");
+    }
+    // 模型话里的 ## 标题要加粗（Tailwind 重置会把它抹成正文），行内代码小一号。
+    expect(html).toContain("<h2>验证结果</h2>");
+    expect(html).toContain("[&amp;_h2]:font-semibold");
+    expect(html).toContain("[&amp;_code]:text-[13px]");
+    // 对话栏（右边舞台之前）里每个 class 逐个看；[&_h1]:text-[15px] 这种是标题的，不算。
+    const chat = html.slice(0, html.indexOf('id="sliderule-stage"'));
+    const tokens = [...chat.matchAll(/class="([^"]*)"/g)].flatMap(m => m[1].split(/\s+/));
+    for (const off of ["text-[13.5px]", "text-[12.5px]", "text-[15px]"]) expect(tokens, off).not.toContain(off);
+  });
+
   it("Work 模式已迁私有主仓：旧偏好残留也不再切走界面", () => {
     const prev = (globalThis as { localStorage?: unknown }).localStorage;
     (globalThis as { localStorage?: unknown }).localStorage = {

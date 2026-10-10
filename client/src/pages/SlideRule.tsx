@@ -31,6 +31,7 @@ import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
 import { MessageNodeRail } from "./sliderule/MessageNodeRail";
 import { buildRailNodes } from "./sliderule/message-rail-nodes";
+import { CHAT_BODY } from "./sliderule/chat-type-scale";
 import { deriveProjectActivity, turnUsesSessionStory } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import { useLatestOfficeArtifact } from "./sliderule/project-runtime/office-artifacts-client";
@@ -740,7 +741,7 @@ function ImUserMessage() {
       {visible.prompt ? (
         <div
           data-testid="sliderule-user-bubble"
-          className="max-w-[560px] whitespace-pre-wrap rounded-[10px] bg-[#f3f4f6] px-3 py-2 text-[13.5px] leading-6 text-[#171717]"
+          className={`max-w-[560px] whitespace-pre-wrap rounded-[10px] bg-[#f3f4f6] px-3 py-2 ${CHAT_BODY} leading-6 text-[#171717]`}
         >
           {visible.prompt}
         </div>

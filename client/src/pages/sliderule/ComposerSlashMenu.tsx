@@ -73,7 +73,7 @@ export function SkillMentionChip({
     <span
       data-testid="sliderule-skill-mention"
       data-key={item.key}
-      className="inline-flex h-6 max-w-[240px] items-center gap-1 text-[15px] leading-6 text-[#3370ff]"
+      className="inline-flex h-6 max-w-[240px] items-center gap-1 text-[14px] leading-6 text-[#3370ff]"
     >
       <button
         type="button"

@@ -239,7 +239,8 @@ describe("接在真跑的那条路上（§1 / §3）", () => {
     expect(dockHtml).not.toContain("核对认证与用户隔离");
     expect(dockHtml).not.toContain("创建 react-vite-tasks 工程并读取源码");
     const speechAt = html.indexOf('data-testid="sliderule-model-speech"');
-    const speechHtml = html.slice(speechAt, speechAt + 400);
+    // 到这一块结束为止（不按字数截：2026-10-10 排版 class 变长，400 字只截到 class 里）。
+    const speechHtml = html.slice(speechAt, html.indexOf("</div></div>", speechAt));
     expect(speechHtml).toContain("先查看工程当前状态。");
     expect(speechHtml).not.toContain("○ 按需补丁");
     expect(html).not.toContain(LIST_IN_CHAT);

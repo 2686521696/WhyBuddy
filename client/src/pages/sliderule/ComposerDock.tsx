@@ -15,6 +15,7 @@ import {
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
 import { shouldSendOnKey } from "./user-prefs";
 import { PlanApprovalPanel, type PlanApprovalOutcome } from "./PlanApprovalPanel";
+import { CHAT_BODY } from "./chat-type-scale";
 import {
   QuestionnaireCard,
   type QuestionnaireOutcome,
@@ -1601,7 +1602,7 @@ export function ComposerDock({
                   disabled={
                     askBlocksTyping(pendingAsk)
                   }
-                  className="block max-h-40 min-w-[12rem] flex-1 resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
+                  className={`block max-h-40 min-w-[12rem] flex-1 resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 ${CHAT_BODY} leading-6`}
                   data-testid="sliderule-composer-input"
                 />
                 </div>
