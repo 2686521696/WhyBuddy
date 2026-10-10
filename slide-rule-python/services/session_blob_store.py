@@ -227,6 +227,33 @@ def _stamp_iso(value: Any) -> Optional[str]:
     return text or None
 
 
+#: 列表标题退回用户原话时最多留多少字（侧栏一行、卡片两行都放得下）。
+_LIST_TITLE_CHARS = 120
+
+
+def _list_title(payload: dict[str, Any]) -> str:
+    """列表上这条会话叫什么：确认过的话题（goal.text）；还没有就用用户说的第一句话。
+
+    ⚠ 2026-10-10 用户：「左侧会话新建了会话看不到那一条记录」。侧栏只列 goal 非空的会话（E30：
+      没说过话的空壳不进列表）。可控制面上线后，前几轮（问候 / 提问卡 / 写计划）**刻意不写 goal**，
+      要到确认执行才写——于是说过话、甚至已经停在「等你批准计划」的会话也一直隐身。线上当天
+      21 条里 11 条 goal 为空，其中 6 条用户已经发过话（有一条日志 26 行、停在批计划）。
+      又是「只改一半」：goal 的写入时机改了，「有没有说过话」这条判据没跟着改。
+    只做列表标题的兜底，不碰 goal 本身——goal 的语义（确认过的目标）一处都不改。
+    真正一句没说的空壳仍然没有标题，照旧不进列表。
+    """
+    goal = payload.get("goal")
+    text = str(goal.get("text") or "").strip() if isinstance(goal, dict) else ""
+    if text:
+        return text
+    for row in payload.get("controlTranscript") or []:
+        if isinstance(row, dict) and row.get("role") == "user" and row.get("kind") == "turn":
+            said = " ".join(str(row.get("text") or "").split())
+            if said:
+                return said[:_LIST_TITLE_CHARS]
+    return ""
+
+
 def _summary_from_payload(
     session_id: str,
     payload: dict[str, Any],
@@ -234,12 +261,11 @@ def _summary_from_payload(
     created: Any = None,
     active: Any = None,
 ) -> dict[str, Any]:
-    goal = payload.get("goal") if isinstance(payload, dict) else {}
     artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
     return {
         "sessionId": session_id,
         "ownerId": _owner_of(payload if isinstance(payload, dict) else {}),
-        "goal": goal.get("text", "") if isinstance(goal, dict) else "",
+        "goal": _list_title(payload) if isinstance(payload, dict) else "",
         "createdAt": _stamp_iso(created),
         "lastActive": _stamp_iso(active),
         "artifactCount": len(artifacts) if isinstance(artifacts, list) else 0,

@@ -252,6 +252,15 @@ export function PreviewChromeLayoutButtons() {
  *   · 配色从 #5c5c5c 灰改成品牌蓝 #1677ff + 浅蓝底，跟同栏的「透视」蓝一套。
  * 别再把它塞回右侧图标簇——那正是这次要修的问题。
  */
+/**
+ * 重置会话：标题左侧那颗蓝钮。**点两下才删**——第一下只弹确认，「确认重置」才真的调 onResetSession。
+ *
+ * ⚠ 2026-10-10 用户：「重置按钮用户太容易误触」。2026-08-24 按用户要求把它挪到标题左边、放大、
+ *   换蓝（下面的样式判据钉着，没动）；可它一直是点一下就 `deleteSlideRuleSession`——整条会话的对话
+ *   和持久化状态当场删掉、没有撤销。显眼 + 一键不可逆，误触就是丢活。照常见做法（GitHub「Delete
+ *   repository」、antd Popconfirm）：不可逆操作要第二下确认，确认框里写清楚后果。
+ *   取消 / Esc / 点框外都只关框。
+ */
 export function SlideRuleResetSessionButton({
   isRunning,
   onResetSession,
@@ -259,23 +268,82 @@ export function SlideRuleResetSessionButton({
   isRunning?: boolean;
   onResetSession?: () => void;
 }) {
+  const [confirming, setConfirming] = React.useState(false);
+  const boxRef = React.useRef<HTMLSpanElement | null>(null);
+  React.useEffect(() => {
+    if (!confirming) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConfirming(false);
+    };
+    const onDown = (event: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(event.target as Node)) setConfirming(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [confirming]);
+  // 推演一开始就收起确认框：跑着的时候不许重置
+  React.useEffect(() => {
+    if (isRunning) setConfirming(false);
+  }, [isRunning]);
   if (!onResetSession) return null;
   return (
-    <button
-      type="button"
-      data-testid="sliderule-reset-session"
-      aria-label="重置会话"
-      title={
-        isRunning
-          ? "推演进行中，稍后再重置"
-          : "清空本轮对话与持久化状态，重新开始"
-      }
-      disabled={isRunning}
-      onClick={onResetSession}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#eef5ff] text-[#1677ff] transition hover:bg-[#dbeafe] hover:text-[#0958d9] disabled:opacity-30 disabled:hover:bg-[#eef5ff]"
-    >
-      <RotateCw className="h-4 w-4" strokeWidth={2} />
-    </button>
+    <span ref={boxRef} className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        data-testid="sliderule-reset-session"
+        aria-label="重置会话"
+        aria-haspopup="dialog"
+        aria-expanded={confirming}
+        title={
+          isRunning
+            ? "推演进行中，稍后再重置"
+            : "清空本轮对话与持久化状态，重新开始"
+        }
+        disabled={isRunning}
+        onClick={() => setConfirming(open => !open)}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#eef5ff] text-[#1677ff] transition hover:bg-[#dbeafe] hover:text-[#0958d9] disabled:opacity-30 disabled:hover:bg-[#eef5ff]"
+      >
+        <RotateCw className="h-4 w-4" strokeWidth={2} />
+      </button>
+      {confirming ? (
+        <span
+          role="dialog"
+          aria-label="确认重置会话"
+          data-testid="sliderule-reset-confirm"
+          className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-stone-200 bg-white p-3 text-left shadow-lg"
+        >
+          <span className="block text-[13px] font-medium text-stone-900">重置这条会话？</span>
+          <span className="mt-1 block text-[12px] leading-5 text-stone-500">
+            会删除这条会话的全部对话和工程状态，无法恢复。想开新话题可以用左侧「新建会话」。
+          </span>
+          <span className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              data-testid="sliderule-reset-cancel"
+              onClick={() => setConfirming(false)}
+              className="rounded-md border border-stone-200 px-2.5 py-1 text-[12px] text-stone-700 hover:bg-stone-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              data-testid="sliderule-reset-confirm-yes"
+              onClick={() => {
+                setConfirming(false);
+                onResetSession();
+              }}
+              className="rounded-md bg-[#d4380d] px-2.5 py-1 text-[12px] font-medium text-white hover:bg-[#b52f0b]"
+            >
+              确认重置
+            </button>
+          </span>
+        </span>
+      ) : null}
+    </span>
   );
 }
 

@@ -95,6 +95,9 @@ export async function createSessionId(): Promise<string> {
   const body = (await res.json()) as { sessionId?: string };
   const sid = String(body?.sessionId || "").trim();
   if (!sid) throw new Error("服务端没有返回 sessionId");
+  // 库里多了一行：让下一次取列表一定发新请求，别跟「建之前发出的」那次合流拿到旧列表
+  // （sessions-list-client 头注：删 / 建 / 改名之后都要调；原来只有删调了）。
+  invalidateSessionsList();
   return sid;
 }
 
@@ -144,8 +147,17 @@ export type NewSessionAction = "reuse-active" | "create";
 export function decideNewSessionAction(opts: {
   activeId: string;
   activeMeta: { goal?: string | null; phase?: string | null } | null | undefined;
+  /**
+   * 侧栏的会话列表拉回来没有。没拉回来时 activeMeta 必然是 undefined，跟「刚建未落盘」长得一样，
+   * 却是「不知道」——⚠ 2026-10-10 用户「新建了会话看不到」：页面一打开就点新建，列表还在路上
+   * （线上 0.8～1.6 秒），被判成空会话原地复用，什么都没建。不传 = 老行为。
+   */
+  listLoaded?: boolean;
+  /** 当前这条是不是本侧栏刚铸出来的（列表没拉回来时，只有它可以放心复用）。 */
+  justMinted?: boolean;
 }): NewSessionAction {
   if (opts.activeId === DEFAULT_SESSION_ID) return "create";
+  if (opts.listLoaded === false) return opts.justMinted ? "reuse-active" : "create";
   return isBlankSessionMeta(opts.activeMeta) ? "reuse-active" : "create";
 }
 
@@ -491,6 +503,8 @@ export function SidebarSessions({
   const [phaseFilter, setPhaseFilter] = React.useState<SessionPhaseFilter>("all");
   const [menuOpen, setMenuOpen] = React.useState(false);
   const creatingSessionRef = React.useRef(false);
+  /** 本侧栏刚铸出来的会话号：列表还没拉回来时，只有它能被「再点新建」原地复用。 */
+  const mintedSessionRef = React.useRef<string | null>(null);
   const [creatingSession, setCreatingSession] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = React.useState<string>(() => readActiveSessionId());
@@ -501,15 +515,22 @@ export function SidebarSessions({
   const [recentsOpen, setRecentsOpen] = React.useState(false);
   const recentsRef = React.useRef<HTMLDivElement | null>(null);
 
+  // 只认最后一次发出的列表请求。⚠ 2026-10-10：新建会话后刷新拿到了新列表，「建之前发出的」那次
+  //   慢请求后回来又把旧列表盖回去——新会话在侧栏闪一下就没了（sidebar-shows-new-session 第三条）。
+  const refreshSeq = React.useRef(0);
   const refresh = React.useCallback(() => {
     // 与应用中心共享同一次请求（见 sessions-list-client 的说明）：两边在同一
     // 拍挂载，各拉一次等于白打一发。
+    const seq = ++refreshSeq.current;
     fetchSessionsList()
       .then((body) => {
+        if (seq !== refreshSeq.current) return;
         setSessions((body.sessions ?? []) as SessionMeta[]);
         setError(null);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        if (seq === refreshSeq.current) setError(String(e));
+      });
     if (IS_GITHUB_PAGES) return;
     listApps({ limit: SESSION_THUMB_APP_LIMIT, offset: 0 })
       .then(rows => setApps(rows))
@@ -607,7 +628,10 @@ export function SidebarSessions({
     }
   };
 
-  const named = (sessions ?? []).filter(s => (s.goal || "").trim());
+  // E30：一句没说过的空壳不进列表。⚠ 2026-10-10 用户「新建了会话看不到那一条记录」：
+  //   正在用的这一条例外——刚点「新建会话」就该在侧栏看见它（标题「新会话」，说了话就变成原话，
+  //   见 slide-rule-python/services/session_blob_store._list_title）。别的空壳照旧藏。
+  const named = (sessions ?? []).filter(s => (s.goal || "").trim() || s.sessionId === activeId);
   const listed = sortSessions(
     filterSessionsByPhase(filterSessionsByQuery(named, query), phaseFilter),
     sortOrder,
@@ -698,7 +722,12 @@ export function SidebarSessions({
           const list = sessions ?? [];
           const activeMeta = list.find((s) => s.sessionId === activeId);
           if (
-            decideNewSessionAction({ activeId, activeMeta }) === "reuse-active"
+            decideNewSessionAction({
+              activeId,
+              activeMeta,
+              listLoaded: sessions !== null,
+              justMinted: mintedSessionRef.current === activeId,
+            }) === "reuse-active"
           ) {
             pick(activeId);
             return;
@@ -707,7 +736,9 @@ export function SidebarSessions({
           setCreatingSession(true);
           void (async () => {
             try {
-              pick(await createSessionId());
+              const minted = await createSessionId();
+              mintedSessionRef.current = minted;
+              pick(minted);
             } catch (e) {
               setError(String(e instanceof Error ? e.message : e));
             } finally {

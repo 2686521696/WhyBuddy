@@ -2075,20 +2075,8 @@ function SlideRuleSplitEngineering({
           >
             Deliverables
           </button>
-          <button
-            type="button"
-            onClick={resetSession}
-            disabled={isRunning}
-            data-testid="sliderule-reset-session"
-            className={autopilotTheme.auditBtn}
-            title={
-              isRunning
-                ? "SlideRule is running; reset later."
-                : "Clear this conversation and restart."
-            }
-          >
-            重置会话
-          </button>
+          {/* 工程视图同一颗钮：点两下才删（SlideRuleResetSessionButton 头注） */}
+          <SlideRuleResetSessionButton isRunning={isRunning} onResetSession={resetSession} />
           {/* E28：Dev 入口移除（用户裁决），/sliderule/dev 仍可直接访问 */}
         </div>
       </header>

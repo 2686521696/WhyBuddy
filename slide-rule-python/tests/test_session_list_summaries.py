@@ -163,3 +163,47 @@ def test_list_summaries_backfills_goal_when_projection_columns_are_null(db):
     assert rows[0]["ownerId"] == "user-2"
     assert rows[0]["phase"] == "done"
     assert rows[0]["artifactCount"] == 1
+
+
+# ⚠ 2026-10-10 用户「左侧会话新建了会话看不到那一条记录」：控制面前几轮刻意不写 goal，侧栏又只列 goal
+#   非空的会话——说过话、停在提问卡 / 批计划的会话一直隐身（线上当天 6 条）。列表标题退回用户第一句话
+#   （session_blob_store._list_title）；goal 本身不碰。日志形状照线上那几条：turn → tool_start →
+#   tool_result → ask_user_question，awaitReason=control_ask，goal.text 空。
+# 变异（逐条实测过）：_list_title 只看 goal → 第一条红；真空壳也给标题（比如退回 "新会话"）→ 第二条红；
+#   用户原话不截断 → 第三条红。
+def _asked_but_no_goal(sid: str, said: str) -> V5SessionState:
+    return V5SessionState(
+        sessionId=sid,
+        ownerId="user-3",
+        goal={"text": "", "status": "needs_refinement"},
+        runtimePhase="awaiting",
+        awaitReason="control_ask",
+        controlTranscript=[
+            {"id": "ct-1", "role": "user", "kind": "turn", "text": said},
+            {"id": "ct-2", "role": "assistant", "kind": "tool_start", "tool": "skill"},
+            {"id": "ct-3", "role": "assistant", "kind": "tool_result", "tool": "skill", "ok": True},
+            {"id": "ct-4", "role": "assistant", "kind": "ask_user_question", "question": "主要给谁用？"},
+        ],
+    )
+
+
+def test_a_session_that_talked_but_has_no_goal_is_titled_by_what_the_user_said(db):
+    state = _asked_but_no_goal("sr-asked", "  帮我做一个\n采购审批应用  ")
+    assert persistence.save_session_record(state)["ok"] is True
+    row = session_blob_store.get_store().list_summaries()[0]
+    assert row["goal"] == "帮我做一个 采购审批应用"
+    # goal 本身没被改写：确认过的目标仍是空的
+    goal = persistence.load_session_record("sr-asked")["session"].goal
+    assert (goal.get("text") if isinstance(goal, dict) else goal.text) == ""
+
+
+def test_reverse_a_session_nobody_talked_in_stays_untitled(db):
+    blank = V5SessionState(sessionId="sr-blank", ownerId="user-3", goal={"text": ""}, runtimePhase="idle")
+    assert persistence.save_session_record(blank)["ok"] is True
+    assert session_blob_store.get_store().list_summaries()[0]["goal"] == ""
+
+
+def test_the_fallback_title_is_trimmed_to_one_line_length(db):
+    state = _asked_but_no_goal("sr-long", "字" * 500)
+    assert persistence.save_session_record(state)["ok"] is True
+    assert len(session_blob_store.get_store().list_summaries()[0]["goal"]) == 120
