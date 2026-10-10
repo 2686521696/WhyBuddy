@@ -24,7 +24,7 @@ import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { narrationTurnIdFor, stampTurnNarration } from "./turn-narration";
-import { deriveTurnsFromState } from "./derive-persisted-turn";
+import { deriveTurnsFromState, runStartedLastTurn } from "./derive-persisted-turn";
 import { questionnaireOutcomeText, SKIP_INTERVIEW_TEXT } from "./questionnaire-labels";
 import {
   saveActiveRun,
@@ -1099,7 +1099,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     userText: string,
     intervention?: UserIntervention,
     // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
-    resumeRun?: { runId: string; kind?: "control" },
+    resumeRun?: { runId: string; kind?: "control"; replaysLastTurn?: boolean },
     // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
     mode?: "repair",
     forcedTool?: string
@@ -1198,11 +1198,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const hostSpeechRef = { current: "" };
     const controlFailureRef = { current: "" };
     lastControlStopRef.current = null;
+    // 续播的 run 是最后一轮的起点：补播从第 0 条把整轮重铺一遍，刷新时灌回来的那份步骤让位
+    // （见 runStartedLastTurn 头注）。等第一条补播到了才换——补播拉不到时灌回来的那份照旧留着。
+    let replaceRestoredSteps = Boolean(resumeRun?.replaysLastTurn);
     const appendStep = (step: TurnStep) => {
       collectedSteps.push(step);
+      const replace = replaceRestoredSteps;
+      replaceRestoredSteps = false;
       setUiTurns(prev =>
         prev.map(t =>
-          t.id === turnId ? { ...t, steps: [...t.steps, step] } : t
+          t.id === turnId ? { ...t, steps: replace ? [step] : [...t.steps, step] } : t
         )
       );
     };
@@ -2794,7 +2799,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const requestRehearsal = async (
     userText: string,
     intervention?: UserIntervention,
-    resumeRun?: { runId: string; kind?: "control" },
+    resumeRun?: { runId: string; kind?: "control"; replaysLastTurn?: boolean },
     mode?: "repair"
   ) => {
     await runTurn(userText, intervention, resumeRun, mode);
@@ -2933,8 +2938,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           }
           if (run?.runId && (["queued", "running", "waiting_continue", "waiting_operation"].includes(run.status) ||
               (record?.kind === "control" && record.runId === run.runId))) {
-            await requestRehearsal(record?.userText || "继续上一轮任务", undefined,
-              { runId: String(run.runId), kind: "control" });
+            await requestRehearsal(record?.userText || "继续上一轮任务", undefined, {
+              runId: String(run.runId), kind: "control",
+              replaysLastTurn: runStartedLastTurn(sessionStateRef.current, run.createdAt),
+            });
             return;
           }
         } else if (record?.kind === "control" && controlResponse.status >= 500) {

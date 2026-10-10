@@ -285,6 +285,45 @@ export function turnsFromControlTranscript(
 }
 
 /**
+ * 刷新后续播的那条 control run，是不是左栏**最后一轮**的起点。
+ *
+ * ⚠ 2026-10-10 用户（sr-20261010045052-CEJE3FR66F）：问卷还挂着时刷新，左栏「我先按 Word 方案的交付要求
+ *   确认文档结构…」+「加载技能 2 次」整段出现两遍。库里那段只有一份。成因：最后一轮先从持久化状态
+ *   （host 日志 / 叙述）灌回来，续播再把这条 run 的事件日志**从第 0 条**补播进同一轮——同一段东西
+ *   先后各进来一次。隔离真机第 193 轮复现了两种时机：问卷挂着（run 停在 waiting_user、书签还在）
+ *   刷新 → 「加载技能 4 次」；答完问卷、续跑中刷新 → 开场白两条。
+ *
+ * 判法：用户那一行（原话 / 问卷回答 / 批准计划，跟 turnsFromControlTranscript 起新轮的三种行同一把尺）
+ * 由 run 自己写进日志，时间戳不早于 run 的 createdAt（第 193 轮：createdAt 05:01:41.193、
+ * user_answer 05:01:41.286）。最后一行用户话是这条 run 开跑以后写的 → 最后一轮整轮都是它的，
+ * 补播会把它从头再铺一遍，灌回来的那份步骤要让位。
+ * 反过来（run 还在排队、自己那行没写；或时间对不上）→ false，照旧往最后一轮后面接——宁可不收，
+ * 不许把上一轮的步骤当成这条 run 的清掉。
+ */
+export function runStartedLastTurn(
+  state: V5SessionState | null | undefined,
+  runCreatedAt: unknown
+): boolean {
+  const since = Date.parse(String(runCreatedAt || ""));
+  if (!Number.isFinite(since)) return false;
+  const rows = Array.isArray(state?.controlTranscript) ? state!.controlTranscript : [];
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const raw = rows[index];
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const kind = String(row.kind || "");
+    const startsTurn =
+      (kind === "turn" && String(row.role || "") === "user" && String(row.text || "").trim() !== "") ||
+      (kind === "user_answer" && transcriptUserAnswer(row) !== "") ||
+      kind === "plan_approved";
+    if (!startsTurn) continue;
+    const stamp = Date.parse(String(row.timestamp || ""));
+    return Number.isFinite(stamp) && stamp >= since;
+  }
+  return false;
+}
+
+/**
  * 刷新后把**整段对话**从持久化状态灌回左栏。
  *
  * 2026-08-18 真机（烘焙店那趟）：迭代发了两针精修，刷新后只剩首轮结论，
