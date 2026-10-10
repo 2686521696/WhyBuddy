@@ -71,6 +71,7 @@ def test_a_new_account_gets_the_signup_grant_once(store):
     first = ledger.account("u1")
     again = ledger.account("u1")
     assert first["quota"] == again["quota"] == DEFAULT_OPTIONS["quota_for_new_user"]
+    assert first["quota"] == 2000 * QUOTA_PER_POINT        # 注册送 2000 积分（2026-10-10 由 500 调上来）
     rows, total = ledger.logs(owner_id="u1")
     assert total == 1 and rows[0]["kind"] == "system"
 

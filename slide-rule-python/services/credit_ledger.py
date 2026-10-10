@@ -55,8 +55,10 @@ QUOTA_PER_POINT = QUOTA_PER_UNIT // 100
 
 #: 超管后台能改的全部选项及默认值。键名就是存进 wb_credit_option 的键。
 DEFAULT_OPTIONS: dict[str, Any] = {
-    # 新账号（第一次用到额度时）送多少：500 积分 = $5。
-    "quota_for_new_user": 500 * QUOTA_PER_POINT,
+    # 新账号（第一次用到额度时）送多少：2000 积分 = $20（2026-10-10 用户定：500 → 2000）。
+    # ⚠ 这只是默认值：超管后台「额度设置」点过保存，库里 wb_credit_option 就存了一份，以库里为准，
+    #   改这里不影响已经存过的环境——那边要在后台改。
+    "quota_for_new_user": 2000 * QUOTA_PER_POINT,
     # 没在下面三张表里点名的模型用这一组。1.25 = $2.5/M 输入；补全 8 倍 = $20/M 输出；缓存命中按输入的 1/10。
     "default_model_ratio": 1.25,
     "default_completion_ratio": 8.0,
