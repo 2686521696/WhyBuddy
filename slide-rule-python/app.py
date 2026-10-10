@@ -254,6 +254,26 @@ def _advance_drive_full_turn_id(value) -> str:
 #: 那条「别把 40 调大」同一个判断），不是继续调这个数。
 _DEFAULT_EXECUTOR_THREADS = 64
 
+#: 一个在跑的推演平均要几根默认池里的线程（存档 / 心跳 / 工程工具 / 页面推流轮询，都是短的
+#: to_thread；模型调用本身是 httpx.AsyncClient，不占线程）。推演并发调高时线程池跟着放大，
+#: 不然就是 2026-08-21 那场「第二个人页面一直 loading」换个数重演。
+_EXECUTOR_THREADS_PER_CONTROL_RUN = 3
+
+
+def control_max_workers() -> int:
+    """全站同时跑几个推演（控制面 run）。`SLIDERULE_CONTROL_MAX_WORKERS`，默认 2，1～128。
+
+    ⚠ 2026-10-10 之前这个数在构造 ControlRunService 时没传，写死在默认参数 2 上——服务器从
+      4 核升到 16 核、模型网关给到 100 并发，全站照样只能 2 个人同时推演，第 3 个排队。
+      线上要配多大取决于两处外部上限：模型网关的并发、E2B 能同时开几台沙盒。
+    """
+    return _runtime_limit("SLIDERULE_CONTROL_MAX_WORKERS", 2, 1, 128)
+
+
+def default_executor_threads() -> int:
+    """没显式配 SLIDERULE_EXECUTOR_THREADS 时的线程数：至少 64，推演并发高了按比例放大。"""
+    return max(_DEFAULT_EXECUTOR_THREADS, control_max_workers() * _EXECUTOR_THREADS_PER_CONTROL_RUN)
+
 
 def configure_event_loop_executor() -> int:
     """把默认执行器换成够大的池，返回实际线程数。
@@ -265,14 +285,18 @@ def configure_event_loop_executor() -> int:
     from concurrent.futures import ThreadPoolExecutor as _TPE
 
     raw = (os.environ.get("SLIDERULE_EXECUTOR_THREADS") or "").strip()
+    fallback = default_executor_threads()
     try:
-        n = int(raw) if raw else _DEFAULT_EXECUTOR_THREADS
+        n = int(raw) if raw else fallback
         if n <= 0:
             raise ValueError
     except ValueError:
         # 配错一个数就让服务起不来，比用默认值糟得多（同 default_max_tokens 那条）。
-        print(f"[startup] ⚠ SLIDERULE_EXECUTOR_THREADS={raw!r} 不是正整数，回退 {_DEFAULT_EXECUTOR_THREADS}")
-        n = _DEFAULT_EXECUTOR_THREADS
+        print(f"[startup] ⚠ SLIDERULE_EXECUTOR_THREADS={raw!r} 不是正整数，回退 {fallback}")
+        n = fallback
+    if n < fallback:
+        print(f"[startup] ⚠ SLIDERULE_EXECUTOR_THREADS={n} 少于推演并发 {control_max_workers()} 需要的 {fallback}，"
+              "推演一多别人的页面会排队（2026-08-21 那场）")
     _asyncio.get_running_loop().set_default_executor(
         _TPE(max_workers=n, thread_name_prefix="sliderule")
     )
@@ -432,7 +456,8 @@ async def _bring_up_project_runtime(app: FastAPI) -> None:
     if app.state.control_run_service is None:
         project_store = await asyncio.to_thread(get_project_store)
         control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
-        service = ControlRunService(control_store, project_store, app.state.project_runtime_supervisor)
+        service = ControlRunService(control_store, project_store, app.state.project_runtime_supervisor,
+                                    max_workers=control_max_workers())
         await service.start()
         app.state.control_run_service = service
 
@@ -460,7 +485,8 @@ async def lifespan(app: FastAPI):
     print(
         f"[startup] event-loop executor: {_threads} threads "
         f"(默认 min(32, cpu+4)={min(32, (os.cpu_count() or 1) + 4)}，"
-        f"流式推演一组占 5 槽——不显式放大则 2 人并发即排队)"
+        f"流式推演一组占 5 槽——不显式放大则 2 人并发即排队)；"
+        f"推演并发 SLIDERULE_CONTROL_MAX_WORKERS={control_max_workers()}"
     )
     # 启动即亮牌：LLM 配置就绪度一行可见（缺 key 时新颖意图必然 0/6，
     # 这必须在启动日志里喊出来，而不是等用户撞上 blocked 再排查）。

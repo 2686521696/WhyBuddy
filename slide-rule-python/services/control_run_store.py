@@ -274,6 +274,31 @@ class ControlRunStore:
         record["status"] = row["status"]
         return record
 
+    def poll_events(self, run_id: str, owner_id: str, after_seq: int) -> tuple[str, list[dict[str, Any]]]:
+        """推流轮询用：一发查询拿到状态和游标之后的新事件，不碰整行 payload。
+
+        ⚠ 2026-10-10：推流原来每 0.25 秒 `get` 一次（整行 payload 474 KB + 全部事件），一个看着的页面
+          每秒几 MB 走 HTTP 网关（ControlRunService.subscribe 头注）。事件表主键就是 (run_id, seq)，
+          按游标取新行几乎不花钱；状态跟着同一发回来。可见性栅栏跟 `_row` 同一条。
+        """
+        _required(owner_id, "control_owner_required")
+        rows = self._q(
+            "select r.status, e.seq, e.body from wb_control_run r "
+            "left join wb_control_event e on e.run_id=r.id and e.seq>$3 "
+            "where r.id=$1 and r.owner_id=$2 and (r.accepted=1 or exists(select 1 from wb_control_session s "
+            "where s.session_id=r.session_id and s.active_run_id=r.id)) order by e.seq",
+            [run_id, owner_id, int(after_seq)])
+        if not rows:
+            raise ControlRunNotFound("control_run_not_found")
+        events = []
+        for row in rows:
+            if row.get("body") is None:
+                continue
+            item = json.loads(row["body"])
+            if isinstance(item, dict):
+                events.append(item)
+        return str(rows[0]["status"]), events
+
     def inspect_fence(self, run_id: str, owner_id: str) -> dict[str, Any]:
         """Sampling 心跳只许看租约列。整份 payload 是 2026-09-19 那场黄条的起因。"""
         _required(owner_id, "control_owner_required")

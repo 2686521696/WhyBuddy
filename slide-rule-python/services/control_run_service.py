@@ -1088,36 +1088,79 @@ class ControlRunService:
             self._tasks.pop(run_id, None)
             self._wake.set()
 
+    #: 推流时多久复查一次权限。不再每次轮询都查（见 subscribe 头注）。
+    SUBSCRIBE_REAUTH_SECONDS = 10.0
+    #: 推流轮询连着失败几次才放弃（数据库网关抖一下不该把页面的流掐断）。
+    SUBSCRIBE_MAX_POLL_FAILURES = 5
+
     async def subscribe(self, run_id, owner_id, after_seq=0):
+        """把一条 run 的事件从 after_seq 之后推给页面，直到收尾。
+
+        ⚠ 2026-10-10 线上 sr-20261010071235-QJPAENTX80：页面报「推演连接中断」，那条 run 一直在跑。
+          原来每 0.25 秒一轮：`store.get`（整行 payload 474 KB + 全部事件 ~520 KB + 一次取消查询）
+          再加 `authorize`（身份库 + 整份会话 225 KB 反序列化）——一个看着的页面每秒从 HTTP 网关拉
+          约 5 MB、在唯一的 Python 进程里解析。任何一发抖一下，生成器就带着异常结束，流断。
+          而且推演并发从 2 往上调（2026-10-10 线上要配 64），这笔开销跟着页面数线性放大。
+        现在：开流时读一次整条记录、鉴一次权；之后每轮只一发查询（状态 + 游标之后的新事件，
+        `store.poll_events`），每 SUBSCRIBE_REAUTH_SECONDS 复查一次权限（吊销照样拦得住）；
+        收尾那一刻再读一次整条记录拼收尾事件。轮询一时失败（网关抖动）退避重试，连着
+        SUBSCRIBE_MAX_POLL_FAILURES 次才放弃；找不到 run / 没权限照旧立刻抛。
+        """
         if type(after_seq) is not int or after_seq < 0:
             raise ValueError("invalid_control_event_cursor")
         cursor = after_seq
+        record = await asyncio.to_thread(self.store.get, run_id, owner_id)
+        await asyncio.to_thread(self.authorize, record["sessionId"], owner_id)
+        authorized_at = time.monotonic()
+        status = record["status"]
+        fresh = [event for event in record["events"] if event["seq"] > cursor]
+        failures = 0
         while True:
-            record = await asyncio.to_thread(self.store.get, run_id, owner_id)
-            await asyncio.to_thread(self.authorize, record["sessionId"], owner_id)
-            for event in record["events"]:
-                if event["seq"] > cursor:
-                    cursor = event["seq"]
-                    if (
-                        event.get("type") == "complete"
-                        and record.get("status") == "failed"
-                    ):
-                        event = complete_with_provider_failure(
-                            event, record.get("events"))
-                        st = event.get("state") if isinstance(event.get("state"), dict) else {}
-                        if st.get("runtimePhase") in (None, "idle") and not st.get("awaitReason"):
-                            event = dict(event)
-                            st = dict(st)
-                            st["runtimePhase"] = "failed"
-                            st["awaitReason"] = "error"
-                            st["awaitDetail"] = str(record.get("error") or "llm_unavailable")
-                            event["state"] = st
-                            if record.get("error") and not event.get("stopReason"):
-                                event["stopReason"] = record.get("error")
-                    yield event
-            if record["status"] in TERMINAL:
+            if status in TERMINAL:
+                # 收尾：读一次整条记录（失败收尾要用 error 和全部事件拼 complete）
+                record = await asyncio.to_thread(self.store.get, run_id, owner_id)
+                for event in record["events"]:
+                    if event["seq"] > cursor:
+                        cursor = event["seq"]
+                        yield self._settled_event_view(event, record)
                 public = public_control_run(record)
                 yield {"type": "control_run_settled", "controlRunId": run_id,
                        "status": public["status"], "error": public["error"], "lastSeq": record["lastSeq"]}
                 return
+            for event in fresh:
+                if event["seq"] > cursor:
+                    cursor = event["seq"]
+                    yield event
             await asyncio.sleep(min(self.poll_seconds, 0.25))
+            try:
+                if time.monotonic() - authorized_at >= self.SUBSCRIBE_REAUTH_SECONDS:
+                    await asyncio.to_thread(self.authorize, record["sessionId"], owner_id)
+                    authorized_at = time.monotonic()
+                status, fresh = await asyncio.to_thread(self.store.poll_events, run_id, owner_id, cursor)
+                failures = 0
+            except (ControlRunNotFound, PermissionError):
+                raise
+            except Exception:
+                failures += 1
+                if failures >= self.SUBSCRIBE_MAX_POLL_FAILURES:
+                    raise
+                log.warning("control stream poll failed run=%s attempt=%s", run_id, failures, exc_info=True)
+                fresh = []
+                await asyncio.sleep(min(self.poll_seconds * 2 ** failures, 4))
+
+    @staticmethod
+    def _settled_event_view(event, record):
+        """失败收尾时把 complete 拼成带失败原因的样子（原样搬自旧 subscribe）。"""
+        if event.get("type") == "complete" and record.get("status") == "failed":
+            event = complete_with_provider_failure(event, record.get("events"))
+            st = event.get("state") if isinstance(event.get("state"), dict) else {}
+            if st.get("runtimePhase") in (None, "idle") and not st.get("awaitReason"):
+                event = dict(event)
+                st = dict(st)
+                st["runtimePhase"] = "failed"
+                st["awaitReason"] = "error"
+                st["awaitDetail"] = str(record.get("error") or "llm_unavailable")
+                event["state"] = st
+                if record.get("error") and not event.get("stopReason"):
+                    event["stopReason"] = record.get("error")
+        return event
