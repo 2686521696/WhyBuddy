@@ -663,6 +663,33 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain("给连锁烘焙店做一套门店订货与损耗管控系统");
   });
 
+  it("对话导轨的刻度跟页面上的消息一一对上（同一份 items，不各算一份）", () => {
+    // 2026-10-10 抄 grok-app 的消息导轨。刻度和消息各从 uiTurns 算一份的话，续跑轮折叠 / 撞 id 丢弃
+    // 这些规则一边改了另一边没改，点第 3 条就跳到第 4 条。反向：没有可见正文的用户轮两边都不出。
+    const done = (id: string, user: string, assistant: string) => ({
+      ...streamingTurn,
+      id,
+      user,
+      assistant,
+      status: "done" as const,
+      steps: [],
+    });
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [
+        done("turn-a", "做一个采购审批应用", "好，先拆审批流。"),
+        // 只带工作区文件清单的用户轮：turn.user 非空，但气泡剥完是空的、不画。
+        done("turn-b", "[工作区文件 docs/需求.md]", "我把上一轮的结果整理好了。"),
+        done("turn-c", "加一个导出按钮", "导出按钮加好了。"),
+      ],
+    });
+    const messageIds = [...html.matchAll(/data-message-id="([^"]+)"/g)].map(m => m[1]);
+    const tickIds = [...html.matchAll(/data-node-id="([^"]+)"/g)].map(m => m[1]);
+    expect(messageIds).toEqual(["turn-a-user", "turn-a-assistant", "turn-b-assistant", "turn-c-user", "turn-c-assistant"]);
+    expect(tickIds).toEqual(messageIds);
+    expect(html).toContain('data-testid="message-rail"');
+  });
+
   it("Work 模式已迁私有主仓：旧偏好残留也不再切走界面", () => {
     const prev = (globalThis as { localStorage?: unknown }).localStorage;
     (globalThis as { localStorage?: unknown }).localStorage = {

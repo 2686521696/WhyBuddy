@@ -29,6 +29,8 @@ import { latestDeliveringTurnId } from "./sliderule/turn-result-card";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
+import { MessageNodeRail } from "./sliderule/MessageNodeRail";
+import { buildRailNodes } from "./sliderule/message-rail-nodes";
 import { deriveProjectActivity, turnUsesSessionStory } from "./sliderule/project-activity";
 import { isOfficeFileDeliverable, latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import { useLatestOfficeArtifact } from "./sliderule/project-runtime/office-artifacts-client";
@@ -722,7 +724,7 @@ function ImUserMessage() {
   const visible = visibleUserMessage(item.turn.user);
   if (!visible.prompt && visible.files.length === 0) return null;
   return (
-    <div className="group mb-3 flex flex-col items-end gap-1.5">
+    <div className="group mb-3 flex flex-col items-end gap-1.5" data-message-id={item.id}>
       {visible.files.length > 0 ? (
         <div
           className="flex max-w-[560px] flex-col items-end gap-1.5"
@@ -835,7 +837,7 @@ function ImAssistantMessage() {
   );
   const usesStory = turnUsesSessionStory(turn, runtimeKind);
   return (
-    <div className="mb-3 min-w-0 max-w-[640px]">
+    <div className="mb-3 min-w-0 max-w-[640px]" data-message-id={item.id}>
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           {/* ⚠ 流式 / 完成是成对物（§4）。工程档两支都走 SessionStory，
@@ -1133,6 +1135,9 @@ export function ClaudeChatSurface({
   });
 
   const items = useMemo<ImItem[]>(() => buildImItems(uiTurns), [uiTurns]);
+  // 对话导轨的刻度跟消息列表吃同一份 items（message-rail-nodes.ts 头注）。
+  const railNodes = useMemo(() => buildRailNodes(items), [items]);
+  const threadViewportRef = useRef<HTMLDivElement | null>(null);
   const isEmptyThread = uiTurns.length === 0 && !isRunning;
   // 浮层只展示控制面刚挑的动作，不拿它改 controlTodo。
   const todoAction = useMemo(() => {
@@ -1254,7 +1259,8 @@ export function ClaudeChatSurface({
                 <ArrowDown className="h-3 w-3" />
                 回到底部
               </ThreadPrimitive.ScrollToBottom>
-              <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 min-w-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
+              <MessageNodeRail nodes={railNodes} viewportRef={threadViewportRef} />
+              <ThreadPrimitive.Viewport ref={threadViewportRef} className="mx-auto flex min-h-0 min-w-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
                 <ThreadPrimitive.Empty>
                   {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
                     灵感句只导去应用中心，不造假功能入口。 */}
