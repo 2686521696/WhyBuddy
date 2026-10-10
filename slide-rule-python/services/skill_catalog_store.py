@@ -25,6 +25,18 @@ from services.skill_package_format import asset_type, package_assets, skill_md_t
 PACKAGE_TABLE = "wb_skill_package"
 INSTALL_TABLE = "wb_skill_install"
 
+# ⚠ 2026-10-10 用户：「技能默认全部安装」。之前装表是「开」名单——没行就是没装，新账号货架上 24 份全是「+ 安装」，
+#   模型的技能目录是空的，@ 了才临时展开一份。现在反过来：架上的**默认都装着**，装表里只记用户自己动过的——
+#   卸载记一行 version=UNINSTALLED_MARK（「关」名单），重新安装把那行改回真版本号。新上架的技能天生对所有人生效，
+#   跟前端注入开关「存关名单不存开名单」同一个道理（installed-skills.ts）。
+#   不另开表：线上 Postgres 15 的 public schema 默认不给建表（2026-10-09 迁服务器踩过），新表一建不上整个商店就 503；
+#   复用这张已有的表，一条 DDL 都不加。
+UNINSTALLED_MARK = "-"
+
+#: 解好的技能包，键 (oss_key, sha256)。见 SkillCatalogStore._unpack。种子 24 份合计约 1MB。
+_unpacked_cache: dict[tuple[str, str], tuple[dict[str, str], bytes]] = {}
+_UNPACKED_CACHE_MAX = 64
+
 _DDL = (
     f"create table if not exists {PACKAGE_TABLE} ("
     "id varchar(80) primary key, slug varchar(80) unique not null, "
@@ -319,6 +331,22 @@ class SkillCatalogStore:
         packages = [self._package_row(r) for r in rows]
         return [pkg for pkg in packages if not is_retired_skill(pkg["slug"])]
 
+    def _uninstalled_ids(self, owner_id: str) -> set[str]:
+        p = self._x.ph
+        rows = self._x.query(
+            f"select skill_id from {INSTALL_TABLE} where owner_id={p(1)} and version={p(2)}",
+            [str(owner_id or ""), UNINSTALLED_MARK],
+        )
+        return {str(r.get("skill_id") or "") for r in rows}
+
+    def _install_rows(self, owner_id: str) -> dict[str, dict[str, Any]]:
+        p = self._x.ph
+        rows = self._x.query(
+            f"select skill_id, version, installed_at from {INSTALL_TABLE} where owner_id={p(1)}",
+            [str(owner_id or "")],
+        )
+        return {str(r.get("skill_id") or ""): r for r in rows}
+
     def install(self, *, owner_id: str, skill_id: str) -> dict[str, Any]:
         owner = str(owner_id or "").strip()
         pkg = self.get_package(skill_id) or self.get_package_by_slug(skill_id)
@@ -347,40 +375,55 @@ class SkillCatalogStore:
         return {**pkg, "installed": True, "installedAt": now}
 
     def uninstall(self, *, owner_id: str, skill_id: str) -> dict[str, Any] | None:
+        """记进「关」名单（模块头 UNINSTALLED_MARK）。只删安装行不够：没行 = 默认装着。"""
         pkg = self.get_package(skill_id) or self.get_package_by_slug(skill_id)
         if not pkg:
             return None
-        self._x.execute(
-            f"delete from {INSTALL_TABLE} where owner_id={self._x.ph(1)} and skill_id={self._x.ph(2)}",
-            [str(owner_id or ""), pkg["id"]],
+        owner = str(owner_id or "").strip()
+        if not owner:
+            raise ValueError("skill_owner_required")
+        p = self._x.ph
+        now = _now_iso()
+        existing = self._x.query(
+            f"select skill_id from {INSTALL_TABLE} where owner_id={p(1)} and skill_id={p(2)}",
+            [owner, pkg["id"]],
         )
+        if existing:
+            self._x.execute(
+                f"update {INSTALL_TABLE} set version={p(1)}, installed_at={p(2)} "
+                f"where owner_id={p(3)} and skill_id={p(4)}",
+                [UNINSTALLED_MARK, now, owner, pkg["id"]],
+            )
+        else:
+            self._x.execute(
+                f"insert into {INSTALL_TABLE} (owner_id, skill_id, version, installed_at) "
+                f"values ({p(1)},{p(2)},{p(3)},{p(4)})",
+                [owner, pkg["id"], UNINSTALLED_MARK, now],
+            )
         return pkg
 
     def list_installed(self, owner_id: str) -> list[dict[str, Any]]:
-        p = self._x.ph
-        rows = self._x.query(
-            f"select p.*, i.version as installed_version, i.installed_at "
-            f"from {INSTALL_TABLE} i join {PACKAGE_TABLE} p on p.id = i.skill_id "
-            f"where i.owner_id = {p(1)} order by p.slug",
-            [str(owner_id or "")],
-        )
+        """架上的全部，减去这个账号卸载过的（模块头：默认都装着）。没有账号就什么都没装。"""
+        owner = str(owner_id or "").strip()
+        if not owner:
+            return []
+        rows = self._install_rows(owner)
         out = []
-        for row in rows:
-            item = self._package_row(row)
-            if is_retired_skill(item["slug"]):
-                continue   # 下架前装过的：不再列给用户、也不再交给模型（load_seed_retired 头注）
+        for item in self.list_packages():   # list_packages 已经挡掉下架的（load_seed_retired 头注）
+            row = rows.get(item["id"])
+            if row is not None and str(row.get("version") or "") == UNINSTALLED_MARK:
+                continue
             item["installed"] = True
-            item["installedAt"] = str(row.get("installed_at") or "")
+            item["installedAt"] = str((row or {}).get("installed_at") or "")
             out.append(item)
         return out
 
     def is_installed(self, owner_id: str, skill_id: str) -> bool:
-        p = self._x.ph
-        rows = self._x.query(
-            f"select skill_id from {INSTALL_TABLE} where owner_id={p(1)} and skill_id={p(2)}",
-            [str(owner_id or ""), str(skill_id or "")],
-        )
-        return bool(rows)
+        owner = str(owner_id or "").strip()
+        pkg = self.get_package(skill_id) or self.get_package_by_slug(skill_id)
+        if not owner or not pkg:
+            return False
+        return pkg["id"] not in self._uninstalled_ids(owner)
 
     def catalog_for_owner(self, owner_id: str) -> list[dict[str, Any]]:
         installed = {item["id"] for item in self.list_installed(owner_id)}
@@ -409,10 +452,25 @@ class SkillCatalogStore:
         return blob
 
     def _unpack(self, pkg: dict[str, Any]) -> tuple[dict[str, str], bytes | None]:
-        """(文本文件, 包字节)。种子兜底时字节取种子 zip——给人看的文件跟正文出自同一份包。"""
+        """(文本文件, 包字节)。种子兜底时字节取种子 zip——给人看的文件跟正文出自同一份包。
+
+        ⚠ 2026-10-10 默认全装（模块头 UNINSTALLED_MARK）以后，每个控制回合 installed_skill_infos 要开 24 份包，
+          之前每份都从对象存储现取现解。按 (oss_key, sha256) 记住解好的那份：sha256 对得上才进缓存，
+          同一把键下的字节就是同一份，不会读到旧包。增强类（§七）：缓存只省时间，取不到照旧现取。
+        """
+        key = (str(pkg.get("ossKey") or pkg.get("oss_key") or ""), str(pkg.get("sha256") or ""))
+        if key[0] and key[1]:
+            hit = _unpacked_cache.get(key)
+            if hit is not None:
+                return dict(hit[0]), hit[1]
         try:
             blob = self._package_blob(pkg)
-            return unpack_skill_zip(blob), blob
+            files = unpack_skill_zip(blob)
+            if key[0] and key[1]:
+                if len(_unpacked_cache) >= _UNPACKED_CACHE_MAX:
+                    _unpacked_cache.pop(next(iter(_unpacked_cache)), None)
+                _unpacked_cache[key] = (dict(files), blob)
+            return files, blob
         except Exception:
             slug = str(pkg.get("slug") or "")
             seeded = local_seed_files(slug)
@@ -601,6 +659,7 @@ def reset_skill_catalog_cache() -> None:
     with _store_lock:
         _store = None
         _store_ident = None
+        _unpacked_cache.clear()
 
 
 def resolve_invoked_skill(infos, name: str, args: str | None = None) -> dict:

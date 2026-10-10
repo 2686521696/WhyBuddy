@@ -152,8 +152,9 @@ def test_install_row_without_hydrate_is_not_enough(catalog):
     # 正向：files_for_owner 才会开箱。
     files = files_for_owner("alice", store=catalog)
     assert sandbox_relpath("demo", "SKILL.md") in files
-    # 反向：没装的人没有文件。
-    assert files_for_owner("bob", store=catalog) == {}
+    # 反向：卸载了的人没有文件（2026-10-10 起没行 = 默认装着，「没装」只能是自己卸的）。
+    catalog.uninstall(owner_id="bob", skill_id=pkg["id"])
+    assert sandbox_relpath("demo", "SKILL.md") not in files_for_owner("bob", store=catalog)
 
 
 def test_project_start_calls_hydrate():

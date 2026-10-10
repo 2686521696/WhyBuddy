@@ -80,8 +80,8 @@ def test_正常路径仍然把文件写下去_没被兜底顺手吞掉():
     written = write_skill_files(record, object(), {
         f"{prefix}alpha/SKILL.md": "a", f"{prefix}alpha/run.py": "b", f"{prefix}beta/SKILL.md": "c"})
     assert written == 3
-    # 按技能分批，不跟工程 8MiB 清单挤一次 write_files
-    assert len(seen) == 2
+    # 技能单独写，不跟工程 8MiB 清单挤一次 write_files；2026-10-10 起小的拼一批（skill_hydrate.write_skill_files 头注）
+    assert len(seen) == 1 and set(seen[0]) == {f"{prefix}alpha/SKILL.md", f"{prefix}alpha/run.py", f"{prefix}beta/SKILL.md"}
 
 
 def test_产线调用点确实在那条会销毁沙盒的try里():

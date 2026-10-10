@@ -171,9 +171,10 @@ def test_a_read_only_store_still_shelves_new_seeds_and_the_model_gets_them(catal
     catalog.ensure_seed()
     shelf = {pkg["slug"] for pkg in catalog.list_packages()}
     assert {meta["slug"] for meta in load_github_seeds()} <= shelf
-    catalog.install(owner_id="alice", skill_id="humanizer-zh")
-    infos = catalog.installed_skill_infos("alice")          # blob 取不到 → 种子兜底
-    assert [info.name for info in infos] == ["humanizer-zh"] and "Humanizer-zh" in infos[0].body
+    # 2026-10-10 起架上的默认都装着（skill_catalog_store 模块头 UNINSTALLED_MARK），不用先 install。
+    infos = {info.name: info for info in catalog.installed_skill_infos("alice")}   # blob 取不到 → 种子兜底
+    assert {meta["slug"] for meta in load_github_seeds()} <= set(infos)
+    assert "Humanizer-zh" in infos["humanizer-zh"].body
     assert ".sliderule/skills/humanizer-zh/SKILL.md" in files_for_owner("alice", store=catalog)
 
 

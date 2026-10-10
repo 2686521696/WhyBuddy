@@ -275,6 +275,29 @@ def _default_logged_in_user():
             a.dependency_overrides.pop(optional_user, None)
 
 
+class _EmptySkillShelf:
+    def list_installed(self, owner_id):  # noqa: ARG002
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _project_starts_without_skill_files(monkeypatch):
+    """开工程时往沙盒里写技能文件（skill_hydrate.hydrate_owner_into）：默认接一个空货架。
+
+    ⚠ 2026-10-10 技能改成默认全装（skill_catalog_store 模块头 UNINSTALLED_MARK）以后，全套件的工程测试里
+      每个账号开工程都要写 24 份 / 247 个技能文件，而一批假沙盒把 write_files 写成「整份替换」（真 E2B 是往里加），
+      第二次写技能就把工程文件冲掉了——60 多条工程测试一起红、一起等超时。那些测试管的是工程运行时，
+      改动之前测试账号一份技能都没装、这一步本来就是空操作；这里只是让它继续是空操作。
+    测技能进沙盒的（test_installed_skills_reach_the_sandbox / test_skills_installed_by_default）自己换货架，
+    monkeypatch 后写的覆盖这里。默认全装本身由 test_skills_installed_by_default 用真表、真种子包钉着。
+    """
+    try:
+        from services import skill_hydrate
+    except Exception:  # noqa: BLE001 — 缺依赖时跳过
+        return
+    monkeypatch.setattr(skill_hydrate, "get_skill_catalog_store", lambda: _EmptySkillShelf())
+
+
 @pytest.fixture
 def demo_fixture_path(monkeypatch):
     """打开演示域夹具快路径（`SLIDERULE_DEMO_FIXTURE_ENABLED`）。

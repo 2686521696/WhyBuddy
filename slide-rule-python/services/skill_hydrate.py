@@ -55,8 +55,19 @@ def files_for_owner(owner_id: str, *, store: Any = None) -> dict[str, str]:
         return {}
 
 
-def write_skill_files(write_files: Callable[..., None], handle: Any, files: dict[str, str]) -> int:
-    """按技能拆批写，避免跟工程 8MiB 清单挤在一次 write_files 里。"""
+#: 一批最多写多少（字节 / 文件数）。工程清单的闸是 8MiB / 512 份（project_manifest），留足余量。
+SKILL_BATCH_BYTES = 2 * 1024 * 1024
+SKILL_BATCH_FILES = 400
+
+
+def write_skill_files(write_files: Callable[..., None], handle: Any, files: dict[str, str], *,
+                      batch_bytes: int = SKILL_BATCH_BYTES, batch_files: int = SKILL_BATCH_FILES) -> int:
+    """技能文件单独写，不跟工程 8MiB 清单挤在一次 write_files 里；一份技能不拆开，几份小的拼一批。
+
+    ⚠ 2026-10-10 默认全装（skill_catalog_store 模块头）以后一个账号装着 24 份、247 个文件、约 3.1MB。上一版
+      一份技能一批 = 开工程时 24 次 write_files，每次在沙盒里起一个进程、按 32KB 一段灌 stdin——工程启动凭空
+      多十几秒。现在按大小装箱：同样 3.1MB 两三批写完。
+    """
     if not files:
         return 0
     by_slug: dict[str, dict[str, str]] = {}
@@ -65,8 +76,20 @@ def write_skill_files(write_files: Callable[..., None], handle: Any, files: dict
         rest = path[len(prefix):] if path.startswith(prefix) else path
         slug = rest.split("/", 1)[0]
         by_slug.setdefault(slug, {})[path] = text
+    batches: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    size = 0
+    for group in by_slug.values():
+        group_size = sum(len(text.encode("utf-8")) for text in group.values())
+        if current and (size + group_size > batch_bytes or len(current) + len(group) > batch_files):
+            batches.append(current)
+            current, size = {}, 0
+        current.update(group)
+        size += group_size
+    if current:
+        batches.append(current)
     written = 0
-    for batch in by_slug.values():
+    for batch in batches:
         write_files(handle, batch)
         written += len(batch)
     return written
