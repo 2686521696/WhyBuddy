@@ -31,7 +31,9 @@ import {
 import { useShellSidebar } from "@/pages/sliderule/ShellSidebarContext";
 import { fetchSessionsList, invalidateSessionsList } from "./sessions-list-client";
 
-export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
+// 键本身挪进 lib（退出登录要清它，use-auth 不该依赖页面模块）；这里保留同名导出，老的引用不用改。
+export { ACTIVE_SESSION_KEY } from "@/lib/sliderule-session-id";
+import { ACTIVE_SESSION_KEY } from "@/lib/sliderule-session-id";
 export const SESSION_CHANGED_EVENT = "sliderule:active-session-changed";
 /** 会话库内容有更新（话题落盘/推演完成）——侧栏收到后重拉列表，
  *  标题从"新会话"实时变成话题文案。 */

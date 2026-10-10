@@ -23,6 +23,7 @@
  * 否则会出现"在应用中心登录了，侧栏还显示未登录"这种只在特定入口复现的怪事。
  */
 
+import { claimStoredSessionFor, forgetStoredSession } from "./sliderule-session-id";
 import React, {
   createContext,
   useCallback,
@@ -99,8 +100,16 @@ function AuthProviderRoot({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // 账号一确定就清掉不属于它的「当前会话」——「我的应用」切回推演页会拿它拼 ?session=，
+  // 等推演页自己发现就晚了（claimStoredSessionFor 头注，2026-10-10）
+  useEffect(() => {
+    if (user?.id) claimStoredSessionFor(user.id);
+  }, [user?.id]);
+
   const signOut = useCallback(async () => {
     await apiLogout();
+    // 「当前会话」是这个账号的，退出就清——不然下一个在这台浏览器登录的人会被带进它（forgetStoredSession 头注）
+    forgetStoredSession();
     // 先清本地再刷新：即使刷新请求失败，界面也已经回到匿名态——
     // 不能出现"点了登出但按钮还亮着"。
     setUser(null);

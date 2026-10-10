@@ -12,8 +12,10 @@
 
 import { BRAND_NAME_FULL } from "@shared/brand";
 import {
+  ACTIVE_SESSION_OWNER_KEY,
   DEFAULT_SESSION_ID,
   applySessionToHistory,
+  claimStoredSessionFor,
   hrefFromWindow,
   resolveActiveSessionId,
   sessionIdFromHref,
@@ -2281,6 +2283,14 @@ function readStoredSessionId(): string | null {
   }
 }
 
+function readStoredSessionOwner(): string {
+  try {
+    return String(localStorage.getItem(ACTIVE_SESSION_OWNER_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * 会话壳（Claude 式）：管理"当前会话 id"，切换/新建时以 key=sessionId
  * 整树重挂——hook 对新 id 走 loadOrCreateSessionState 完整水合，
@@ -2293,6 +2303,15 @@ function readStoredSessionId(): string | null {
 export default function SlideRule({
   embedded = false,
 }: { embedded?: boolean } = {}) {
+  const { user: authUser, ready: authReady } = useAuth();
+  // 地址栏没带会话、是从浏览器记着的「当前会话」接上的——只有这种才可能是上一个账号留下的。
+  // 连同当时记着的归属一起记下：use-auth 一拿到账号就会先清存储（claimStoredSessionFor），
+  // 这里不能靠「清的时候返回了什么」判断，谁先跑都得对。
+  const openedFromStoredRef = useRef<{ id: string; owner: string } | null>(
+    typeof window !== "undefined" && !sessionIdFromHref(hrefFromWindow(window)) && readStoredSessionId()
+      ? { id: String(readStoredSessionId()), owner: readStoredSessionOwner() }
+      : null
+  );
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
     const stored = readStoredSessionId();
     if (IS_GITHUB_PAGES) {
@@ -2325,6 +2344,17 @@ export default function SlideRule({
       "replace"
     );
   }, [activeSessionId]);
+
+  // 换了账号：记着的「当前会话」是上一个账号的，就回到空白新会话（claimStoredSessionFor 头注，2026-10-10）
+  useEffect(() => {
+    if (IS_GITHUB_PAGES || !authReady || !authUser) return;
+    claimStoredSessionFor(authUser.id);
+    const opened = openedFromStoredRef.current;
+    openedFromStoredRef.current = null;
+    if (opened && opened.owner !== String(authUser.id) && opened.id === activeSessionId) {
+      setActiveSessionId(DEFAULT_SESSION_ID);
+    }
+  }, [authReady, authUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (IS_GITHUB_PAGES) return;

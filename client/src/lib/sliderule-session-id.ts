@@ -143,3 +143,60 @@ export function applySessionToHistory(
   else history.pushState({ ...prior, sessionId }, "", next);
   return next;
 }
+
+/** 浏览器里记着的「当前会话」（侧栏点开 / 推演页打开时写入）。 */
+export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
+/** 记下「当前会话」时是哪个账号。 */
+export const ACTIVE_SESSION_OWNER_KEY = "sliderule:active-session-owner";
+
+type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function defaultStorage(): KeyValueStorage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 记着的「当前会话」不是这个账号的就丢掉，返回被丢掉的会话号；没丢返回 null。之后它归这个账号。
+ *
+ * ⚠ 2026-10-10 用户：同一个浏览器先用管理员账号推演，再注册新账号登录，页面自己打开了
+ *   `?session=sr-20261010041133-…`（上一个账号的会话），新账号看到的是一张空白欢迎页；在这里发第一句话，
+ *   话进的是别人的会话，服务端拒掉，黄条「推演中断：控制面未返回结果」。「当前会话」存在 localStorage 里、
+ *   不分账号，退出登录也不清——换账号就串过去。
+ *
+ * 没记过归属的（这一版之前存下的）一律当作不是这个账号的：分不出来就不冒险，代价是老用户升级后
+ * 回到空白页一次，会话都还在侧栏里。
+ */
+export function claimStoredSessionFor(
+  userId: string | null | undefined,
+  storage: KeyValueStorage | null = defaultStorage()
+): string | null {
+  const owner = String(userId || "").trim();
+  if (!owner || !storage) return null;
+  try {
+    const stored = String(storage.getItem(ACTIVE_SESSION_KEY) || "").trim();
+    const recorded = String(storage.getItem(ACTIVE_SESSION_OWNER_KEY) || "").trim();
+    storage.setItem(ACTIVE_SESSION_OWNER_KEY, owner);
+    if (stored && recorded !== owner) {
+      storage.removeItem(ACTIVE_SESSION_KEY);
+      return stored;
+    }
+  } catch {
+    /* 隐私模式：没有存储就没有串号 */
+  }
+  return null;
+}
+
+/** 退出登录：「当前会话」和它的归属一起清掉。 */
+export function forgetStoredSession(storage: KeyValueStorage | null = defaultStorage()): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(ACTIVE_SESSION_KEY);
+    storage.removeItem(ACTIVE_SESSION_OWNER_KEY);
+  } catch {
+    /* 隐私模式 */
+  }
+}
