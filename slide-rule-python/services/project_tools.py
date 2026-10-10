@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import shlex
 import time
@@ -49,7 +50,7 @@ from services.project_tool_contracts import (
 from services.deliverable_kind import (
     MAX_DELIVERED_FILES, OFFICE_START_NOT_APPLICABLE, OFFICE_VERIFY_NOT_APPLICABLE,
     WORKSPACE_TEMPLATE_VERSION,
-    idle_office_exec_allows_source_write,
+    finished_operation_allows_source_write,
     operation_left_on_lease,
     deliverable_suffix, is_auto_collected_output, is_office_artifact_path, is_office_file_plan,
     office_facts_sentence,
@@ -207,6 +208,8 @@ def _net_change_sentence(before: dict, after: dict, *, limit: int = 6) -> str:
 from services.scope_authority import latest_control_plan, plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
+
+logger = logging.getLogger(__name__)
 
 MAX_RESULT_CHARS = 3800
 
@@ -1604,6 +1607,20 @@ class ProjectTools:
                  and entry.path != "public/__whybuddy_revision.json"]
         return {"revision": revision.revision, "paths": paths[:limit], "total": len(paths)}
 
+    def preview_origin_pattern(self) -> str | None:
+        """预览页面在浏览器里的来源（通配写法），给系统提示用（deliverable_kind.preview_origin_fact 头注）。
+
+        预览配置归运行时，问注入进来的 supervisor；没有或报错就 None（增强类，fail-open）。
+        """
+        reader = getattr(self.supervisor, "preview_origin_pattern", None)
+        if not callable(reader):
+            return None
+        try:
+            value = reader()
+        except Exception:
+            return None
+        return value if isinstance(value, str) and value else None
+
     def running_dev_server(self, project_id: str | None) -> str | None:
         """这一轮开口时，占着工程的常驻开发服务器（它的 operationId），给系统提示用。
 
@@ -2325,6 +2342,7 @@ class ProjectTools:
             page = self._preview_page(project)
             result["interactive"] = page is not None
             if page is not None:
+                self._note_page_use(page)
                 result["url"] = page["url"]
                 result["previewNote"] = PREVIEW_NOTE
                 interactor = getattr(self.supervisor, "browser_interactor", None)
@@ -2395,6 +2413,24 @@ class ProjectTools:
             return {"browserConsoleError": "project_browser_console_unavailable"}
         return {key: observed[key] for key in ("browserConsole", "failedRequests", "consoleCounts")}
 
+    def _note_page_use(self, page):
+        """模型自己在页面上看、点、填，跟人在预览里操作一样算「有人在用」。
+
+        ⚠ 2026-10-10 线上 Django 读书打卡 sr-20261010143514-9KNB9FZ5Q9：模型 14:58 改完代码，之后九分钟一直在
+          browser_view / browser_input / browser_console_exec 验表单，没再提交命令或改动。闲置判据只认人的心跳
+          （touch）和改动 / 命令，开发服务器 15:07 按「闲置」停了——正用着的人是模型自己。跟心跳记同一个时间
+          （touch_operation），所以总时长上限照旧管着它。
+        只看日志 / 状态（shell_view、project_status）不算：那是轮询，不是在用这个应用。
+        记不上不拖垮这次操作（§7 增强类 fail-open），照样把页面交回去。
+        """
+        operation_id = page.get("operationId") if isinstance(page, dict) else None
+        if not isinstance(operation_id, str) or not operation_id:
+            return
+        try:
+            self.store.touch_operation(operation_id, owner_id=self.owner_id)
+        except Exception:
+            logger.warning("project page use not recorded: %s", operation_id, exc_info=True)
+
     def _preview_page(self, project):
         resolver = getattr(self.supervisor, "preview_page", None)
         if callable(resolver):
@@ -2433,6 +2469,7 @@ class ProjectTools:
         page = self._preview_page(project)
         if page is None:
             raise ValueError("project_browser_preview_not_ready")
+        self._note_page_use(page)
         interactor = getattr(self.supervisor, "browser_interactor", None)
         if callable(interactor):
             observed = interactor(action, page)
@@ -2566,7 +2603,7 @@ class ProjectTools:
             lease_owner="patch-" + uuid.uuid4().hex, ttl_seconds=120)
         try:
             prior = operation_left_on_lease(self.store, lease, self.owner_id)
-            if (lease.sandboxId or lease.processRefs) and not idle_office_exec_allows_source_write(lease, prior):
+            if (lease.sandboxId or lease.processRefs) and not finished_operation_allows_source_write(lease, prior):
                 raise ProjectConflict("project_runtime_reconciliation_required")
             load_authorized_session(project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
             current = self.store.get_revision(project.projectId, owner_id=self.owner_id)

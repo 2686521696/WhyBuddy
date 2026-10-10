@@ -510,12 +510,17 @@ def test_e2b_tunnel_install_uses_stdin_private_files_and_managed_process(setup_p
 
 
 @pytest.mark.parametrize("change", [{"token": "management-key"}, {"port": True}, {"port": 22},
-    {"expires_at": float("nan")}, {"expires_at": time.time() - 1}, {"expires_at": time.time() + 86_500},
+    {"expires_at": float("nan")}, {"expires_in": -1}, {"expires_in": 86_500},
     {"agent_source": "x" * (512 * 1024 + 1)},
     {"relay_origin": "http://rt.example.com"}, {"relay_origin": "https://x..example.com"},
     {"relay_origin": "https://user@x.example.com"}, {"relay_origin": "https://x.example.com:99999"},
     {"relay_origin": "https://x.example.com/path"}, {"relay_origin": None}])
 def test_tunnel_invalid_configuration_never_reaches_sdk(setup_provider, change):
+    # ⚠ 2026-10-10：到期时间原来在收集时就算成绝对值（time.time() + 86_500）。上限放到 86_401 以后只差
+    #   99 秒，全量跑 22 分钟轮到这条时它已经落进上限以内，「太远」那一格不再报错。执行时再按相对时长算。
+    change = dict(change)
+    if "expires_in" in change:
+        change["expires_at"] = time.time() + change.pop("expires_in")
     provider, handle, fake, _ = setup_provider
     values = {"agent_source": "console.log('agent')", "relay_origin": "https://rt.preview.example.com",
         "token": "a" * 43, "port": 5173, "expires_at": time.time() + 60, **change}

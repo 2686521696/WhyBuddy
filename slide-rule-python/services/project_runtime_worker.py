@@ -39,6 +39,7 @@ from services.project_creation import load_authorized_session, sync_session_proj
 from services.project_preview_config import (
     origin_for_project,
     preview_configuration_enabled,
+    preview_origin_pattern,
     published_preview_url,
 )
 from services.vite_preview_hosts import injected_preview_dev_command
@@ -242,6 +243,13 @@ class ProjectRuntimeSupervisor:
         edge into the runtime layer.
         """
         return preview_configuration_enabled()
+
+    def preview_origin_pattern(self) -> str | None:
+        """预览页面在浏览器里的来源（通配写法），给控制面的系统提示用；同上，配置不 import 进控制面。
+
+        没接预览网关就 None：那时页面不在这个来源上，说了反而误导。
+        """
+        return preview_origin_pattern() if self.preview_runtime is not None else None
 
     def start(self) -> None:
         if self.running:

@@ -371,7 +371,7 @@ def test_finished_office_exec_keeps_sandbox_but_file_write_still_lands(setup):
     """⚠ 2026-09-22 BABCJGGB44：办公 bash 留下 sandboxId 后，file_write 被
     project_runtime_reconciliation_required 拦住。命令已经完成就不是还在跑的运行时。
 
-    删掉 idle_office_exec_allows_source_write，本条变红。
+    删掉 finished_operation_allows_source_write，本条变红。
     没有终态 exec 的沙盒仍拒绝，见 test_patch_never_writes_into_active_or_unreconciled_workspace。
     """
     project = create(setup)

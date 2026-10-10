@@ -43,6 +43,21 @@ def origin_for_project(project_id: str) -> str:
     return _origin_for_label(preview_label_for_project(project_id))
 
 
+def preview_origin_pattern() -> str | None:
+    """所有工程预览源的通配写法（`https://*.preview.example`），给模型配框架的来源信任列表用；没配预览就 None。
+
+    ⚠ 2026-10-10 线上 Django 读书打卡：页面在 `https://pv-….sslip.io` 上，表单 POST 带的 Origin 是它，
+      Django 回 403「Origin checking failed」。模型从日志里倒推出来要配 CSRF_TRUSTED_ORIGINS，可域名是部署配的，
+      模型只能照日志抄一个工程的——换工程就换标签。给它通配的那一个。
+    """
+    sample = "pv-sample"
+    try:
+        origin = _origin_for_label(sample)
+    except ValueError:
+        return None
+    return origin.replace(f"://{sample}.", "://*.", 1)
+
+
 def _origin_for_label(runtime_id: str) -> str:
     if not isinstance(runtime_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,61}[a-z0-9]", runtime_id):
         raise ValueError("project_preview_runtime_id_invalid")

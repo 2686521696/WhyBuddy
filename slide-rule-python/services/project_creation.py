@@ -21,7 +21,7 @@ from services.deliverable_kind import (
     OFFICE_FILE,
     WORKSPACE_README,
     WORKSPACE_TEMPLATE_VERSION,
-    idle_office_exec_allows_source_write,
+    finished_operation_allows_source_write,
     office_workspace_files,
     operation_left_on_lease,
     orch_trace,
@@ -313,7 +313,7 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
                 lease_owner="adopt-plan-" + uuid.uuid4().hex, ttl_seconds=120)
             try:
                 prior = operation_left_on_lease(store, lease, owner_id)
-                if (lease.sandboxId or lease.processRefs) and not idle_office_exec_allows_source_write(lease, prior):
+                if (lease.sandboxId or lease.processRefs) and not finished_operation_allows_source_write(lease, prior):
                     raise ProjectConflict("project_runtime_reconciliation_required")
                 load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
                 current = store.get_revision(existing.projectId, owner_id=owner_id)

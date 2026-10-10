@@ -134,9 +134,9 @@ WORKSPACE_TOOLCHAINS_FACT = (
     "Java 21（java、mvn）、Go 1.24（go）、PHP 8.4（php、composer）、Ruby 3.3（ruby、gem）、.NET 8（dotnet）、"
     "Rust 1.85（rustc、cargo）。"
 )
-#: 预览从网关进来：请求里的 Host 是预览域名。检查 Host 的框架不放行，预览就是 400 / Blocked host。
+#: 预览从网关进来：Host 不是 localhost。检查 Host 的框架不放行，预览就是 400 / Blocked host。
 PREVIEW_HOST_FACT = (
-    "右侧预览经网关转发到开发服务器，请求里的 Host 是预览域名、不是 localhost；"
+    "右侧预览经网关转发到开发服务器，请求里的 Host 不是 localhost；"
     "会检查 Host 的框架要放行所有主机才打得开预览（Django ALLOWED_HOSTS = ['*']、Rails config.hosts.clear、"
     "webpack / Angular 开发服务器 allowedHosts: 'all'）。服务器要监听 0.0.0.0。"
 )
@@ -146,9 +146,28 @@ DEFAULT_TOOLCHAINS_FACT = (
 )
 
 
-def workspace_toolchains_fact() -> str:
+def workspace_toolchains_fact(preview_origin: str | None = None) -> str:
     """按这台电脑真用的镜像说实话：配了全家桶镜像说全家桶，没配说默认镜像有什么、缺什么。"""
-    return (WORKSPACE_TOOLCHAINS_FACT if workspace_e2b_template() else DEFAULT_TOOLCHAINS_FACT) + PREVIEW_HOST_FACT
+    return ((WORKSPACE_TOOLCHAINS_FACT if workspace_e2b_template() else DEFAULT_TOOLCHAINS_FACT)
+            + PREVIEW_HOST_FACT + preview_origin_fact(preview_origin))
+
+
+def preview_origin_fact(pattern: str | None) -> str:
+    """页面在浏览器里是哪个来源。会校验 Origin 的框架（Django 的 CSRF）不信它，所有表单提交都是 403。
+
+    ⚠ 2026-10-10 线上 Django 读书打卡 sr-20261010143514-9KNB9FZ5Q9：页面打得开、GET 全 200，一提交就
+      「Forbidden (Origin checking failed - https://pv-….sslip.io does not match any trusted origins.)」。
+      网关把 Host 换成了回环地址，浏览器的 Origin 原样带过去，两边对不上。上面那句只讲了 Host，模型照着配了
+      ALLOWED_HOSTS，没人告诉它页面本身在 HTTPS 的预览域名上；它花了几轮验收才从日志里倒推出来。
+    pattern 由调用方从预览配置里取（project_preview_config.preview_origin_pattern）；这里是叶子层，不读配置。
+    """
+    if not pattern:
+        return ""
+    return (
+        f"预览页面在浏览器里的来源是 {pattern}（HTTPS，每个工程一个子域名），表单和 fetch 带的 Origin 是它、"
+        "不是服务器自己的地址；会校验来源的框架要信任它，否则所有提交都是 403"
+        f"（Django：CSRF_TRUSTED_ORIGINS = ['{pattern}']）。"
+    )
 
 
 def operation_left_on_lease(store, lease, owner_id: str):
@@ -162,17 +181,23 @@ def operation_left_on_lease(store, lease, owner_id: str):
         return None
 
 
-def idle_office_exec_allows_source_write(lease, operation) -> bool:
-    """已结束的办公命令留下沙盒，不等于运行时还占着源码。
+def finished_operation_allows_source_write(lease, operation) -> bool:
+    """留下的电脑上挂着一件已经结束的事，不等于运行时还占着源码。
 
     ⚠ 2026-09-22 BABCJGGB44：bash 完成后 file_write / project_patch 仍是
       project_runtime_reconciliation_required。租约上的 sandboxId 是留给
       下一条命令的，不是还在跑的 Vite。
+    ⚠ 2026-10-10 线上 Django 读书打卡 sr-20261010143514-9KNB9FZ5Q9：1104b201 起开发服务器闲置到期 / 被取消
+      也「停进程、留电脑、暂停」，可这里还只认办公命令（runtime.exec）。模型照提示「先停掉、再改、再启动」，
+      停掉以后改 settings.py 一直是 reconciliation_required——租约上挂的是已经 cancelled 的 runtime.start，
+      进程停干净了，电脑留着只是给下次叫醒用。只改了「留电脑」那一半，「留下的电脑不挡写源码」这一半没跟上。
+      下次启动把库里那版整份写进去（project_runtime_worker 的 write_files），跟办公命令复用同一个道理。
+    挂的那件事没结束、有没发出的事件、或租约上的操作号查不到（派发不确定），照旧拒。
     """
     if lease is None or not getattr(lease, "sandboxId", None) or operation is None:
         return False
     return (
-        getattr(operation, "kind", None) == "runtime.exec"
+        getattr(operation, "kind", None) in {"runtime.exec", "runtime.start"}
         and getattr(operation, "status", None) in {"completed", "failed", "cancelled"}
         and getattr(operation, "pendingEvent", None) is None
     )
