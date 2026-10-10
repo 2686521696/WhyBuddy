@@ -173,7 +173,10 @@ def restore_application_backup(project_id: str, body: RestoreDataRequest, reques
         lease = service.store.acquire_lease(project_id, owner_id=service.owner_id,
             lease_owner="restore-data-" + uuid.uuid4().hex, ttl_seconds=120)
         try:
-            if lease.sandboxId or lease.processRefs:
+            # ⚠ 2026-10-10 编排正确性第 4 条：原来「租约上还有电脑号」就拒。10-09 起停了的电脑留着暂停 7 天、电脑号一直在，
+            #   这颗「恢复到这个备份」的钮整整一周点不动。拿得到租约 = 没有运行在用它；再看一眼没有在跑的开发服务器就行。
+            #   留着的那台电脑下次启动时发现数据版本对不上，会用这一版覆盖（project_application_runtime 头注）。
+            if service.store.active_runtime_start(project_id, owner_id=service.owner_id) is not None:
                 raise ProjectConflict("project_application_restore_requires_stopped_runtime")
             service.authority(project_id, write=True)
             backup = ProjectApplicationDataStore(service.store).restore_backup(project_id, body.backupId,

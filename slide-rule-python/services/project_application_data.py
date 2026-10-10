@@ -26,7 +26,66 @@ _DDL = (
 )
 
 
+#: 任意栈的备份（2026-10-10 编排正确性第 4 条）：工程树里的几个 SQLite 库打成一包，存法跟任务模板那一份库一样
+#: （同一张表、同一套版本链），只是内容是这一包。任务模板的备份照旧是那一份库本身、照旧按它的表结构严查。
+BUNDLE_PREFIX = b"WBAPPDATA/1\n"
+MAX_BUNDLE_FILES = 8
+
+
+def _bundle_path_ok(path):
+    parts = path.split("/") if isinstance(path, str) else [""]
+    return 0 < len(path) <= 240 and all(part not in ("", ".", "..") for part in parts)
+
+
+def encode_bundle(files):
+    """{工程里的相对路径: 库的字节} → 一份确定的字节（同样的库得到同样的哈希，没变就不新存一版）。"""
+    if not isinstance(files, dict) or not 1 <= len(files) <= MAX_BUNDLE_FILES:
+        raise ValueError("project_application_bundle_invalid")
+    rows = [{"path": path, "data": base64.b64encode(data).decode("ascii")} for path, data in sorted(files.items())]
+    return BUNDLE_PREFIX + json.dumps({"files": rows}, separators=(",", ":"), sort_keys=True).encode("ascii")
+
+
+def decode_bundle(payload):
+    if not isinstance(payload, bytes) or not payload.startswith(BUNDLE_PREFIX):
+        raise ValueError("project_application_bundle_invalid")
+    try:
+        rows = json.loads(payload[len(BUNDLE_PREFIX):].decode("ascii"))["files"]
+        files = {row["path"]: base64.b64decode(row["data"], validate=True) for row in rows}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise ValueError("project_application_bundle_invalid") from None
+    if not 1 <= len(files) <= MAX_BUNDLE_FILES or len(files) != len(rows) or not all(_bundle_path_ok(p) for p in files):
+        raise ValueError("project_application_bundle_invalid")
+    return files
+
+
+def is_bundle(payload):
+    return isinstance(payload, bytes) and payload.startswith(BUNDLE_PREFIX)
+
+
+def _validate_any_sqlite(data):
+    """应用自己的库：不认表结构（栈不同、表也不同），只认它是一个完好的 SQLite 库。只读打开，不执行应用的 SQL。"""
+    if not isinstance(data, bytes) or not 100 <= len(data) <= MAX_DATABASE_BYTES or not data.startswith(b"SQLite format 3\0"):
+        raise ValueError("project_application_database_invalid")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(data)
+        connection.execute("pragma trusted_schema=OFF")
+        connection.execute("pragma query_only=ON")
+        if connection.execute("pragma quick_check").fetchall() != [("ok",)]:
+            raise ValueError("project_application_database_invalid")
+    except sqlite3.Error:
+        raise ValueError("project_application_database_invalid") from None
+    finally:
+        connection.close()
+
+
 def _validate_database(payload):
+    if is_bundle(payload):
+        if len(payload) > MAX_DATABASE_BYTES:
+            raise ValueError("project_application_database_invalid")
+        for data in decode_bundle(payload).values():
+            _validate_any_sqlite(data)
+        return
     if not isinstance(payload, bytes) or not 100 <= len(payload) <= MAX_DATABASE_BYTES or not payload.startswith(b"SQLite format 3\0"):
         raise ValueError("project_application_database_invalid")
     connection = sqlite3.connect(":memory:")
@@ -120,8 +179,13 @@ class ProjectApplicationDataStore:
             return context
         project = self.store.get_project(project_id, owner_id=owner_id)
         lease = self.store.get_lease(project_id, owner_id=owner_id)
+        # ⚠ 2026-10-10 编排正确性第 4 条：原来「租约上还挂着进程号」就拒。10-09 起停了的电脑留着暂停，租约上的
+        #   server / operationId 是已停进程的旧记号，一直在——「恢复到这个备份」一整周点不动（路由那道同一处修，§4）。
+        #   租约上挂着进程号、而且那台开发服务器还在跑 / 排队，才拒；进程号是已停那台留下的旧记号就不算。
+        attached = lease is not None and bool(lease.processRefs.get("server") or lease.processRefs.get("operationId"))
         if (lease is None or lease.generation != generation or lease.leaseOwner != lease_owner
-                or lease.expiresAt <= time.time() or lease.processRefs.get("server") or lease.processRefs.get("operationId")):
+                or lease.expiresAt <= time.time()
+                or (attached and self.store.active_runtime_start(project_id, owner_id=owner_id) is not None)):
             raise ProjectConflict("project_application_restore_requires_stopped_runtime")
         return {"project": project, "lease": lease, "owner_id": owner_id, "generation": generation,
                 "lease_owner": lease_owner, "lease_payload": lease.model_dump_json()}

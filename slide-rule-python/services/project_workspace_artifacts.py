@@ -7,6 +7,12 @@ or a bounded SQLite snapshot, never arbitrary build output.
 """
 
 MAX_APPLICATION_DATA_BYTES = 8 * 1024 * 1024
+#: 任意栈的应用数据（2026-10-10 编排正确性第 4 条）：工程树里的 SQLite 库，最多这么多个、合计这么大（原始字节；
+#: 打包后 base64 仍在 project_application_data.MAX_DATABASE_BYTES 以内）。
+MAX_APPLICATION_FILES = 8
+MAX_APPLICATION_FILES_BYTES = 5 * 1024 * 1024
+#: 记「这台电脑上的数据是哪一版备份」的标记，跟任务模板的库放在同一个工程外目录里。
+APPLICATION_DATA_DIR = "/home/user/.whybuddy-application"
 MAX_OFFICE_COLLECT_BYTES = 16 * 1024 * 1024
 #: 发布到应用市场、在线打开的那份构建产物（dist）的上限（project_site_store 头注）。
 MAX_SITE_COLLECT_BYTES = 16 * 1024 * 1024
@@ -147,6 +153,126 @@ elif action in ("read-data", "write-data"):
             finally: os.close(folder)
         if data is not None and not data.startswith(b"SQLite format 3\x00"): raise ValueError("application_data_invalid")
         print(json.dumps({"data": base64.b64encode(data).decode() if data is not None else None}))
+elif action in ("snapshot-files", "restore-files", "mark-data", "read-marker"):
+    # ⚠ 2026-10-10 编排正确性第 4 条：应用数据备份原来只认任务模板那一个固定位置的 tasks.sqlite。Django 的 db.sqlite3、
+    #   Express 写的 data.db 都没人管——电脑保留期（7 天）一过或开到新电脑上，用户录的数据就没了
+    #   （线上 Django 借阅登记 sr-20261009072201-D28Z7A4YAG 就是这么丢的）。这里找工程树里的 SQLite 库，
+    #   用 SQLite 自己的 backup 拿一致的快照（应用正在写也不会拿到半截），恢复时原子替换并清掉旧的 -wal/-shm。
+    import sqlite3, tempfile
+    cap, total_cap, max_files = 8388608, 5242880, 8
+    skip = {"node_modules", ".git", ".venv", "venv", "env", "__pycache__", "dist", "build", ".next", ".nuxt",
+            "target", ".cache", ".sliderule", ".whybuddy-preview", ".gradle", ".m2", "vendor", "public"}
+    marker_dir = job.get("markerDir") or "/home/user/.whybuddy-application"
+    def safe(rel):
+        parts = rel.split("/") if isinstance(rel, str) else [""]
+        return (0 < len(rel) <= 240 and all(p not in ("", ".", "..") and not p.startswith(".wb-") for p in parts)
+                and not any(p in skip for p in parts[:-1]))
+    def read_marker():
+        try: fd = directory(marker_dir)
+        except FileNotFoundError: return None
+        try:
+            try: raw = regular(fd, "data-version.json", 4096)
+            except FileNotFoundError: return None
+        finally: os.close(fd)
+        try: value = json.loads(raw).get("version")
+        except (ValueError, AttributeError): return None
+        return value if type(value) is int and value >= 0 else None
+    def write_marker(version):
+        if type(version) is not int or version < 0: raise ValueError("application_data_version_invalid")
+        fd = directory(marker_dir, create=True)
+        temporary = ".wb-marker-" + uuid.uuid4().hex
+        try:
+            out = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+            with os.fdopen(out, "w") as stream:
+                stream.write(json.dumps({"version": version})); stream.flush(); os.fsync(stream.fileno())
+            os.replace(temporary, "data-version.json", src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            try: os.unlink(temporary, dir_fd=fd)
+            except FileNotFoundError: pass
+            os.close(fd)
+    if action == "mark-data":
+        write_marker(job["version"])
+        print(json.dumps({"ok": True}))
+    elif action == "read-marker":
+        print(json.dumps({"marker": read_marker()}))
+    elif action == "snapshot-files":
+        found = []
+        def visit(fd, prefix, depth):
+            bounded_visit(depth)
+            if depth > 6: return
+            for name in sorted(os.listdir(fd)):
+                if len(found) >= max_files: return
+                try: meta = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError: continue
+                if stat.S_ISDIR(meta.st_mode):
+                    if name in skip or name.startswith(".wb-"): continue
+                    nested = os.open(name, flags, dir_fd=fd)
+                    try: visit(nested, prefix + name + "/", depth + 1)
+                    finally: os.close(nested)
+                elif stat.S_ISREG(meta.st_mode) and 100 <= meta.st_size <= cap and not name.startswith(".wb-"):
+                    stream = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+                    try: head = os.read(stream, 16)
+                    finally: os.close(stream)
+                    if head == b"SQLite format 3\x00": found.append(prefix + name)
+        root_fd = directory(root)
+        try: visit(root_fd, "", 0)
+        finally: os.close(root_fd)
+        base = os.path.realpath(root)
+        files, total = [], 0
+        for rel in found:
+            path = os.path.realpath(os.path.join(root, rel))
+            if not path.startswith(base + os.sep): continue
+            handle, temporary = tempfile.mkstemp(prefix=".wb-snap-")
+            os.close(handle)
+            try:
+                source = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=5)
+                try:
+                    target = sqlite3.connect(temporary)
+                    try:
+                        source.backup(target)
+                        # WAL 模式的库快照出来头里还标着 WAL：存储那边按内存库校验打不开它（unable to open）。
+                        # 快照换回普通日志模式；应用下次打开时要 WAL 自己会再设。
+                        target.execute("pragma journal_mode=delete")
+                    finally: target.close()
+                finally: source.close()
+                with open(temporary, "rb") as reader: data = reader.read(cap + 1)
+            except sqlite3.Error:
+                continue                       # 库坏了或被锁死：这一份这次不收，别的照收
+            finally: os.unlink(temporary)
+            if len(data) > cap or total + len(data) > total_cap: continue
+            total += len(data)
+            files.append({"path": rel, "data": base64.b64encode(data).decode()})
+        print(json.dumps({"files": files, "marker": read_marker()}))
+    else:
+        overwrite, written = job.get("overwrite") is True, 0
+        for item in job["files"]:
+            rel = item.get("path")
+            data = base64.b64decode(item.get("data", ""), validate=True)
+            if not safe(rel) or not data.startswith(b"SQLite format 3\x00") or not 100 <= len(data) <= cap:
+                raise ValueError("application_data_invalid")
+            parts = rel.split("/")
+            folder = directory(root.rstrip("/") + "".join("/" + part for part in parts[:-1]), create=True)
+            temporary = ".wb-data-" + uuid.uuid4().hex
+            try:
+                try:
+                    os.stat(parts[-1], dir_fd=folder, follow_symlinks=False)
+                    exists = True
+                except FileNotFoundError: exists = False
+                if exists and not overwrite: continue
+                out = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=folder)
+                with os.fdopen(out, "wb") as stream:
+                    stream.write(data); stream.flush(); os.fsync(stream.fileno())
+                for sidecar in (parts[-1] + "-wal", parts[-1] + "-shm", parts[-1] + "-journal"):
+                    try: os.unlink(sidecar, dir_fd=folder)
+                    except FileNotFoundError: pass
+                os.replace(temporary, parts[-1], src_dir_fd=folder, dst_dir_fd=folder)
+                written += 1
+            finally:
+                try: os.unlink(temporary, dir_fd=folder)
+                except FileNotFoundError: pass
+                os.close(folder)
+        write_marker(job["version"])
+        print(json.dumps({"ok": True, "written": written}))
 elif action == "collect-build":
     # Same traversal and markers as "output", returning the bytes so the host can keep exactly the
     # verified build for the published site. Bounded; the host re-hashes and compares with the evidence.

@@ -1051,7 +1051,7 @@ class _RuntimeTask:
             if not reused and (prior_computer or self._had_a_computer_before()):
                 # 之前有过电脑、这次却是新开的（闲置太久被回收、或连不上）：照实告诉模型，别让它以为装过的还在。
                 self.result["freshComputer"] = True
-            restore_application_data(self)
+            restore_application_data(self, reused=reused)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
             # 留住这台沙盒的工作区才谈得上「命令在沙盒里改了源码」：记下刚写进去的样子，命令跑完对一遍。

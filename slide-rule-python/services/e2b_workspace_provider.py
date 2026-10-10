@@ -34,7 +34,8 @@ from services.project_source_scan import SCAN_SCRIPT, scan_request
 from services.project_tool_contracts import SHELL_COMMAND_MAX_CHARS
 from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import (
-    ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES, MAX_SITE_COLLECT_BYTES,
+    APPLICATION_DATA_DIR, ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_APPLICATION_FILES, MAX_APPLICATION_FILES_BYTES,
+    MAX_OFFICE_COLLECT_BYTES, MAX_SITE_COLLECT_BYTES,
     STATIC_BUILD_SERVER_SCRIPT,
 )
 from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, SANDBOX_GONE, WorkspaceHandle, WorkspaceProviderError
@@ -747,6 +748,8 @@ class E2BWorkspaceProvider:
             reply = process.wait()
             if action == "read-data":
                 limit = (MAX_APPLICATION_DATA_BYTES + 2) // 3 * 4 + 100
+            elif action == "snapshot-files":
+                limit = (MAX_APPLICATION_FILES_BYTES + 2) // 3 * 4 + MAX_APPLICATION_FILES * 400 + 200
             elif action == "collect-office":
                 limit = (MAX_OFFICE_COLLECT_BYTES + 2) // 3 * 4 + 4096
             elif action == "collect-build":
@@ -879,6 +882,57 @@ class E2BWorkspaceProvider:
         if not isinstance(data, bytes) or not 16 <= len(data) <= MAX_APPLICATION_DATA_BYTES or not data.startswith(b"SQLite format 3\x00"):
             raise ValueError("project_application_data_invalid")
         if self._artifact_io(handle, "write-data", data=base64.b64encode(data).decode()) != {"ok": True}:
+            raise WorkspaceProviderError("project_application_data_restore_failed")
+
+    def snapshot_application_files(self, handle):
+        """工程树里每个 SQLite 库的一致快照 + 这台电脑上次写下的数据版本（2026-10-10，ARTIFACT_IO_SCRIPT 那一段头注）。"""
+        value = self._artifact_io(handle, "snapshot-files")
+        if set(value) != {"files", "marker"} or not isinstance(value["files"], list) or len(value["files"]) > MAX_APPLICATION_FILES:
+            raise WorkspaceProviderError("project_application_data_invalid")
+        marker = value["marker"]
+        if marker is not None and (type(marker) is not int or marker < 0):
+            raise WorkspaceProviderError("project_application_data_invalid")
+        files, total = {}, 0
+        try:
+            for item in value["files"]:
+                if not isinstance(item, dict) or set(item) != {"path", "data"} or not isinstance(item["path"], str):
+                    raise ValueError()
+                data = base64.b64decode(item["data"], validate=True)
+                total += len(data)
+                if not data.startswith(b"SQLite format 3\x00") or total > MAX_APPLICATION_FILES_BYTES or item["path"] in files:
+                    raise ValueError()
+                files[item["path"]] = data
+        except (TypeError, ValueError):
+            raise WorkspaceProviderError("project_application_data_invalid") from None
+        return files, marker
+
+    def application_data_marker(self, handle):
+        """这台电脑上次写下的数据版本（备份版本号）；没有返回 None。"""
+        value = self._artifact_io(handle, "read-marker")
+        marker = value.get("marker") if set(value) == {"marker"} else -1
+        if marker is not None and (type(marker) is not int or marker < 0):
+            raise WorkspaceProviderError("project_application_data_invalid")
+        return marker
+
+    def restore_application_files(self, handle, files, *, overwrite, version, base="project"):
+        """把备份里的库写回去（只在应用没起的时候调）。overwrite=False：已有的不动。写完记下数据版本。
+        base="application"：任务模板那份库所在的工程外目录（APPLICATION_DATA_DIR），不是工程树。"""
+        if base not in ("project", "application"):
+            raise ValueError("project_application_data_invalid")
+        if (not isinstance(files, dict) or not files or len(files) > MAX_APPLICATION_FILES or type(version) is not int or version < 0
+                or any(not isinstance(path, str) or not isinstance(data, bytes) or not data.startswith(b"SQLite format 3\x00")
+                       for path, data in files.items())):
+            raise ValueError("project_application_data_invalid")
+        extra = {"root": APPLICATION_DATA_DIR} if base == "application" else {}
+        reply = self._artifact_io(handle, "restore-files", overwrite=bool(overwrite), version=version, **extra,
+            files=[{"path": path, "data": base64.b64encode(data).decode()} for path, data in sorted(files.items())])
+        if reply.get("ok") is not True:
+            raise WorkspaceProviderError("project_application_data_restore_failed")
+
+    def mark_application_data(self, handle, version):
+        if type(version) is not int or version < 0:
+            raise ValueError("project_application_data_invalid")
+        if self._artifact_io(handle, "mark-data", version=version) != {"ok": True}:
             raise WorkspaceProviderError("project_application_data_restore_failed")
 
     def sync_files(self, handle: WorkspaceHandle, *, expected_files: dict[str, str], files: dict[str, str]) -> None:

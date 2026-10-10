@@ -362,7 +362,8 @@ def test_collect_office_lives_in_the_sandbox_script():
     script = ARTIFACT_IO_SCRIPT
     collect_at = script.find('action == "collect-office"')
     magic_at = script.find(r"PK\x03\x04")
-    skip_at = script.find("node_modules")
+    # 从办公那一段往后找：2026-10-10 起应用数据那一段（在它前面）也跳过 node_modules。
+    skip_at = script.find("node_modules", collect_at)
     assert 0 <= collect_at < skip_at < magic_at
     assert "generate_deck.py" not in script
 
