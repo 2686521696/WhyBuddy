@@ -189,11 +189,19 @@ class ProjectPreviewAccess:
 
     @_retry_snapshot
     def _issue(self, kind: str, operation_id: str, owner_id: str, audience: str,
-               ttl_seconds: float) -> IssuedPreviewCredential:
-        ttl_seconds = _ttl(ttl_seconds, 120 if kind == "browser-ticket" else 900)
+               ttl_seconds: float, outlive_runtime_until: float | None = None) -> IssuedPreviewCredential:
         scope, row = self._authority(operation_id, owner_id, audience)
         now, secret = self.clock(), secrets.token_urlsafe(32)
-        expires = min(now + ttl_seconds, row["runtime_expires_at"])
+        if outlive_runtime_until is not None:
+            # 只给运行自己的隧道：运行的到期时刻会因有人在用往后挪（_RuntimeTask.slide_lifetime），
+            # 隧道授权签到这次启动的硬上限，免得每挪一次就换一次隧道（换隧道 = 浏览器长连接全断 = Vite 整页重载）。
+            # 每次使用照旧按「当时的」运行到期判（_lookup / validate_binding 取 min）。
+            if kind != "tunnel" or not math.isfinite(outlive_runtime_until):
+                raise ValueError("preview_grant_ceiling_invalid")
+            expires = min(now + _ttl(ttl_seconds, 86_400), outlive_runtime_until)
+        else:
+            ttl_seconds = _ttl(ttl_seconds, 120 if kind == "browser-ticket" else 900)
+            expires = min(now + ttl_seconds, row["runtime_expires_at"])
         grant_expires = min(now + self.browser_grant_seconds, row["runtime_expires_at"])
         if kind == "browser-ticket":
             expires = min(expires, grant_expires)
@@ -214,8 +222,8 @@ class ProjectPreviewAccess:
         return self._issue("browser-ticket", operation_id, owner_id, audience, ttl_seconds)
 
     def issue_tunnel_grant(self, operation_id: str, *, owner_id: str, audience: str,
-                           ttl_seconds: float = 300) -> IssuedPreviewCredential:
-        return self._issue("tunnel", operation_id, owner_id, audience, ttl_seconds)
+                           ttl_seconds: float = 300, outlive_runtime_until: float | None = None) -> IssuedPreviewCredential:
+        return self._issue("tunnel", operation_id, owner_id, audience, ttl_seconds, outlive_runtime_until)
 
     def _lookup(self, secret: str, kind: str, audience: str) -> tuple[dict, PreviewAccessScope, dict]:
         rows = self.store._q(

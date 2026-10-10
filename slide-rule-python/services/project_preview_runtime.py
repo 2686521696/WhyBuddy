@@ -77,8 +77,13 @@ class ProjectPreviewRuntime:
         remaining = (task.runtime.expiresAt or now) - self.clock()
         if remaining < 2:
             return
+        # 隧道签到这次启动的硬上限，不是当前到期时刻：到期时刻会因有人在用往后挪（slide_lifetime），
+        # 按当前时刻签，每挪一次上面就判「不够用了」→ 停隧道换新的 → 浏览器长连接全断 → Vite 整页重载。
+        ceiling = getattr(task, "lifetime_ceiling", None)
+        until = max(ceiling(), task.runtime.expiresAt or now) if callable(ceiling) else (task.runtime.expiresAt or now)
         issued = self.access.issue_tunnel_grant(task.operation_id, owner_id=task.owner_id,
-            audience=origin_for_project(task.runtime.projectId), ttl_seconds=min(900, remaining))
+            audience=origin_for_project(task.runtime.projectId),
+            ttl_seconds=max(1, min(86_400, until - self.clock())), outlive_runtime_until=until)
         task.result["preview"] = {"phase": "dispatching", "grantId": issued.scope.grant_id,
             "generation": task.lease.generation, "revision": task.runtime.revision, "expiresAt": issued.expires_at}
         try:

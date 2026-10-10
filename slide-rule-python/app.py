@@ -393,6 +393,9 @@ def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
         poll_interval=_runtime_limit("SLIDERULE_PROJECT_POLL_SECONDS", 2, 1, 30),
         lease_ttl=_runtime_limit("SLIDERULE_PROJECT_LEASE_SECONDS", 120, 30, 3600),
         lifetime_seconds=lifetime,
+        # 2026-10-10 起寿命按使用滑动：有人在用就往后挪，一次启动最多到这个上限（花钱的边界）。
+        # 默认 1 小时：E2B 入门档沙盒单次最长 1 小时，调高前先确认套餐。
+        max_lifetime_seconds=max(lifetime, _runtime_limit("SLIDERULE_PROJECT_MAX_LIFETIME_SECONDS", 3600, 60, 86_400)),
         idle_seconds=min(lifetime, _runtime_limit("SLIDERULE_PROJECT_IDLE_SECONDS", 300, 30, 3600)),
         install_timeout=_runtime_limit("SLIDERULE_PROJECT_INSTALL_SECONDS", 600, 10, 600),
         ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300),

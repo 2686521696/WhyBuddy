@@ -206,7 +206,7 @@ def restore_development_runtime(task, child, *, restore=True):
     expected = {**files, PROJECT_REVISION_FILE: json.dumps({"revision": child.expectedRevision})}
     task.provider.sync_files(task.handle, expected_files=expected, files=expected)
     pid = _dispatch(task, child, "server", lambda: task.provider.start_process(
-        task.handle, task.development_server_command(), timeout_seconds=900), "starting")
+        task.handle, task.development_server_command(), timeout_seconds=task.server_process_seconds()), "starting")
     task.runtime = task.runtime.model_copy(update={"processId": pid})
     deadline = time.monotonic() + task.supervisor.ready_timeout
     while True:

@@ -402,6 +402,10 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
       control.validating = true;
       void validate(control.grant).then(until => {
         if (until === null) closeControl(control);
+        // 2026-10-10: the runtime's deadline slides while someone uses it (Python slide_lifetime), and the
+        // tunnel's effective deadline with it. Without following it, current() drops the control at the
+        // start-time deadline: every browser stream through it dies and Vite reloads the page.
+        else if (until > control.grant.expiresAt) control.grant = { ...control.grant, expiresAt: until };
       }).finally(() => { control.validating = false; });
     }
     for (const access of browserAccess) {

@@ -231,7 +231,10 @@ def test_last_fifteen_seconds_of_runtime_do_not_create_a_rotation_storm(managed)
 
 
 def test_rotation_stops_old_process_then_revokes_old_grant_before_starting_new(managed, monkeypatch):
-    managed.task.runtime = managed.task.runtime.model_copy(update={"expiresAt": time.time() + 3600})
+    # 2026-10-10 起隧道签到这次启动的硬上限（lifetimeCeiling），不会比运行先到期——除非上限超过隧道
+    # 单张授权的 24 小时封顶。这里配一个 25 小时的上限走到「隧道快到期 → 换」；判据要的是换的顺序。
+    managed.task.result["lifetimeCeiling"] = managed.world.clock["now"] + 90_000
+    managed.task.runtime = managed.task.runtime.model_copy(update={"expiresAt": time.time() + 90_000})
     managed.task.save("ready")
     managed.manager.ensure(managed.task)
     old = dict(managed.task.result["preview"])
@@ -244,7 +247,7 @@ def test_rotation_stops_old_process_then_revokes_old_grant_before_starting_new(m
     # The fake clock also drives access TTLs; keep the durable lease live in that
     # clock without starting a thread or actually waiting fifteen minutes.
     row = managed.world.store.get_lease(managed.world.project.projectId, owner_id="u1")
-    row = row.model_copy(update={"expiresAt": time.time() + 3600})
+    row = row.model_copy(update={"expiresAt": time.time() + 90_000})
     managed.world.store._q("update wb_project_lease set payload=$1,expires_at=$2 where project_id=$3",
         [row.model_dump_json(), row.expiresAt, row.projectId])
     managed.manager.ensure(managed.task)
@@ -507,7 +510,8 @@ def test_e2b_tunnel_install_uses_stdin_private_files_and_managed_process(setup_p
 
 
 @pytest.mark.parametrize("change", [{"token": "management-key"}, {"port": True}, {"port": 22},
-    {"expires_at": float("nan")}, {"expires_at": time.time() - 1}, {"agent_source": "x" * (512 * 1024 + 1)},
+    {"expires_at": float("nan")}, {"expires_at": time.time() - 1}, {"expires_at": time.time() + 86_500},
+    {"agent_source": "x" * (512 * 1024 + 1)},
     {"relay_origin": "http://rt.example.com"}, {"relay_origin": "https://x..example.com"},
     {"relay_origin": "https://user@x.example.com"}, {"relay_origin": "https://x.example.com:99999"},
     {"relay_origin": "https://x.example.com/path"}, {"relay_origin": None}])
@@ -518,6 +522,15 @@ def test_tunnel_invalid_configuration_never_reaches_sdk(setup_provider, change):
     with pytest.raises(WorkspaceProviderError, match="config_invalid"):
         provider.start_preview_tunnel(handle, **values)
     assert not fake.calls
+
+
+def test_tunnel_process_lives_as_long_as_the_runtime_may(setup_provider):
+    """⚠ 2026-10-10：隧道进程原来封顶 900s——运行因有人在用往后挪了，E2B 第 15 分钟照样把隧道杀掉，
+    浏览器长连接全断、Vite 整页重载。现在活到这次启动的上限（≤24h）。变异：min(900, …) 改回来 → 红。"""
+    provider, handle, fake, _ = setup_provider
+    provider.start_preview_tunnel(handle, agent_source="console.log('agent')",
+        relay_origin="https://pv-one.preview.example.com", token="a" * 43, port=5173, expires_at=time.time() + 3600)
+    assert fake.calls[-1][1]["timeout"] >= 3600
 
 
 def test_tunnel_sdk_errors_cannot_export_scoped_token_or_sdk_credentials(setup_provider):

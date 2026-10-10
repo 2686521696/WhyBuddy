@@ -965,7 +965,7 @@ class E2BWorkspaceProvider:
         now = time.time()
         if (not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token)
                 or type(port) is not int or not 1024 <= port <= 65535
-                or type(expires_at) not in (float, int) or not math.isfinite(expires_at) or not now < expires_at <= now + 901
+                or type(expires_at) not in (float, int) or not math.isfinite(expires_at) or not now < expires_at <= now + 86_401
                 or not isinstance(agent_source, str) or not agent_source.strip() or len(agent_source.encode("utf-8")) > 512 * 1024
                 or not origin_valid):
             raise WorkspaceProviderError("e2b_preview_tunnel_config_invalid")
@@ -975,7 +975,7 @@ class E2BWorkspaceProvider:
                 "relayOrigin": relay_origin, "token": token, "localPort": port,
                 "expiresAt": expires_at * 1000})}, root)
             return self.start_process(handle, f"node {root}/agent.cjs {root}/config.json",
-                timeout_seconds=max(1, min(900, int(expires_at - time.time()) + 1)))
+                timeout_seconds=max(1, min(86_400, int(expires_at - time.time()) + 1)))
         except Exception:
             raise WorkspaceProviderError("e2b_preview_tunnel_start_failed") from None
 

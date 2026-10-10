@@ -110,12 +110,13 @@ def test_lifespan_shutdown_runs_when_application_body_raises(startup, monkeypatc
 def test_worker_configuration_bounds_reach_real_constructor(startup, monkeypatch):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     for key, value in {"MAX_WORKERS": "1000", "POLL_SECONDS": "0", "LEASE_SECONDS": "oops",
-            "LIFETIME_SECONDS": "60", "IDLE_SECONDS": "900", "INSTALL_SECONDS": "9999", "READY_SECONDS": "-1"}.items():
+            "LIFETIME_SECONDS": "60", "IDLE_SECONDS": "900", "INSTALL_SECONDS": "9999", "READY_SECONDS": "-1",
+            "MAX_LIFETIME_SECONDS": "999999"}.items():
         monkeypatch.setenv("SLIDERULE_PROJECT_" + key, value)
     supervisor = app_module._start_project_runtime_supervisor()
     assert supervisor.config == {"max_workers": 8, "poll_interval": 1, "lease_ttl": 120,
         "lifetime_seconds": 60, "idle_seconds": 60, "install_timeout": 600, "ready_timeout": 5,
-        "browser_provider_factory": app_module.E2BProjectBrowserProvider}
+        "max_lifetime_seconds": 86_400, "browser_provider_factory": app_module.E2BProjectBrowserProvider}
 
 
 def test_app_configuration_is_accepted_by_actual_worker(startup, monkeypatch, tmp_path):

@@ -6,7 +6,7 @@ import { startPreviewTunnelAgent } from "./tunnel-agent";
 async function main() {
   const config = JSON.parse(readFileSync(process.argv[2], "utf8"));
   if (!Number.isFinite(config.expiresAt) || config.expiresAt <= Date.now() ||
-      config.expiresAt > Date.now() + 901000) throw new Error("preview_agent_config_invalid");
+      config.expiresAt > Date.now() + 86_401_000) throw new Error("preview_agent_config_invalid");
   let stopping = false;
   let active: Awaited<ReturnType<typeof startPreviewTunnelAgent>> | undefined;
   const stop = () => { stopping = true; active?.close(); };

@@ -315,6 +315,29 @@ describe("private preview outbound tunnel", () => {
     expect(Date.now() - start).toBeGreaterThanOrEqual(650);
   });
 
+  // 2026-10-10: the runtime's deadline slides while someone uses it, and the tunnel's effective deadline
+  // with it (Python returns min(grant, runtime)). Mutation: the control loop ignores a later deadline → red.
+  it("keeps a tunnel control past its first deadline once Python reports a later one", async () => {
+    const f = await fixture();
+    const first = Date.now() + 400;
+    f.tokens.set("short", { ...f.tunnel, grantId: "short-tunnel", expiresAt: first });
+    f.deadlines.set("short-tunnel", first + 60_000);
+    await f.agent("short");
+    // Python now answers every check with the later deadline (fresh data connections authorize by token);
+    // only the already-open control still holds the start-time one.
+    f.tokens.set("short", { ...f.tunnel, grantId: "short-tunnel", expiresAt: first + 60_000 });
+    await new Promise(resolve => setTimeout(resolve, 800));
+    expect((await http(f.origin, "/headers", f.cookie)).status).toBe(200);
+  });
+
+  it("still drops a tunnel control at its deadline when nothing extended it", async () => {
+    const f = await fixture();
+    f.tokens.set("short", { ...f.tunnel, grantId: "short-tunnel", expiresAt: Date.now() + 400 });
+    await f.agent("short");
+    await new Promise(resolve => setTimeout(resolve, 800));
+    expect((await http(f.origin, "/headers", f.cookie)).status).not.toBe(200);
+  });
+
   it("fences old generations and stale close handlers when replacing a control", async () => {
     const f = await fixture();
     const client = browserWs(f.origin); await once(client.ws, "open");

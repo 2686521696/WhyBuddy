@@ -193,16 +193,22 @@ class ProjectRuntimeSupervisor:
                  max_workers: int = 2, poll_interval: float = 2, lease_ttl: float = 120,
                  lifetime_seconds: float = 900, idle_seconds: float = 300,
                  install_timeout: float = 600, ready_timeout: float = 60, preview_runtime=None,
-                 browser_provider_factory=None):
+                 browser_provider_factory=None, max_lifetime_seconds: float | None = None):
+        """lifetime_seconds：从最后一次「有人在用」起算，运行还能活多久（2026-10-10 起是滑动的，见
+        _RuntimeTask.slide_lifetime）；max_lifetime_seconds：一次启动最多活多久（硬上限，花钱的边界）。
+        不给上限就等于 lifetime_seconds——老行为，到点就停。"""
         if not 1 <= max_workers <= 8 or not 0 < poll_interval <= 30 or not 1 <= lease_ttl <= 3600:
             raise ValueError("invalid_runtime_worker_config")
-        if not 1 <= lifetime_seconds <= 3600 or not 1 <= idle_seconds <= lifetime_seconds:
+        max_lifetime_seconds = lifetime_seconds if max_lifetime_seconds is None else max_lifetime_seconds
+        if (not 1 <= lifetime_seconds <= 3600 or not 1 <= idle_seconds <= lifetime_seconds
+                or not lifetime_seconds <= max_lifetime_seconds <= 86_400):
             raise ValueError("invalid_runtime_budget")
         if not 1 <= install_timeout <= 600 or not 1 <= ready_timeout <= 300:
             raise ValueError("invalid_runtime_timeout")
         self.store, self.provider_factory, self.authorizer = store, provider_factory, authorizer
         self.max_workers, self.poll_interval, self.lease_ttl = max_workers, poll_interval, lease_ttl
         self.lifetime_seconds, self.idle_seconds = lifetime_seconds, idle_seconds
+        self.max_lifetime_seconds = max_lifetime_seconds
         self.install_timeout, self.ready_timeout = install_timeout, ready_timeout
         self.preview_runtime = preview_runtime
         self.browser_provider_factory = browser_provider_factory
@@ -615,6 +621,10 @@ class _RuntimeTask:
         self.log_offsets: dict[str, int] = {}
         self.result = dict(original.result or {})
         self.result.setdefault("idleSeconds", supervisor.idle_seconds)
+        # 一次启动的硬上限，落库：重启接管照旧算这个时刻，不从接管那一刻重算。
+        # 老运行（这个字段之前起的）没有它：上限就是它原来的到期时刻，不续。
+        self.result.setdefault("lifetimeCeiling", (self.runtime.expiresAt or time.time()) if original.runtime
+                               else time.time() + supervisor.max_lifetime_seconds)
         if original.kind == "runtime.exec":
             script = original.input.get("script")
             self.result.setdefault("command", script if isinstance(script, str) else original.input.get("command"))
@@ -678,6 +688,36 @@ class _RuntimeTask:
                            now - since, self.owner_id)
             return
         self._actor_unavailable_since = None
+
+    def lifetime_ceiling(self) -> float:
+        ceiling = self.result.get("lifetimeCeiling")
+        return float(ceiling) if isinstance(ceiling, (int, float)) else float(self.runtime.expiresAt or time.time())
+
+    def server_process_seconds(self) -> int:
+        """开发服务器 / 预览隧道这类「跟运行同寿」的进程给沙盒的时限：活到上限为止。
+
+        ⚠ 2026-10-10：这里原来到处写死 900。E2B 到点把进程杀掉——运行的寿命调成 3600 也没用，
+          开发服务器第 15 分钟照死、健康检查判 project_runtime_health_failed。
+        """
+        return max(60, min(86_400, int(self.lifetime_ceiling() - time.time()) + 60))
+
+    def slide_lifetime(self, last_access: float) -> bool:
+        """有人在用（看预览、模型在改），运行的到期时刻就往后挪，挪到硬上限为止。
+
+        ⚠ 2026-10-10 用户「预览的时候并且在使用操作页面会自动刷新」：到期时刻是启动那一刻定死的
+          （默认 15 分钟），人正点着页面，运行到点停掉，前端自动唤醒一台新的——整页重载、等安装。
+          「没人用」由 idle 钟管（照旧），这里只管「有人用就别到点就停」。
+          每次至少挪 min(60s, 寿命/4) 才落库，免得空转循环每圈写一次。
+        """
+        current = self.runtime.expiresAt
+        if current is None:
+            return False
+        target = min(self.lifetime_ceiling(), last_access + self.supervisor.lifetime_seconds)
+        if target - current < min(60.0, self.supervisor.lifetime_seconds / 4):
+            return False
+        self.runtime = self.runtime.model_copy(update={"expiresAt": target})
+        self.save("ready")
+        return True
 
     def sleep(self, *, tight=False):
         # Console typing is ~50 cps. A 2s poll turns that into a jump. 120ms
@@ -1039,7 +1079,7 @@ class _RuntimeTask:
                                                                  self.supervisor.install_timeout)
                 self.save("starting")
                 started = self.provider.start_process(self.handle, self.development_server_command(),
-                                                      timeout_seconds=900)
+                                                      timeout_seconds=self.server_process_seconds())
                 self._register("server", started.process_id)
                 phase = "starting"
             else:
@@ -1093,7 +1133,7 @@ class _RuntimeTask:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
                 self.save("starting")
                 started = self.provider.start_process(self.handle,
-                    self.development_server_command(), timeout_seconds=900)
+                    self.development_server_command(), timeout_seconds=self.server_process_seconds())
                 self._register("server", started.process_id)
                 phase = "starting"
         if self.original.kind == "runtime.exec":
@@ -1127,7 +1167,7 @@ class _RuntimeTask:
             if callable(stopper):
                 stopper(self.handle, pid)
             started = self.provider.start_process(
-                self.handle, self.development_server_command(), timeout_seconds=900)
+                self.handle, self.development_server_command(), timeout_seconds=self.server_process_seconds())
             self._register("server", started.process_id)
             pid = started.process_id
             self.runtime = self.runtime.model_copy(update={"processId": pid})
@@ -1151,6 +1191,7 @@ class _RuntimeTask:
                 if self.try_finish_idle(operation_count, observed.lastAccessAt):
                     return
                 continue
+            self.slide_lifetime(last_access)
             self.logs(pid)
             if time.time() >= next_health:
                 if not self.provider.is_process_running(self.handle, pid) or not self._serving(pid):
