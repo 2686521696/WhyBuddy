@@ -49,7 +49,23 @@ TASK_TEMPLATE_FILES = (
 )
 
 
+#: 网页 / 后端工程的空工作区：不带任何框架，技术栈由批准的计划定（Django、Flask、Express、Go、Spring、Vue …）。
+#: ⚠ 2026-10-10 编排正确性第 3 条：网页计划原来只能建成 React + Vite——工具描述写着「web-app 就是
+#:   React/TypeScript/Vite」，模型要做 Django 也只能先拿一份 Vite 脚手架再自己铺。沙盒是全家桶镜像
+#:   （workspace_e2b_template），栈该由计划说了算，不该由工具描述说了算。
+BLANK_TEMPLATE_ID = "blank"
+BLANK_TEMPLATE_VERSION = "whybuddy-blank-web-1"
+BLANK_WEB_README = (
+    "这是空工作区：没有任何框架或脚手架，按批准的计划自己搭（语言、框架、目录都由计划定）。"
+    "写文件用 file_write，装依赖、跑命令用 bash。"
+    "开发服务器用 deploy_expose_port 带 command 起（例如 python manage.py runserver 0.0.0.0:8000、"
+    "npm run dev -- --host 0.0.0.0），监听 0.0.0.0；没有 command 这里起不来，因为没有 Vite。"
+)
+
+
 def load_project_template(template_id: str = "react-vite") -> tuple[dict[str, str], str]:
+    if template_id == BLANK_TEMPLATE_ID:
+        return {"README.md": BLANK_WEB_README}, BLANK_TEMPLATE_VERSION
     if template_id not in {"react-vite", "react-vite-tasks"}:
         raise ValueError("project_template_unsupported")
     root = TEMPLATE_ROOT if template_id == "react-vite" else TEMPLATE_ROOT.parent / "react-vite-tasks"
@@ -191,7 +207,8 @@ def _ensure_office_tree(store: ProjectStore, project: Project, *, owner_id: str,
 
 
 #: 模板版本 → 模型/前端传的 templateId。办公工作区不在里面：办公计划由 host 按批准计划覆盖，不归模型挑。
-TEMPLATE_ID_FOR_VERSION = {TEMPLATE_VERSION: "react-vite", TASK_TEMPLATE_VERSION: "react-vite-tasks"}
+TEMPLATE_ID_FOR_VERSION = {TEMPLATE_VERSION: "react-vite", TASK_TEMPLATE_VERSION: "react-vite-tasks",
+                           BLANK_TEMPLATE_VERSION: BLANK_TEMPLATE_ID}
 
 
 def _honour_requested_template(store: ProjectStore, project: Project, template_id: str, *,

@@ -110,10 +110,11 @@ def _start(worker, project, key, **kw):
 
 
 def test_precondition_without_a_command_a_django_project_never_starts(django):
+    # 2026-10-10 起在排队之前就拒（ProjectRuntimeSupervisor.submit 那道 package.json 闸，test_stack_follows_the_plan）：
+    #   原来排进队、开了沙盒才以 project_lockfile_or_reserved_path_invalid 失败。前提不变——没有命令起不来。
     store, project, provider, worker = django
-    op = _start(worker, project, "vite-way")
-    done = eventually(lambda: state(store, op, "failed"))
-    assert done.runtime.errorCode == "project_lockfile_or_reserved_path_invalid"
+    with pytest.raises(ValueError, match="project_start_command_required"):
+        _start(worker, project, "vite-way")
     assert provider.started == []
 
 

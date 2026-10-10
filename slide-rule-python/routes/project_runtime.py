@@ -44,7 +44,7 @@ class StartRuntimeRequest(BaseModel):
 class CreateProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approvalRef: str = Field(min_length=1, max_length=512)
-    templateId: Literal["react-vite", "react-vite-tasks"] = "react-vite"
+    templateId: Literal["react-vite", "react-vite-tasks", "blank"] = "react-vite"
 
 
 class VerifyProjectRequest(BaseModel):

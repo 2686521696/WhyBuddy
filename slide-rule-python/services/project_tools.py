@@ -379,7 +379,12 @@ def _strip_preview_host(result: dict) -> dict:
 
 
 # 多行命令不再拒（见 e2b_workspace_provider.pty_line），原先那条「改成一行」的提示随之删掉。
-SHELL_ERROR_TEXT: dict[str, str] = {}
+SHELL_ERROR_TEXT: dict[str, str] = {
+    # 2026-10-10 编排正确性第 3 条（ProjectRuntimeSupervisor.submit 那道闸）。
+    "project_start_command_required": "这个工程没有 package.json，也没用过启动命令，模板的 Vite 起不来。"
+        "用 deploy_expose_port 带上计划里那个栈的启动命令（例如 python manage.py runserver 0.0.0.0:8000、go run .），"
+        "依赖可以在命令里先装。",
+}
 
 #: 建工程回执里列出的路径上限。模板 9～30 个文件；再多就只给前面这些。
 CREATED_FILE_LIST_MAX = 60
@@ -1403,6 +1408,8 @@ def command_receipt_from(adapter, operation_id):
 _TEMPLATE_SUITE_TEXT = {
     "react-vite": "普通网页验收（构建通过、页面渲染出内容、刷新后还在、没有页面错误和失败请求）",
     "react-vite-tasks": "任务清单验收（初始化管理员、写手登录、新增/编辑/筛选任务、读者只读、未登录被拒）",
+    # 2026-10-10：空工作区（任意栈）。少了这一行，template_mismatch_note 在 blank 上直接 KeyError。
+    "blank": "自己用命令起的服务器的验收（按它实际在跑的样子看，不构建模板）",
 }
 
 

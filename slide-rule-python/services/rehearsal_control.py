@@ -2484,6 +2484,9 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 #   这句只列了 .pptx / .docx / .xlsx，它就选了 web-app——建 Vite 工程、跑浏览器验收（失败），
                 #   用户拿到一个点不开的沙盒路径。交给用户的是文件，就不是网页。
                 "deliverableKind 缺省 web-app（交付的是能打开的网页 / 应用）。"
+                # ⚠ 2026-10-10 编排正确性第 3 条：技术栈原来由 project_create 的工具描述定（只有 React+Vite），
+                #   计划里不写。现在由计划定：写清它，执行时照它建。
+                "web-app 的计划写清技术栈（语言、框架、怎么启动）；用户没要求就用 React + Vite 前端。"
                 "交给用户的是文件——.pptx / .docx / .xlsx，或 .md / .txt / .csv / .json 这类文本，或 .png / .jpg 图片（图表、导出的页面图）——"
                 "用 office-file：不建网页、不跑浏览器验收；文本和图片放进 output/ 才算交出，"
                 "收尾那句话里用 [文件名](路径) 链接它，宿主换成下载地址。"
@@ -4753,7 +4756,11 @@ def _system_prompt(state: V5SessionState) -> str:
             "任务管理网页的 templateId 是 react-vite-tasks。"
             "办公文件不是任务管理应用，.pptx / .docx / .xlsx 不会走这个模板。"
             "办公计划下建出来的工程是空工作区。"
-            "react-vite 仅是网页的最小电脑；已有 HTML 应用转换尚未支持。"
+            # ⚠ 2026-10-10 编排正确性第 3 条：原句「react-vite 仅是网页的最小电脑」——网页只有这一种电脑，
+            #   计划写 Django 也得先拿 Vite。栈由批准的计划定。
+            "网页工程按批准计划里定的技术栈建：React + Vite 前端用 templateId=react-vite；"
+            "别的栈（Django、Flask、Express、Next.js、Vue、Go、Spring Boot …）用 templateId=blank 空工作区，"
+            "自己写文件，用 deploy_expose_port 带启动命令起。已有 HTML 应用转换尚未支持。"
             "工程会话不调用 HTML 工厂。"
             "不要自己传 approvalRef、版本号或文件哈希。sudo=true 会被拒绝。"
             "运行已经就绪时，src/、public/、tests/ 和 index.html 可以由当前运行持有者直接改，"

@@ -187,6 +187,10 @@ def _initial_port(original) -> int:
     return int(given.get("port", 5173))
 
 
+#: 工程里没有 package.json、也没给（也没用过）启动命令：模板的 Vite 配方起不来。
+START_COMMAND_REQUIRED = "project_start_command_required"
+
+
 class ProjectRuntimeSupervisor:
     def __init__(self, store: ProjectStore, provider_factory: Callable[[], WorkspaceProvider], *,
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None] = authorize_operation,
@@ -312,6 +316,12 @@ class ProjectRuntimeSupervisor:
                 active = self.store.active_runtime_start(project_id, owner_id=owner_id)
                 if active is not None:
                     return active
+            if command is None and "package.json" not in self.store.read_files(
+                    project_id, project.currentRevision, owner_id=owner_id):
+                # ⚠ 2026-10-10 编排正确性第 3 条：没有命令就落到模板的 Vite 配方（npm ci + npm run dev）。
+                #   空工作区（templateId=blank）或模型自己铺的 Django / Go 工程没有 package.json，那条配方
+                #   开完沙盒才失败（缺锁文件 / Missing script）。开箱之前就说清：要给启动命令。
+                raise ValueError(START_COMMAND_REQUIRED)
             # 积分（2026-10-09）：开着的那台照用（上面），新开一台之前看额度（credit_service 头注）。
             require_credit(owner_id, project_store=self.store)
             operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
