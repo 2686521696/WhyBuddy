@@ -312,6 +312,8 @@ export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
   /** 控制流多久没新数据就回头问一次后台（测试用；默认 CONTROL_STREAM_STALL_MS）。 */
   controlStallMs?: number;
+  /** 控制流被关掉后重接的退避起点（测试用；默认 1 秒）。 */
+  controlClosedRetryMs?: number;
   controlRequestId?: string;
   onControlRunId?: (runId: string) => void;
   maxLoops?: number;
@@ -1075,15 +1077,83 @@ const CONTROL_RUN_TERMINAL = new Set(["completed", "waiting_user", "failed", "ca
  *   所以「流断了」那条兜底（STREAM_NO_TERMINAL →「推演连接中断」）也没触发：前端只认这一条流，流不说话它就永远等。
  *   卡在哪一段（代理 / 查库 / 长连接）那一次已经查不到了；不管是哪一段，回头问一次后台都能对上。
  * 安静 ≠ 卡住：后台还在跑、事件也没比我们多（长 LLM 调用、长命令），照旧等，不重连。
+ *
+ * ⚠ 2026-10-10 线上 sr-20261010071235-QJPAENTX80（采购审批应用，执行那一轮 ctr-a521…）：页面报
+ *   「推演连接中断，后台仍在进行」，库里那条 run 却一直是 running、事件一路写到 100 多条、执行锁按时续——
+ *   断的只是页面这条流。上面那条只管「流开着不说话」；流**被直接关掉**（读到 done、没见过收尾事件）时原来
+ *   直接把 done 交出去，整轮报中断。关流的可能有两处，日志看不到是哪处：推流每 0.25 秒查一次库、线上库走
+ *   HTTP 网关，十几分钟几千发里抖一下生成器就结束；流里没有心跳，长命令期间几十秒没字节，中间哪一跳都可能
+ *   当空闲连接掐掉。不管哪处，都跟「安静」一样回头问后台：还没收尾就从断点接上（退避重试，后台活着就一直接）；
+ *   已经收尾就接一次把剩下的事件和收尾拿回来；接上以后一条都没多、后台也已收尾，才把 done 交出去。
  */
 export function stallAwareControlReader(
   first: ReadableStreamDefaultReader<Uint8Array>,
-  ctx: { runId: () => string | null; seq: () => number; signal?: AbortSignal; stallMs?: number },
+  ctx: {
+    runId: () => string | null; seq: () => number; signal?: AbortSignal; stallMs?: number;
+    /** 读的一方已经见过收尾（complete / control_run_settled）：流再关就是正常结束，不重接。 */
+    settled?: () => boolean;
+    /** 流被关掉后重接的退避起点（毫秒），每次翻倍、封顶 10 秒。测试里调小。 */
+    closedRetryMs?: number;
+  },
 ) {
   let reader = first;
   let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
   let reattached = false;
   const stallMs = ctx.stallMs ?? CONTROL_STREAM_STALL_MS;
+  const closedRetryMs = ctx.closedRetryMs ?? 1_000;
+  /** 上一次因为流被关掉而重接时的进度；重接后一条没多、后台又已收尾，就不再接。 */
+  let closedAtSeq: number | null = null;
+  /** 连着几次被关掉都没拿到新事件（后台在跑长命令）：重接前按它退避，别把服务器打满。 */
+  let idleCloses = 0;
+  const backoff = (n: number) => new Promise(resolve =>
+    setTimeout(resolve, Math.min(closedRetryMs * 2 ** Math.max(n - 1, 0), 10_000)));
+  const fetchRun = async (): Promise<{ status?: string; lastSeq?: number } | null> => {
+    const runId = ctx.runId();
+    if (!runId) return null;
+    try {
+      const res = await fetch(`/api/sliderule/control-runs/${encodeURIComponent(runId)}`,
+        { credentials: "include", signal: ctx.signal });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  };
+  const reattach = async (): Promise<boolean> => {
+    const runId = ctx.runId();
+    if (!runId) return false;
+    try {
+      const res = await fetch(
+        `/api/sliderule/control-runs/${encodeURIComponent(runId)}/stream?afterSeq=${ctx.seq()}`,
+        { credentials: "include", signal: ctx.signal });
+      if (!res.ok || !res.body) return false;
+      reader.cancel().catch(() => {});
+      reader = res.body.getReader();
+      pending = null;
+      reattached = true;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** 流被关掉、还没见过收尾：要不要（以及能不能）从断点接上。 */
+  const reattachAfterClose = async (): Promise<boolean> => {
+    if (!ctx.runId() || ctx.signal?.aborted || ctx.settled?.()) return false;
+    const progressed = closedAtSeq === null || ctx.seq() > closedAtSeq;
+    closedAtSeq = ctx.seq();
+    idleCloses = progressed ? 0 : idleCloses + 1;
+    if (idleCloses > 0) await backoff(idleCloses);
+    // 后台查不到 / 接不上：连着 4 次就如实交出去（报中断），不无限等
+    for (let misses = 0; misses < 4; misses += 1) {
+      if (misses > 0) await backoff(misses);
+      if (ctx.signal?.aborted) return false;
+      const run = await fetchRun();
+      if (!run) continue;
+      // 已经收尾、上次接上以后也没再拿到新东西：真的没有了
+      if (CONTROL_RUN_TERMINAL.has(String(run.status)) && !progressed) return false;
+      if (await reattach()) return true;
+    }
+    return false;
+  };
   return {
     /** 刚换过一条新流吗（换过就丢掉旧流读了一半的那行）。读一次就清。 */
     takeReattached(): boolean {
@@ -1096,36 +1166,26 @@ export function stallAwareControlReader(
         pending ??= reader.read();
         let timer: ReturnType<typeof setTimeout> | undefined;
         const stall = new Promise<"stall">(resolve => { timer = setTimeout(() => resolve("stall"), stallMs); });
-        const got = await Promise.race([pending, stall]).finally(() => clearTimeout(timer));
+        // 流断开（读失败）跟流被关掉同一个处理：都是「这条流没了」
+        // 主动停止、或者根本不是控制面 run 的流：读失败照旧抛给调用方
+        const got = await Promise.race([
+          pending.catch((error: unknown): ReadableStreamReadResult<Uint8Array> => {
+            if (ctx.signal?.aborted || !ctx.runId()) throw error;
+            return { done: true, value: undefined };
+          }),
+          stall,
+        ]).finally(() => clearTimeout(timer));
         if (got !== "stall") {
           pending = null;
+          if (got.done && (await reattachAfterClose())) continue;
           return got;
         }
-        const runId = ctx.runId();
-        if (!runId || ctx.signal?.aborted) continue;
-        let run: { status?: string; lastSeq?: number } | null = null;
-        try {
-          const res = await fetch(`/api/sliderule/control-runs/${encodeURIComponent(runId)}`,
-            { credentials: "include", signal: ctx.signal });
-          run = res.ok ? await res.json() : null;
-        } catch {
-          run = null;
-        }
+        if (!ctx.runId() || ctx.signal?.aborted) continue;
+        const run = await fetchRun();
         if (!run) continue;
         const behind = Number(run.lastSeq) > ctx.seq();
         if (!behind && !CONTROL_RUN_TERMINAL.has(String(run.status))) continue;
-        try {
-          const res = await fetch(
-            `/api/sliderule/control-runs/${encodeURIComponent(runId)}/stream?afterSeq=${ctx.seq()}`,
-            { credentials: "include", signal: ctx.signal });
-          if (!res.ok || !res.body) continue;
-          reader.cancel().catch(() => {});
-          reader = res.body.getReader();
-          pending = null;
-          reattached = true;
-        } catch {
-          continue;
-        }
+        await reattach();
       }
     },
   };
@@ -1151,6 +1211,8 @@ export async function consumeControlStreamResponse(
       seq: () => controlSeq,
       signal: opts.stopSignal,
       stallMs: opts.controlStallMs,
+      settled: () => sawTerminal,
+      closedRetryMs: opts.controlClosedRetryMs,
     });
     const decoder = new TextDecoder();
     let buf = "";
