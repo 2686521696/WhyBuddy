@@ -26,7 +26,8 @@ from services.identity_store import User
 from services.project_creation import create_session_project
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
 from services.project_preview_config import (
-    origin_for_runtime,
+    origin_for_project,
+    preview_label_for_project,
     preview_configuration_enabled,
     published_preview_url,
 )
@@ -68,7 +69,7 @@ def world(tmp_path, monkeypatch, project_actor):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", "g" * 40)
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
-    audience = origin_for_runtime(runtime.runtimeId)
+    audience = origin_for_project(runtime.projectId)
     viewer = User(id="u1", is_superuser=True)
     app = FastAPI()
     app.include_router(route.router)
@@ -770,21 +771,26 @@ def test_origin_template_rejects_shared_origins_proxy_targets_and_insecure_remot
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", template)
     assert preview_configuration_enabled() is False
     with pytest.raises(ValueError):
-        origin_for_runtime(world.runtime.runtimeId)
+        origin_for_project(world.runtime.projectId)
 
 
-def test_each_runtime_has_distinct_origin_and_local_development_is_explicit(world, monkeypatch):
-    assert origin_for_runtime("rt-one") != origin_for_runtime("rt-two")
+def test_each_project_keeps_one_origin_and_local_development_is_explicit(world, monkeypatch):
+    """⚠ 2026-10-10：原来这条钉的是「每台实例一个源」——每次开机换一个域名，浏览器里存的数据跟着丢
+    （project_preview_config 头注）。现在钉「每个工程一个源」：重启不换，不同工程照旧隔离。"""
+    assert origin_for_project("prj-one") == origin_for_project("prj-one")
+    assert origin_for_project("prj-one") != origin_for_project("prj-two")
+    label = preview_label_for_project("prj-one")
+    assert "prj-one" not in label                         # 证书透明度日志里不露工程号原文
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "http://{runtimeId}.localhost:3010")
-    assert origin_for_runtime("rt-one") == "http://rt-one.localhost:3010"
+    assert origin_for_project("prj-one") == f"http://{label}.localhost:3010"
     assert preview_configuration_enabled() is True
 
 
 @pytest.mark.parametrize("protocol,port,suffix", [("https", 443, "preview.example.com"), ("http", 80, "localhost")])
 def test_default_port_template_matches_node_and_browser_canonical_origin(world, monkeypatch, protocol, port, suffix):
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", f"{protocol}://{{runtimeId}}.{suffix}:{port}")
-    audience = f"{protocol}://{world.runtime.runtimeId}.{suffix}"
-    assert origin_for_runtime(world.runtime.runtimeId) == audience
+    audience = f"{protocol}://{preview_label_for_project(world.runtime.projectId)}.{suffix}"
+    assert origin_for_project(world.runtime.projectId) == audience
     world.access.issue_tunnel_grant(world.operation.operationId, owner_id="u1", audience=audience)
     response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
     assert response.status_code == 200
@@ -794,3 +800,58 @@ def test_default_port_template_matches_node_and_browser_canonical_origin(world, 
     redeemed = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
         json={"ticket": ticket, "audience": audience})
     assert redeemed.status_code == 200 and redeemed.json()["binding"]["audience"] == audience
+
+
+# ⚠ 2026-10-10 用户：「之前做过强制关机再打开保持之前操作的内容」，可记账 / 计划这类默认工程（数据存浏览器
+#   localStorage）每次重启数据全没：预览域名原来是 `rt-<操作号>`，每开一次机换一个，浏览器存储按域名隔离
+#   （project_preview_config 头注）。重启 = 同一个工程换了一个新的实例号——下面就照这个形状走真开票路由。
+# 变异（逐条实测过）：开票路由改回按实例号算域名 → 第一条红；preview_label_for_project 不哈希、直接用工程号 →
+#   第二条红；所有工程共用一个标签 → 第二条红。
+def _ticket_origin(world):
+    response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert response.status_code == 200, response.text
+    entry = urlsplit(response.json()["entryUrl"])
+    return entry.scheme + "://" + entry.netloc
+
+
+def _restart(world):
+    """照工人的真实顺序再开一次机：上一次开机的操作结束、租约释放，新建一个开机操作、新租约、新实例号。"""
+    store, fence = world.store, {"lease_generation": world.lease.generation, "lease_owner": world.lease.leaseOwner}
+    store.update_runtime_operation(world.operation.operationId, owner_id="u1", expected_status="running",
+        status="completed", runtime=world.runtime.model_copy(update={"status": "stopped"}), **fence)
+    store.flush_operation_event(world.operation.operationId, owner_id="u1", **fence)
+    store.release_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+                        generation=world.lease.generation)
+    operation = store.create_operation(world.project.projectId, owner_id="u1", kind="runtime.start",
+        expected_revision=world.project.currentRevision, approval_ref=world.approval, idempotency_key="restart",
+        input={"port": 5173})
+    lease = store.acquire_lease(world.project.projectId, owner_id="u1", lease_owner="worker-private", ttl_seconds=600)
+    store.claim_operation(operation.operationId, owner_id="u1", lease_owner=lease.leaseOwner, generation=lease.generation)
+    lease = store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=lease.leaseOwner,
+        generation=lease.generation, ttl_seconds=600, sandbox_id="sandbox-private-2",
+        mounted_revision=world.project.currentRevision,
+        process_refs={"operationId": operation.operationId, "server": "pid-private-2"})
+    runtime = world.runtime.model_copy(update={"runtimeId": "rt-" + operation.operationId,
+        "workspaceId": lease.workspaceId, "processId": "pid-private-2"})
+    operation = store.update_runtime_operation(operation.operationId, owner_id="u1", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner, expected_status="queued", status="running", runtime=runtime)
+    world.operation, world.lease, world.runtime = operation, lease, runtime
+
+
+def test_a_restarted_project_keeps_the_same_preview_origin(world):
+    _tunnel(world)
+    first = _ticket_origin(world)
+    before = world.operation.operationId
+    _restart(world)
+    assert world.operation.operationId != before and world.runtime.runtimeId == "rt-" + world.operation.operationId
+    _tunnel(world)
+    second = _ticket_origin(world)
+    assert first == second == world.audience                       # 浏览器里这个工程的存储还在同一个源下
+    assert world.operation.operationId not in second and before not in second
+
+
+def test_other_projects_get_their_own_origin_and_the_project_id_is_not_published(monkeypatch):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
+    assert origin_for_project("prj-a") != origin_for_project("prj-b")
+    assert len({preview_label_for_project(f"prj-{i}") for i in range(50)}) == 50
+    assert all("prj-" not in preview_label_for_project(f"prj-{i}") for i in range(5))

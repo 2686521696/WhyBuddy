@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from services.project_preview_config import origin_for_runtime
+from services.project_preview_config import origin_for_project
 from services.project_runtime import REVISION_FILE
 from services.project_store import ProjectConflict, ProjectStoreUnavailable
 from services.project_verification_build import build_and_start, restore_development_runtime
@@ -150,7 +150,7 @@ def run_next_project_verification(task):
             result = {"status": "failed", "errorCode": "project_build_failed", "assertions": [], "artifacts": {}}
         else:
             task.supervisor.preview_runtime.ensure(task)
-            origin = origin_for_runtime(task.runtime.runtimeId)
+            origin = origin_for_project(task.runtime.projectId)
             if not access.has_active_tunnel(task.operation_id, owner_id=task.owner_id, audience=origin):
                 raise WorkspaceProviderError("project_browser_preview_unavailable")
             grant = access.issue_browser_ticket(task.operation_id, owner_id=task.owner_id, audience=origin)

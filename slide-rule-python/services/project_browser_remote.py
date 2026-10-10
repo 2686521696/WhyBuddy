@@ -19,25 +19,26 @@ import logging
 from typing import Callable
 from urllib.parse import urlsplit
 
-from services.project_preview_config import origin_for_runtime
+from services.project_preview_config import origin_for_project
 
 logger = logging.getLogger(__name__)
 
 
 class RemoteBrowserInteractor:
     def __init__(self, access, provider_factory: Callable[[], object], *,
-                 origin_for: Callable[[str], str] = origin_for_runtime):
+                 origin_for: Callable[[str], str] = origin_for_project):
         self.access, self.provider_factory, self.origin_for = access, provider_factory, origin_for
 
     def __call__(self, action: dict, page: dict) -> dict:
-        operation_id, runtime_id, owner_id = (page.get("operationId"), page.get("runtimeId"), page.get("ownerId"))
-        if not all(isinstance(value, str) and value for value in (operation_id, runtime_id, owner_id)):
+        # 预览源跟着工程走（project_preview_config 头注），不再按这次开机的实例号算
+        operation_id, project_id, owner_id = (page.get("operationId"), page.get("projectId"), page.get("ownerId"))
+        if not all(isinstance(value, str) and value for value in (operation_id, project_id, owner_id)):
             raise ValueError("project_browser_preview_not_ready")
         if page.get("previewBlocked"):
             # 这次运行的预览隧道已经作废（建立时出错、平台按设计不自动重来）：不是网络抖动，等也等不来，要重启服务器。
             raise ValueError("project_browser_preview_tunnel_blocked")
         try:
-            origin = self.origin_for(runtime_id)
+            origin = self.origin_for(project_id)
         except ValueError:
             raise ValueError("project_browser_preview_unreachable") from None
         try:

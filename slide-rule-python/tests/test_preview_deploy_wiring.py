@@ -91,7 +91,7 @@ def test_两侧的网关key引用同一个变量():
 
 
 def test_python侧拿得到来源模板():
-    """`origin_for_runtime()` 少了它就抛 project_preview_origin_not_configured。"""
+    """`origin_for_project()` 少了它就抛 project_preview_origin_not_configured。"""
     python_env = _services()["python"]["environment"]
     name = "WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE"
     assert name in python_env, (

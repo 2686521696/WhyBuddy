@@ -2420,6 +2420,7 @@ class ProjectTools:
         blocked = preview.get("errorCode") if isinstance(preview, dict) and preview.get("phase") == "blocked" else None
         return {"url": url, "revision": getattr(runtime, "revision", None),
                 "operationId": latest.operationId, "runtimeId": getattr(runtime, "runtimeId", None),
+                "projectId": getattr(runtime, "projectId", None),
                 "ownerId": self.owner_id, "previewBlocked": blocked}
 
     def _browser_interact(self, project, name, parsed):

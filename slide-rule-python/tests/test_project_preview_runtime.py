@@ -86,7 +86,7 @@ def test_start_records_intent_before_sending_only_runtime_scoped_configuration(m
 
 
 def test_actual_runtime_worker_suspends_old_preview_before_sync_then_authorizes_new_version(live, tmp_path, monkeypatch):
-    from services.project_preview_config import origin_for_runtime
+    from services.project_preview_config import origin_for_project
     from services.project_runtime_worker import authorize_operation
 
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
@@ -124,7 +124,7 @@ def test_actual_runtime_worker_suspends_old_preview_before_sync_then_authorizes_
         lambda handle, pid: pid in tunnels if pid.startswith("8") else original_probe(handle, pid))
     live.supervisor.preview_runtime = ProjectPreviewRuntime(access, agent_bundle=bundle)
     old = eventually(lambda: live.parent() if (live.parent().result or {}).get("preview", {}).get("phase") == "active" else None)
-    audience = origin_for_runtime(old.runtime.runtimeId)
+    audience = origin_for_project(old.runtime.projectId)
     ticket = stable_access(lambda: access.issue_browser_ticket(old.operationId, owner_id="alice", audience=audience))
     browser = stable_access(lambda: access.redeem_browser_ticket(ticket.secret, audience=audience))
     pending = stable_access(lambda: access.issue_browser_ticket(old.operationId, owner_id="alice", audience=audience))

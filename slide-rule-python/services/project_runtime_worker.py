@@ -37,7 +37,7 @@ from services.project_browser_verification import (
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session, sync_session_project
 from services.project_preview_config import (
-    origin_for_runtime,
+    origin_for_project,
     preview_configuration_enabled,
     published_preview_url,
 )
@@ -868,7 +868,7 @@ class _RuntimeTask:
         if self.original.kind != "runtime.start":
             return None
         try:
-            preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
+            preview_host = urlsplit(origin_for_project(self.runtime.projectId)).hostname
         except ValueError:
             if self.supervisor.preview_runtime is not None:
                 raise

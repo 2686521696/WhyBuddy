@@ -171,10 +171,10 @@ def _access_world(tmp_path, monkeypatch, start_input, runtime_port):
     store.update_runtime_operation(op.operationId, owner_id="u1", lease_generation=lease.generation,
         lease_owner=lease.leaseOwner, expected_status="queued", status="running", runtime=runtime)
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
-    from services.project_preview_config import origin_for_runtime
+    from services.project_preview_config import origin_for_project
     access = ProjectPreviewAccess(store, authorizer=authorize_operation)
     return SimpleNamespace(store=store, sessions=sessions, access=access, op=op,
-                           audience=origin_for_runtime(runtime.runtimeId))
+                           audience=origin_for_project(runtime.projectId))
 
 
 def test_a_custom_server_on_8000_gets_a_preview_ticket(tmp_path, monkeypatch, project_actor):  # noqa: F811

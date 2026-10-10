@@ -11,6 +11,8 @@ import pathlib
 import re
 
 import pytest
+
+from services.project_preview_config import preview_label_for_project
 from project_actor_support import project_actor
 
 from services.project_runtime_worker import fixed_command_line
@@ -51,7 +53,8 @@ def test_real_worker_allows_only_its_runtime_relay_hostname(scanner, monkeypatch
     operation = submit(worker, scanner.project)
     ready = eventually(lambda: state(scanner.store, operation, "ready"))
     eventually(lambda: scanner.sent)
-    runtime_id = ready.runtime.runtimeId
+    # 预览源跟着工程走（project_preview_config 头注）：放行的是这个工程的域名段，不是这次开机的实例号
+    runtime_id = preview_label_for_project(ready.runtime.projectId)
     expected_host = f"{runtime_id}.localhost" if ".localhost" in origin else f"{runtime_id}.preview.example.com"
     assert scanner.provider.commands[0] == "npm ci --ignore-scripts"
     assert_platform_vite_start(
@@ -77,7 +80,8 @@ def test_published_e2b_host_does_not_drop_the_relay_host(scanner, monkeypatch):
     operation = submit(worker, scanner.project)
     ready = eventually(lambda: state(scanner.store, operation, "ready"))
     assert ready.runtime.previewUrl == "https://5173-sandbox-1.e2b.app/"
-    runtime_id = ready.runtime.runtimeId
+    # 预览源跟着工程走（project_preview_config 头注）：放行的是这个工程的域名段，不是这次开机的实例号
+    runtime_id = preview_label_for_project(ready.runtime.projectId)
     relay = f"{runtime_id}.preview.156.239.47.108.sslip.io"
     assert_platform_vite_start(
         scanner.provider.commands[1],
@@ -103,7 +107,8 @@ def test_missing_agent_bundle_still_allows_the_iframe_relay_host(scanner, monkey
     worker = scanner.make_worker()
     operation = submit(worker, scanner.project)
     ready = eventually(lambda: state(scanner.store, operation, "ready"))
-    runtime_id = ready.runtime.runtimeId
+    # 预览源跟着工程走（project_preview_config 头注）：放行的是这个工程的域名段，不是这次开机的实例号
+    runtime_id = preview_label_for_project(ready.runtime.projectId)
     relay = f"{runtime_id}.preview.156.239.47.108.sslip.io"
     assert scanner.provider.commands[0] == "npm ci --ignore-scripts"
     assert_platform_vite_start(scanner.provider.commands[1], [relay], files=scanner.provider.contents)
@@ -123,7 +128,7 @@ def test_require_relay_origin_does_not_skip_when_the_tunnel_process_is_missing()
             body = ast.unparse(node)
             break
     assert body is not None
-    assert "origin_for_runtime" in body
+    assert "origin_for_project" in body
     assert "preview_runtime is None" not in body
 
 

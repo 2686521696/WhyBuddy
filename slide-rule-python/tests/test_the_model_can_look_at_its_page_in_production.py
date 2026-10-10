@@ -37,6 +37,8 @@ from test_project_tools import create, setup  # noqa: F401  （夹具）
 from test_queued_command_names_its_blocker import _dispatch
 
 TICKET = "tkt-" + "a" * 40
+from services.project_preview_config import preview_label_for_project  # noqa: E402
+
 ORIGIN = "https://rt-5f65a431.preview.miantuan.test"
 
 
@@ -49,9 +51,11 @@ def _ready_runtime(setup, project, preview_url=None):
     return op
 
 
-def _as_if_ready(monkeypatch, op_id, runtime_id="rt-reading", preview_url=None, preview=None):
-    """工人记下的运行状态照真机 browser_view 回执：status ready、health revision_verified。"""
-    runtime = SimpleNamespace(status="ready", runtimeId=runtime_id, revision=None, previewUrl=preview_url)
+def _as_if_ready(monkeypatch, op_id, runtime_id="rt-reading", preview_url=None, preview=None, project_id="prj-reading"):
+    """工人记下的运行状态照真机 browser_view 回执：status ready、health revision_verified。
+    projectId 跟真 RuntimeInstance 一样必带（预览源按工程算，project_preview_config 头注）。"""
+    runtime = SimpleNamespace(status="ready", runtimeId=runtime_id, revision=None, previewUrl=preview_url,
+                              projectId=project_id)
     latest = SimpleNamespace(operationId=op_id, status="running", runtime=runtime,
                              result={"preview": preview} if preview else {})
     real = pt.ProjectTools._latest_operation
@@ -319,20 +323,27 @@ class _Provider:
         return {"snapshot": [], "interactive": True}
 
 
-PAGE = {"url": "/books", "revision": None, "operationId": "pop-run-1", "runtimeId": "rt-5f65a431", "ownerId": "alice"}
+PAGE = {"url": "/books", "revision": None, "operationId": "pop-run-1", "runtimeId": "rt-5f65a431",
+        "projectId": "prj-books", "ownerId": "alice"}
+
+
+def origin_of(project_id: str) -> str:
+    """预览源跟着工程走（project_preview_config 头注）：跟产线同一条规则，只把域名后缀换成测试的。"""
+    return f"https://{preview_label_for_project(project_id)}.preview.miantuan.test"
 
 
 def _interactor(access, provider):
-    return RemoteBrowserInteractor(access, lambda: provider, origin_for=lambda rid: f"https://{rid}.preview.miantuan.test")
+    return RemoteBrowserInteractor(access, lambda: provider, origin_for=origin_of)
 
 
 def test_the_ticket_is_for_this_run_and_is_taken_back():
     access, provider = _Access(), _Provider()
     _interactor(access, provider)({"op": "snapshot"}, PAGE)
-    assert ("issue", "pop-run-1", "alice", ORIGIN) in access.calls
+    origin = origin_of("prj-books")
+    assert ("issue", "pop-run-1", "alice", origin) in access.calls
     [call] = provider.calls
-    assert call["entry_url"] == ORIGIN + "/_whybuddy/authorize?ticket=" + TICKET
-    assert call["page_url"] == ORIGIN + "/books"                               # 模型要看的那一页，走网关
+    assert call["entry_url"] == origin + "/_whybuddy/authorize?ticket=" + TICKET
+    assert call["page_url"] == origin + "/books"                               # 模型要看的那一页，走网关
     assert access.calls[-1] == ("revoke", "pva-1", "alice")
     failing = _Access()
     with pytest.raises(ValueError, match="project_browser_action_failed"):
@@ -356,7 +367,7 @@ def test_browser_view_reaches_the_remote_browser_with_this_runs_identity(setup, 
     monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
     project = create(setup)
     op = _ready_runtime(setup, project)
-    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview_url=None)   # 网关模式：没有直连地址
+    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview_url=None, project_id=project["projectId"])   # 网关模式：没有直连地址
     monkeypatch.setattr(pt, "local_playwright_available", lambda: False)
     access = _Access()
 
@@ -368,7 +379,7 @@ def test_browser_view_reaches_the_remote_browser_with_this_runs_identity(setup, 
     result = _dispatch(setup, "browser_view", {})
     assert "browserError" not in result, result
     assert result["snapshot"][0]["name"] == "添加书籍"
-    assert ("issue", op.operationId, "alice", ORIGIN) in access.calls
+    assert ("issue", op.operationId, "alice", origin_of(project["projectId"])) in access.calls   # 按工程，不按这次开机
     assert "preview.miantuan.test" not in json.dumps(result, ensure_ascii=False)   # 预览主机不进对话
 
 
@@ -384,7 +395,7 @@ def test_a_blocked_tunnel_tells_the_model_to_restart_not_to_wait(setup, monkeypa
     monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
     project = create(setup)
     op = _ready_runtime(setup, project)
-    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview=BLOCKED)
+    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview=BLOCKED, project_id=project["projectId"])
     monkeypatch.setattr(pt, "local_playwright_available", lambda: False)
     access = _Access(tunnel=False)                                               # 线上那一刻：隧道授权已收回
     monkeypatch.setattr(setup.supervisor, "browser_interactor", _interactor(access, _Provider()), raising=False)
@@ -402,7 +413,7 @@ def test_a_live_tunnel_that_is_merely_unreachable_is_still_called_unreachable(se
     monkeypatch.setattr(rc, "_project_tool_wait_seconds", lambda *a: 0.0)
     project = create(setup)
     op = _ready_runtime(setup, project)
-    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview={"phase": "active"})
+    _as_if_ready(monkeypatch, op.operationId, runtime_id="rt-5f65a431", preview={"phase": "active"}, project_id=project["projectId"])
     monkeypatch.setattr(pt, "local_playwright_available", lambda: False)
     monkeypatch.setattr(setup.supervisor, "browser_interactor", _interactor(_Access(tunnel=False), _Provider()), raising=False)
     assert _dispatch(setup, "browser_view", {})["browserError"] == "project_browser_preview_unreachable"

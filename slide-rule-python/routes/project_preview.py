@@ -26,7 +26,7 @@ from services.project_creation import load_authorized_session
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
 from services.project_preview_config import (
     gateway_key,
-    origin_for_runtime,
+    origin_for_project,
     preview_configuration_enabled,
     published_preview_url,
 )
@@ -173,7 +173,7 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
                     if not preview_configuration_enabled():
                         reason = "project_preview_not_configured"
                     else:
-                        audience = origin_for_runtime(runtime.runtimeId)
+                        audience = origin_for_project(runtime.projectId)
                         available = access.has_active_tunnel(operation.operationId, owner_id=owner_id, audience=audience)
                         if not available and rollout["mode"] == "internal":
                             available = published_preview_url(runtime.previewUrl) is not None
@@ -194,7 +194,7 @@ def issue_project_preview_ticket(operation_id: str, request: Request, response: 
             raise HTTPException(status_code=503, detail="project_preview_not_configured")
         if operation.runtime is None or operation.runtime.status != "ready":
             raise PreviewAccessDenied("project_runtime_not_ready")
-        audience = origin_for_runtime(operation.runtime.runtimeId)
+        audience = origin_for_project(operation.runtime.projectId)
         published = published_preview_url(operation.runtime.previewUrl) if rollout_readiness()["mode"] == "internal" else None
         if access.has_active_tunnel(operation_id, owner_id=owner_id, audience=audience):
             credential = access.issue_browser_ticket(operation_id, owner_id=owner_id, audience=audience)

@@ -13,7 +13,7 @@ import time
 from typing import Callable
 
 from services.project_preview_access import ProjectPreviewAccess
-from services.project_preview_config import origin_for_runtime
+from services.project_preview_config import origin_for_project
 from services.workspace_provider import WorkspaceProviderError
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class ProjectPreviewRuntime:
         if remaining < 2:
             return
         issued = self.access.issue_tunnel_grant(task.operation_id, owner_id=task.owner_id,
-            audience=origin_for_runtime(task.runtime.runtimeId), ttl_seconds=min(900, remaining))
+            audience=origin_for_project(task.runtime.projectId), ttl_seconds=min(900, remaining))
         task.result["preview"] = {"phase": "dispatching", "grantId": issued.scope.grant_id,
             "generation": task.lease.generation, "revision": task.runtime.revision, "expiresAt": issued.expires_at}
         try:

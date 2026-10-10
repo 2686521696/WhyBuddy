@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middlewares.current_user import require_user
-from services.project_preview_config import origin_for_runtime
+from services.project_preview_config import origin_for_project
 from services.project_tools import ProjectTools
 from test_project_live_source_sync import live, patch_args
 from project_actor_support import project_actor
@@ -165,6 +165,11 @@ def test_real_owner_serializes_browser_and_queued_patch_then_exposes_stale_evide
     assert saved.verification.status == "passed" and saved.effectiveStatus == "stale"
     assert saved.verification.revision != live.parent().runtime.revision
     assert browser.calls[0]["revision"] == saved.verification.revision
+    # 验收浏览器跟用户的预览进同一个工程源（project_preview_config 头注：源跟着工程走，不跟这次开机）。
+    # 改回按实例号算，这条红——原来六处里只有这一处没有判据咬着。
+    origin = origin_for_project(live.parent().projectId)
+    assert browser.calls[0]["scope"]["origin"] == origin
+    assert browser.calls[0]["entry_url"].startswith(origin + "/_whybuddy/authorize?ticket=")
     assert revoked == ["grant-fixture"]
     observed = live.tools.execute("project_status", {"operationId": child, "waitSeconds": 0}, live.state)
     assert observed["verification"]["status"] == "stale"

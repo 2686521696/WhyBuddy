@@ -263,7 +263,8 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
         // TLS terminates at the preview gateway. The app needs the authenticated
         // public scheme to issue iframe cookies; browser forwarded headers are stripped.
         "x-forwarded-proto": new URL(grant.audience).protocol.slice(0, -1),
-        // 2026-09-18：iframe Host 是 `{runtimeId}.preview….sslip.io`。沙箱
+        // 2026-09-18：iframe Host 是 `<预览标签>.preview….sslip.io`（2026-10-10 起标签跟工程走：
+        // pv-<sha256(projectId)>，见 project_preview_config.preview_label_for_project）。沙箱
         // Vite 7 默认只放行 localhost；Agent 写的 server.mjs 又不接
         // allowedHosts。网关已经按票选好了隧道，转给应用时改成 loopback，
         // Vite 不再回 Blocked request。不要写成 allowedHosts:true。

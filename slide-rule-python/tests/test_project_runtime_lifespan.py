@@ -145,8 +145,10 @@ def test_app_configuration_is_accepted_by_actual_worker(startup, monkeypatch, tm
 class _ControlService:
     made = []
 
-    def __init__(self, control_store, project_store, supervisor):
-        self.supervisor, self.started, self.stopped = supervisor, False, False
+    def __init__(self, control_store, project_store, supervisor, **config):
+        # config：2026-10-10 起 app 传 max_workers（SLIDERULE_CONTROL_MAX_WORKERS）。桩原来不收它，
+        # TypeError 被 lifespan 的重试吞成「worker still unavailable」，第一条红了却像抖动。
+        self.supervisor, self.config, self.started, self.stopped = supervisor, config, False, False
         _ControlService.made.append(self)
 
     async def start(self):
