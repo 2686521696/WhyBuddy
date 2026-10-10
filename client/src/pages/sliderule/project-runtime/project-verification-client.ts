@@ -42,11 +42,14 @@ const nonempty = (value: unknown): value is string =>
 // project_acceptance.suite_matches_profile 成对（§4）。
 // ⚠ 2026-09-25 74E9KCWHAB：原来只认任务应用，普通网页的通过记录在这里被当成
 //   畸形响应整个丢掉。
+// 2026-10-10：web-server@1——自己用命令起的服务器（Django、Go …），证据见 Python VerificationBuildEvidence 头注。
 function deliverableSuite(record: any): boolean {
   return (
     (record?.suiteVersion === "react-vite-tasks@1" &&
       record?.specRevision === "whybuddy-tasks-acceptance@1") ||
-    (record?.suiteVersion === "react-vite-app@1" && record?.specRevision == null)
+    ((record?.suiteVersion === "react-vite-app@1" ||
+      record?.suiteVersion === "web-server@1") &&
+      record?.specRevision == null)
   );
 }
 const tasksAssertions = [
@@ -70,6 +73,23 @@ function validBuild(
   build: any,
   record: any
 ): build is VerificationBuildEvidence {
+  // 自己用命令起的服务器没有构建：没有锁文件也合法，但必须有启动命令的指纹、不许带构建数字（跟 Python
+  // project_verification_gate.validate_build_evidence 成对，§4）。
+  const custom = build?.serverKind === "custom-command";
+  if (custom)
+    return (
+      build.kind === "production" &&
+      build.revision === record.revision &&
+      build.treeHash === record.treeHash &&
+      sha256(build.treeHash) &&
+      (build.lockfileHash == null || sha256(build.lockfileHash)) &&
+      sha256(build.commandHash) &&
+      ["passed", "blocked", "cancelled"].includes(build.status) &&
+      [build.startedAt, build.completedAt].every(nonempty) &&
+      build.installExitCode == null &&
+      build.buildExitCode == null &&
+      build.outputHash == null
+    );
   return (
     build?.kind === "production" &&
     build.revision === record.revision &&

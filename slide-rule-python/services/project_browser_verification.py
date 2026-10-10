@@ -8,8 +8,12 @@ records missing evidence instead of replaying those potentially stateful steps.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import datetime, timezone
 
+from models.project_runtime import VerificationBuildEvidence
+from services.project_manifest import is_custom_server_runtime
 from services.project_preview_config import origin_for_project
 from services.project_runtime import REVISION_FILE
 from services.project_store import ProjectConflict, ProjectStoreUnavailable
@@ -100,6 +104,27 @@ def _check(task, child):
         raise ProjectConflict("project_verification_runtime_changed")
 
 
+def _iso_now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _running_server_evidence(task, record):
+    """自己用命令起的服务器：不构建，就验它现在跑着的样子（VerificationBuildEvidence 头注）。
+
+    ⚠ 2026-10-10 编排正确性第 3 条：这条路原来一律拒（project_verification_custom_server_unsupported）——
+      验收整套围着「构建模板产物 + 页面上的版本标记」转，Django / Go 这类工程永远拿不到交付。
+      证据：命令的指纹、那个进程还活着、端口回得出 HTTP。起不来就是 blocked（缺证据），不是 failed。
+    """
+    started = _iso_now()
+    pid = task.runtime.processId
+    alive = bool(pid) and task.provider.is_process_running(task.handle, pid) and task.provider.probe_http(
+        task.handle, task.runtime.port)
+    command = task._custom_command
+    return VerificationBuildEvidence(revision=record.revision, treeHash=record.treeHash, lockfileHash=None,
+        status="passed" if alive else "blocked", serverKind="custom-command",
+        commandHash=hashlib.sha256(command.encode("utf-8")).hexdigest(), startedAt=started, completedAt=_iso_now())
+
+
 def run_next_project_verification(task):
     records = task.supervisor.verification_store
     pending = task.store.list_runtime_verifications(task.operation_id, owner_id=task.owner_id)
@@ -145,9 +170,14 @@ def run_next_project_verification(task):
         # helper. It neither rewrites files nor trusts a generated page's marker.
         task.provider.sync_files(task.handle, expected_files=expected, files=expected)
         _check(task, child)
-        build = build_and_start(task, child, record, expected_files=expected, check=lambda: _check(task, child))
+        custom = is_custom_server_runtime(task.original)
+        build = (_running_server_evidence(task, record) if custom
+                 else build_and_start(task, child, record, expected_files=expected, check=lambda: _check(task, child)))
         if build.status == "failed":
             result = {"status": "failed", "errorCode": "project_build_failed", "assertions": [], "artifacts": {}}
+        elif build.status == "blocked":
+            # 只有自己起的服务器走到这里：进程没了或端口不回话。没起来的服务器没东西可看，不是「没通过」。
+            result = {"status": "blocked", "errorCode": "project_server_not_responding", "assertions": [], "artifacts": {}}
         else:
             task.supervisor.preview_runtime.ensure(task)
             origin = origin_for_project(task.runtime.projectId)
@@ -163,13 +193,20 @@ def run_next_project_verification(task):
             if result.get("runnerVersion") != "whybuddy-browser-v1:pw1.61.1":
                 raise WorkspaceProviderError("project_browser_runner_version_mismatch")
             _check(task, child)
+            # 源码树还是这一版（只读比对，不改写）：看的过程中没被换掉。
             task.provider.sync_files(task.handle, expected_files=expected, files=expected)
-            after = task.provider.inspect_build_output(task.handle, revision=child.expectedRevision)
-            if (after.output_hash != build.outputHash or after.file_count != build.outputFileCount
-                    or after.size_bytes != build.outputBytes):
-                raise WorkspaceProviderError("project_build_output_changed")
-            if not task.provider.probe(task.handle, task.runtime.port, expected_revision=child.expectedRevision):
-                raise WorkspaceProviderError("project_browser_revision_probe_failed")
+            if custom:
+                # 没有产物指纹、页面也不出版本标记：同一个进程（_check 钉着租约上的 server 进程号）还活着、还回话。
+                if not (task.provider.is_process_running(task.handle, task.runtime.processId)
+                        and task.provider.probe_http(task.handle, task.runtime.port)):
+                    raise WorkspaceProviderError("project_browser_revision_probe_failed")
+            else:
+                after = task.provider.inspect_build_output(task.handle, revision=child.expectedRevision)
+                if (after.output_hash != build.outputHash or after.file_count != build.outputFileCount
+                        or after.size_bytes != build.outputBytes):
+                    raise WorkspaceProviderError("project_build_output_changed")
+                if not task.provider.probe(task.handle, task.runtime.port, expected_revision=child.expectedRevision):
+                    raise WorkspaceProviderError("project_browser_revision_probe_failed")
             _check(task, child)
     except _VerificationCancelled:
         result = {"status": "cancelled", "errorCode": "user_cancelled", "assertions": [], "artifacts": {}}

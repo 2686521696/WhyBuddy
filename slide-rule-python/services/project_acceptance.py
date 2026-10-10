@@ -26,6 +26,30 @@ APP_SUITE_VERSION = "react-vite-app@1"
 WEB_ACCEPTANCE_PROFILE = "whybuddy-web-acceptance@1"
 
 
+#: 模型自己的启动命令起的服务器（任意栈）：浏览器看的四件事同普通网页，版本绑定不靠页面上的标记文件
+#: （Django 不出它），靠宿主同步 + 同一进程（VerificationBuildEvidence 头注）。跟 browser-runner.mjs 的
+#: SERVER_SUITE_VERSION 成对（§4）。
+SERVER_SUITE_VERSION = "web-server@1"
+SERVER_ACCEPTANCE_PROFILE = "whybuddy-server-acceptance@1"
+#: 空工作区（project_creation.BLANK_TEMPLATE_VERSION 从这里拿，免得两处各写一份）。
+BLANK_TEMPLATE_VERSION = "whybuddy-blank-web-1"
+
+
+def suite_for_runtime(template_version, *, custom_command: bool):
+    """这次验收派哪套：自己用命令起的服务器一律 web-server@1（不构建模板），否则按模板。"""
+    return SERVER_SUITE_VERSION if custom_command else suite_for_template(template_version)
+
+
+def profile_accepts_suite(bound, suite_version):
+    """这份源码绑定的交付档认不认这套验收。普通网页模板被模型用自己的命令起（Vite 模板上跑 Django，真机有过）
+    也认服务器套件；任务模板只认任务套件。"""
+    if bound is None:
+        return False
+    if bound[1] == APP_SUITE_VERSION:
+        return suite_version in {APP_SUITE_VERSION, SERVER_SUITE_VERSION}
+    return suite_version == bound[1]
+
+
 def suite_for_template(template_version):
     """这个模板的工程该派哪套独立浏览器验收。
 
@@ -37,7 +61,7 @@ def suite_for_template(template_version):
 
 def template_verification_capabilities(template_version):
     suite = {TASK_TEMPLATE_VERSION: TASK_SUITE_VERSION,
-        APP_TEMPLATE_VERSION: APP_SUITE_VERSION}.get(template_version)
+        APP_TEMPLATE_VERSION: APP_SUITE_VERSION, BLANK_TEMPLATE_VERSION: SERVER_SUITE_VERSION}.get(template_version)
     return ["verification:" + suite] if suite else []
 
 
@@ -47,6 +71,8 @@ def bound_delivery_profile(template_version, spec_revision):
         return TASK_ACCEPTANCE_PROFILE, TASK_SUITE_VERSION
     if template_version == APP_TEMPLATE_VERSION and spec_revision is None:
         return WEB_ACCEPTANCE_PROFILE, APP_SUITE_VERSION
+    if template_version == BLANK_TEMPLATE_VERSION and spec_revision is None:
+        return SERVER_ACCEPTANCE_PROFILE, SERVER_SUITE_VERSION
     return None
 
 
@@ -62,7 +88,18 @@ TASK_REQUIREMENTS = (
 def suite_matches_profile(suite_version, spec_revision):
     """验收记录的套件和它那份源码绑定的交付档对得上。"""
     return ((suite_version == TASK_SUITE_VERSION and spec_revision == TASK_ACCEPTANCE_PROFILE)
-        or (suite_version == APP_SUITE_VERSION and spec_revision is None))
+        or (suite_version in {APP_SUITE_VERSION, SERVER_SUITE_VERSION} and spec_revision is None))
+
+
+SERVER_REQUIREMENTS = (
+    "Start the current locked source with the project's own command",
+    "That exact revision is in the sandbox and unchanged during the check",
+    "The checked server is the process that command started, and it responds",
+    "Render visible content in an independent browser",
+    "Still render visible content after a page refresh",
+    "No page errors and no failed requests",
+    "Not proven: that the running server reloaded this revision (no build output to fingerprint)",
+)
 
 
 WEB_REQUIREMENTS = (
@@ -84,7 +121,7 @@ def normalize_acceptance_requirements(values):
     if not isinstance(values, (list, tuple)):
         return []
     result = []
-    seen = set(TASK_REQUIREMENTS) | set(WEB_REQUIREMENTS)
+    seen = set(TASK_REQUIREMENTS) | set(WEB_REQUIREMENTS) | set(SERVER_REQUIREMENTS)
     for value in values:
         text = str(value or "").strip()
         if not text or len(text) > 1200 or text in seen:
@@ -116,13 +153,15 @@ def approved_acceptance_requirements(state):
 
 def acceptance_profile(additional_requirements=None, suite_version=TASK_SUITE_VERSION):
     extras = normalize_acceptance_requirements(additional_requirements)
-    web = suite_version == APP_SUITE_VERSION
-    base_id = WEB_ACCEPTANCE_PROFILE if web else TASK_ACCEPTANCE_PROFILE
+    base_id, suite, requirements = {
+        APP_SUITE_VERSION: (WEB_ACCEPTANCE_PROFILE, APP_SUITE_VERSION, WEB_REQUIREMENTS),
+        SERVER_SUITE_VERSION: (SERVER_ACCEPTANCE_PROFILE, SERVER_SUITE_VERSION, SERVER_REQUIREMENTS),
+    }.get(suite_version, (TASK_ACCEPTANCE_PROFILE, TASK_SUITE_VERSION, TASK_REQUIREMENTS))
     profile_id = base_id
     if extras:
         digest = hashlib.sha256("\n".join(extras).encode("utf-8")).hexdigest()[:16]
         profile_id = f"{base_id}+{digest}"
-    return {"profileId": profile_id, "suiteVersion": APP_SUITE_VERSION if web else TASK_SUITE_VERSION,
-        "requirements": list(WEB_REQUIREMENTS if web else TASK_REQUIREMENTS) + extras,
+    return {"profileId": profile_id, "suiteVersion": suite,
+        "requirements": list(requirements) + extras,
         "outsideScope": ["Additional user requirements", "Production deployment", "Production account operations"],
         "dataRecovery": "Last durable checkpoint; normal stop checkpoints after stopping the application"}

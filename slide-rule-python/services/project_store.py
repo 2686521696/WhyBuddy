@@ -94,6 +94,10 @@ _OPERATION_TRANSITIONS = {
 }
 
 
+#: 能排进队的验收套件。web-server@1（2026-10-10）：自己用命令起的服务器。
+VERIFICATION_SUITES = frozenset({"react-vite-counter@1", "react-vite-tasks@1", "react-vite-app@1", "web-server@1"})
+
+
 class ProjectStoreUnavailable(RuntimeError):
     pass
 
@@ -641,7 +645,8 @@ class ProjectStore:
                                      expected_revision: str, approval_ref: str, idempotency_key: str,
                                      suite_version: str = "react-vite-counter@1",
                                      acceptance_requirements: list[str] | None = None) -> ProjectOperation:
-        if suite_version not in {"react-vite-counter@1", "react-vite-tasks@1", "react-vite-app@1"}:
+        # 跟 project_verification_gate.SUITE_ASSERTIONS 的键成对（§4，test_running_server_verification 钉着）。
+        if suite_version not in VERIFICATION_SUITES:
             raise ValueError("verification_suite_unsupported")
         return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
             expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,

@@ -11,7 +11,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 
-from services.project_acceptance import TASK_SUITE_VERSION, acceptance_profile, bound_delivery_profile
+from services.project_acceptance import TASK_SUITE_VERSION, acceptance_profile, bound_delivery_profile, profile_accepts_suite
 from services.project_authority import approved_reference
 from services.project_export import source_archive
 from services.project_manifest import canonical_json, content_hash
@@ -70,7 +70,7 @@ class ProjectDeliveryService:
             # 验收没跑起来，不是没通过（见 ENVIRONMENT_BLOCK_CODES）。
             reasons.append("project_verification_environment_blocked")
         elif (snapshot.effectiveStatus != "passed" or bound is None
-                or snapshot.verification.suiteVersion != bound[1]):
+                or not profile_accepts_suite(bound, snapshot.verification.suiteVersion)):
             reasons.append("project_current_business_verification_required")
         else:
             record = snapshot.verification
@@ -84,8 +84,11 @@ class ProjectDeliveryService:
                 reasons.append("project_verification_evidence_incomplete")
         return project, authority, revision, snapshot, reasons
 
-    def _profile(self, revision):
+    def _profile(self, revision, snapshot=None):
         bound = bound_delivery_profile(revision.templateVersion, revision.specRevision)
+        # 普通网页模板被模型用自己的命令起、按服务器套件验过：交付档照那一套说（说清它证明不了什么）。
+        if bound is not None and snapshot is not None and profile_accepts_suite(bound, snapshot.verification.suiteVersion):
+            return bound[0], snapshot.verification.suiteVersion
         return bound or (None, TASK_SUITE_VERSION)
 
     def status(self, project_id):
@@ -98,7 +101,7 @@ class ProjectDeliveryService:
             saved["effectiveStatus"] = "ready" if not reasons and saved["revision"] == revision.revision and snapshot and saved["verificationId"] == snapshot.verification.verificationId else "stale"
             releases.append(saved)
         return {"projectId": project.projectId, "revision": revision.revision, "eligible": not reasons,
-            "profile": acceptance_profile(extras, self._profile(revision)[1]), "blockedReasons": reasons,
+            "profile": acceptance_profile(extras, self._profile(revision, snapshot)[1]), "blockedReasons": reasons,
             "verificationId": snapshot.verification.verificationId if snapshot else None,
             "releases": releases, "deployment": {"status": "not_configured", "publicUrl": None}}
 

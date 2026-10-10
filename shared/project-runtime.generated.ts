@@ -148,8 +148,8 @@ export type ProjectRelease = {
   "profileId": string;
   "planRef": string;
   "treeHash": string;
-  "lockfileHash": string;
-  "buildHash": string;
+  "lockfileHash": string | null;
+  "buildHash": string | null;
   "createdAt": string;
   "downloadPath": string;
   "deployed"?: false;
@@ -293,14 +293,15 @@ export type VerificationBuildEvidence = {
   "kind"?: "production";
   "revision": string;
   "treeHash": string;
-  "lockfileHash": string;
+  "lockfileHash"?: string | null;
   "status": "passed" | "failed" | "blocked" | "cancelled";
   "installExitCode"?: number | null;
   "buildExitCode"?: number | null;
   "outputHash"?: string | null;
   "outputFileCount"?: number;
   "outputBytes"?: number;
-  "serverKind": "static-dist" | "tasks-node";
+  "serverKind": "static-dist" | "tasks-node" | "custom-command";
+  "commandHash"?: string | null;
   "startedAt": string;
   "completedAt": string;
 };

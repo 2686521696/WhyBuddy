@@ -655,6 +655,39 @@ describe("project browser verification consumer", () => {
     await poll();
     expect(status()).toBe("暂时无法读取检查状态");
   });
+  // ⚠ 2026-10-10 编排正确性第 3 条：自己用命令起的服务器（Django …）按 web-server@1 验，证据是 custom-command。
+  //   前端原来只认两种套件、两种 serverKind——这种记录会被当成畸形响应整个丢掉（同 74E9KCWHAB 那一回）。
+  //   变异：deliverableSuite 不认 web-server@1 → 第一条红；validBuild 不认 custom-command → 第一条红；
+  //   custom-command 带产物指纹也放行 → 第二条红。
+  const serverEvidence = () => {
+    const next = evidence();
+    const record = next.snapshot!.verification as any;
+    record.suiteVersion = "web-server@1";
+    record.treeHash = "a".repeat(64);
+    record.assertions = ["content_visible", "reload_renders", "no_page_errors", "no_failed_requests"]
+      .map(id => ({ id, status: "passed" as const }));
+    record.build = { kind: "production", revision: record.revision, treeHash: record.treeHash, lockfileHash: null,
+      status: "passed", installExitCode: null, buildExitCode: null, outputHash: null, outputFileCount: 0,
+      outputBytes: 0, serverKind: "custom-command", commandHash: "c".repeat(64),
+      startedAt: "2026-10-10T00:00:00Z", completedAt: "2026-10-10T00:00:01Z" };
+    next.snapshot!.deliveryEligible = true;
+    return next;
+  };
+  it("accepts a self-started server's evidence and says what it cannot prove", async () => {
+    view = serverEvidence();
+    await render();
+    expect(status()).toBe("页面检查通过");
+    expect(container.textContent).toContain("当前版本通过了独立浏览器验收");
+    expect(container.querySelector('[data-testid="project-server-evidence"]')?.textContent)
+      .toContain("证明不了它已经重新加载了最新代码");
+    expect(container.querySelector('[data-testid="project-build-evidence"]')).toBeNull();
+  });
+  it("refuses custom-command evidence that carries build numbers", async () => {
+    view = serverEvidence();
+    (view.snapshot!.verification as any).build.outputHash = "d".repeat(64);
+    await render();
+    expect(status()).toBe("暂时无法读取检查状态");
+  });
   it.each([
     { suite: null, title: "浏览器检查", action: "检查应用", scope: "检查范围尚未确定" },
     { suite: "react-vite-app@1", title: "页面渲染检查", action: "检查页面", scope: "页面要渲染出看得见的内容" },

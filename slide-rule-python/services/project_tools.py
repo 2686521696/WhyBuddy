@@ -293,13 +293,8 @@ BROWSER_ERROR_TEXT = {
 PREVIEW_NOTE = "用户在界面右侧的预览面板里看这一页。给用户的回复里不要写预览地址或主机名，说「在右侧预览里看」。"
 
 
-#: 自定义命令起的服务器（Django、Go、Spring Boot …）：独立浏览器验收现在只会构建、起 Vite 工程，这里先照实拒。
-CUSTOM_SERVER_VERIFY_UNSUPPORTED = "project_verification_custom_server_unsupported"
-CUSTOM_SERVER_VERIFY_TEXT = (
-    "这个服务器是用你自己的启动命令起的。独立浏览器验收目前只会构建并起模板的 Vite 工程，验不了它——"
-    "不是你的代码错了，别为此改代码。现在能做的：用 browser_view / browser_click 在预览里自己看、点一遍，"
-    "跑工程自带的测试（shell_exec），然后照实告诉用户「没有经过独立验收」。"
-)
+# 2026-10-10 起自己用命令起的服务器也能独立验收（web-server@1，project_browser_verification 头注）；
+# 原来这里照实拒（project_verification_custom_server_unsupported），那段话随之删掉。
 
 
 class _HintedError(ValueError):
@@ -466,6 +461,9 @@ VERIFICATION_ERROR_TEXT = {
     "project_browser_auth_failed": "验收浏览器拿不到这台预览的访问票：预览网关不认这台主机发的票。"
         "这是运行环境的问题，不是应用自己的登录，也不是代码错误；改代码、重启服务、重复验收都解决不了。"
         "如实告诉用户验收没能在这个环境里跑起来。",
+    # 2026-10-10：自己用命令起的服务器，验收那一刻进程没了或端口不回话（project_browser_verification._running_server_evidence）。
+    "project_server_not_responding": "验收那一刻，你用命令起的服务器没有回话（进程退出了或端口不回 HTTP），浏览器没东西可看。"
+        "先看 project_logs 里服务器的输出，把它重新起来（deploy_expose_port 带命令），确认在回话再验收。",
     "project_browser_not_configured": "这个环境没有配置独立验收浏览器。不是代码错误，重复验收没有用；如实告诉用户。",
     "project_browser_key_missing": "这个环境缺少验收浏览器的凭据。不是代码错误，重复验收没有用；如实告诉用户。",
     "project_browser_unavailable": "验收浏览器这次没能启动，是运行环境的问题，不是代码错误。可以稍后再验收一次；仍然失败就如实告诉用户。",
@@ -1779,8 +1777,6 @@ class ProjectTools:
                 parent = self.store.get_operation(parsed.runtimeOperationId, owner_id=self.owner_id)
                 if parent.projectId != project.projectId or parent.sessionId != session_id:
                     raise ProjectNotFound("project_operation_not_found")
-                if isinstance(parent.input, dict) and isinstance(parent.input.get("command"), str):
-                    raise _HintedError(CUSTOM_SERVER_VERIFY_UNSUPPORTED, CUSTOM_SERVER_VERIFY_TEXT)
                 requirements = approved_acceptance_requirements(authority)
                 try:
                     operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,

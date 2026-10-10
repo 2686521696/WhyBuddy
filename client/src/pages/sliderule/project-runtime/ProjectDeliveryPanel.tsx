@@ -46,6 +46,8 @@ const REASONS: Record<string, string> = {
 const PROFILES: Record<string, string> = {
   "whybuddy-tasks-acceptance@1": "react-vite-tasks@1",
   "whybuddy-web-acceptance@1": "react-vite-app@1",
+  // 2026-10-10：空工作区（任意栈）+ 自己用命令起的服务器。
+  "whybuddy-server-acceptance@1": "web-server@1",
 };
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
@@ -65,10 +67,12 @@ function validRelease(value: any, projectId: string): value is Release {
       value.treeHash,
       value.verificationId,
       value.planRef,
-      value.lockfileHash,
-      value.buildHash,
       value.createdAt,
     ].every(nonempty) &&
+    // 自己起的服务器没有构建：两个指纹都是 null（Python ProjectRelease 头注）。
+    [value.lockfileHash, value.buildHash].every(
+      (item: unknown) => item === null || nonempty(item)
+    ) &&
     Object.hasOwn(PROFILES, value.profileId) &&
     value.downloadPath ===
       `/api/sliderule${releasePath(projectId, value.releaseId)}`

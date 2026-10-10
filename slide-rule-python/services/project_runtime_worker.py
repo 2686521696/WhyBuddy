@@ -42,7 +42,7 @@ from services.project_preview_config import (
     published_preview_url,
 )
 from services.vite_preview_hosts import injected_preview_dev_command
-from services.project_manifest import content_hash
+from services.project_manifest import content_hash, is_custom_server_runtime
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.deliverable_kind import (
@@ -60,7 +60,7 @@ from services.deliverable_kind import (
 from services.project_office_artifacts import ProjectOfficeArtifactStore, office_artifact_download_url
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
-from services.project_acceptance import normalize_acceptance_requirements, suite_for_template
+from services.project_acceptance import normalize_acceptance_requirements, suite_for_runtime
 from services.devcontainer_setup import setup_command
 from services.project_tool_contracts import sandbox_shell_script
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
@@ -454,7 +454,8 @@ class ProjectRuntimeSupervisor:
             candidate = parent.model_copy(update={"approvalRef": approval_ref})
             self.authorizer(self.store, candidate, owner_id)
             revision = self.store.get_revision(parent.projectId, expected_revision, owner_id=owner_id)
-            suite_version = suite_for_template(revision.templateVersion)
+            # 2026-10-10：自己用命令起的服务器派 web-server@1（不构建模板，见 project_browser_verification）。
+            suite_version = suite_for_runtime(revision.templateVersion, custom_command=is_custom_server_runtime(parent))
             try:
                 operation = self.store.enqueue_runtime_verification(runtime_operation_id,
                     owner_id=owner_id, expected_revision=expected_revision, approval_ref=approval_ref,

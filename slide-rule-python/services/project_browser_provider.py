@@ -69,7 +69,11 @@ _ASSERTION_SHAPES = ({"id", "status"}, {"id", "status", "detail"},
     {"id", "status", "detail", "expected", "actual"})
 SUITE_ARTIFACTS = {SUITE_VERSION: frozenset({"before.png", "after.png"}),
     "react-vite-tasks@1": frozenset({"tasks-created.png", "tasks-reader.png"}),
-    "react-vite-app@1": frozenset({"app.png"})}
+    "react-vite-app@1": frozenset({"app.png"}),
+    "web-server@1": frozenset({"app.png"})}
+#: 这套不读页面上的版本标记（Django 之类不出 /__whybuddy_revision.json），收据里两个版本字段必须是空——
+#: 不许借一个值冒充「页面证明了版本」。版本绑定由宿主那一侧做（project_browser_verification 自己起的服务器分支）。
+NO_REVISION_MARKER_SUITES = frozenset({"web-server@1"})
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 6 * 1024 * 1024
 REMOTE_ROOT = "/home/user/whybuddy-browser"
@@ -163,9 +167,12 @@ def decode_result(raw: str, *, revision: str, verification_id: str, suite_versio
             if len(data) > MAX_IMAGE_BYTES or not data.startswith(b"\x89PNG\r\n\x1a\n"):
                 raise ValueError()
             artifacts[name] = data
+        marker = None if suite_version in NO_REVISION_MARKER_SUITES else revision
+        if suite_version in NO_REVISION_MARKER_SUITES and (value["revisionBefore"], value["revisionAfter"]) != (None, None):
+            raise ValueError()
         if value["status"] == "passed" and (seen != required or set(artifacts) != artifact_names
                 or value["errorCode"] is not None or value["cleanupConfirmed"] is not True
-                or value["revisionBefore"] != revision or value["revisionAfter"] != revision
+                or value["revisionBefore"] != marker or value["revisionAfter"] != marker
                 or any(item["status"] != "passed" for item in value["assertions"])):
             raise ValueError()
         if value["status"] == "failed" and not any(item["status"] == "failed" for item in value["assertions"]):

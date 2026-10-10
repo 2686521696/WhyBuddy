@@ -132,8 +132,9 @@ class ProjectRelease(ProjectContract):
     profileId: str
     planRef: str
     treeHash: str
-    lockfileHash: str
-    buildHash: str
+    # 自己用命令起的服务器（2026-10-10，VerificationBuildEvidence.custom-command）没有构建：两个都是 None。
+    lockfileHash: str | None
+    buildHash: str | None
     createdAt: str
     downloadPath: str
     deployed: Literal[False] = False
@@ -329,17 +330,26 @@ class VerificationArtifactRef(ProjectContract):
 
 
 class VerificationBuildEvidence(ProjectContract):
+    """验收那一刻被检查的东西是怎么起来的。
+
+    static-dist / tasks-node：构建模板的产物（锁文件、构建退出码、产物指纹）。
+    custom-command（2026-10-10 编排正确性第 3 条）：模型自己的启动命令起的服务器（Django、Go …），没有构建这一步：
+      证据是「这一版源码同步进了沙盒、验收期间没变、被检查的就是这条命令（commandHash）起的那个进程、端口有响应」。
+      证明力弱于产物指纹——它证明不了服务器真的加载了最新代码（改了没重启）；这点写在交付档的说明里。
+      锁文件可空（空工作区没有它；整棵树的 treeHash 已经覆盖它）。
+    """
     kind: Literal["production"] = "production"
     revision: str
     treeHash: str = Field(pattern=r"^[a-f0-9]{64}$")
-    lockfileHash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lockfileHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     status: Literal["passed", "failed", "blocked", "cancelled"]
     installExitCode: int | None = Field(default=None, ge=0, le=255, strict=True)
     buildExitCode: int | None = Field(default=None, ge=0, le=255, strict=True)
     outputHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     outputFileCount: int = Field(default=0, ge=0, le=5000, strict=True)
     outputBytes: int = Field(default=0, ge=0, le=104857600, strict=True)
-    serverKind: Literal["static-dist", "tasks-node"]
+    serverKind: Literal["static-dist", "tasks-node", "custom-command"]
+    commandHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     startedAt: str
     completedAt: str
 

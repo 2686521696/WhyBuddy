@@ -9,7 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { APP_ASSERTION_IDS, APP_SUITE_VERSION, runVerification } from "./browser-runner.mjs";
+import { APP_ASSERTION_IDS, APP_SUITE_VERSION, SERVER_SUITE_VERSION, runVerification } from "./browser-runner.mjs";
 
 const revision = "prv-" + "b".repeat(32);
 const token = "one_use_secret_" + "y".repeat(24);
@@ -35,7 +35,8 @@ const PAGES = {
   </script>`,
 };
 
-async function fixture(mode, execute) {
+// marker=false：像 Django / Go 自己起的服务器那样，不出 /__whybuddy_revision.json（404）。
+async function fixture(mode, execute, { marker = true } = {}) {
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
     if (url.pathname === "/_whybuddy/authorize") {
@@ -44,6 +45,7 @@ async function fixture(mode, execute) {
     }
     if (!request.headers.cookie?.includes("WhyBuddyPreview=private-grant")) { response.writeHead(403); response.end(); return; }
     if (url.pathname === "/__whybuddy_revision.json") {
+      if (!marker) { response.writeHead(404); response.end(); return; }
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ revision })); return;
     }
@@ -92,3 +94,28 @@ for (const [mode, failed] of [["blank", "content_visible"], ["hidden", "content_
     });
   });
 }
+
+// ⚠ 2026-10-10 编排正确性第 3 条：自己用命令起的服务器不出版本标记文件。普通网页套件在这种页面上先读标记就
+//   blocked（第一句是前提：不设新套件就验不了）；服务器套件不读标记、照样看那四件事，收据里版本字段留空——
+//   版本绑定由宿主做（project_browser_verification 自己起的服务器分支）。
+test("自己起的服务器：普通网页套件验不了，服务器套件能验、且不冒充读到了版本", async () => {
+  await fixture("ledger", async input => {
+    const app = await run(input(APP_SUITE_VERSION));
+    assert.equal(app.status, "blocked", "前提不成立：没有版本标记普通网页套件竟然也能过");
+    assert.equal(app.errorCode, "project_browser_revision_mismatch");
+    const server = await run(input(SERVER_SUITE_VERSION));
+    assert.equal(server.status, "passed", server.errorCode);
+    assert.deepEqual(server.assertions.map(item => item.id), APP_ASSERTION_IDS);
+    assert.deepEqual(Object.keys(server.artifacts), ["app.png"]);
+    assert.equal(server.revisionBefore, null);
+    assert.equal(server.revisionAfter, null);
+  }, { marker: false });
+});
+
+test("反向：服务器套件照样拦白屏", async () => {
+  await fixture("blank", async input => {
+    const result = await run(input(SERVER_SUITE_VERSION));
+    assert.equal(result.status, "failed");
+    assert.equal(status(result, "content_visible"), "failed");
+  }, { marker: false });
+});

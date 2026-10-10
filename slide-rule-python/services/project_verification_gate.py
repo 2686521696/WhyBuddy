@@ -19,7 +19,13 @@ SUITE_ASSERTIONS = {SUITE_VERSION: REQUIRED_ASSERTIONS,
         "anonymous_api_forbidden", "no_page_errors", "no_failed_requests"}),
     # 普通网页：跟 browser-runner.mjs 的 APP_ASSERTION_IDS 成对（§4）。
     "react-vite-app@1": frozenset({"content_visible", "reload_renders",
+        "no_page_errors", "no_failed_requests"}),
+    # 自己用命令起的服务器（2026-10-10）：浏览器看的同一份名单；版本绑定见 VerificationBuildEvidence 头注。
+    "web-server@1": frozenset({"content_visible", "reload_renders",
         "no_page_errors", "no_failed_requests"})}
+
+#: 每套验收对应的「服务器怎么起来的」。证据里的 serverKind 跟套件对不上就拒。
+SERVER_KIND_FOR_SUITE = {"react-vite-tasks@1": "tasks-node", "web-server@1": "custom-command"}
 
 
 # 独立验收没能在这个环境里跑起来的错误码：跟应用代码无关，改代码、重复验收都没用。
@@ -37,9 +43,19 @@ def validate_build_evidence(build, *, revision, tree_hash, lockfile_hash, suite_
     # persistence authority revalidates even an internal typed instance.
     checked = VerificationBuildEvidence.model_validate(build.model_dump(mode="python")
         if isinstance(build, VerificationBuildEvidence) else build)
-    if (checked.revision != revision or checked.treeHash != tree_hash or checked.lockfileHash != lockfile_hash
-            or checked.serverKind != ("tasks-node" if suite_version == "react-vite-tasks@1" else "static-dist")):
+    custom = checked.serverKind == "custom-command"
+    if (checked.revision != revision or checked.treeHash != tree_hash
+            or checked.serverKind != SERVER_KIND_FOR_SUITE.get(suite_version, "static-dist")
+            # 构建模板的锁文件必须对得上；自己起的服务器没有构建，锁文件已在 treeHash 里（可能根本没有）。
+            or (not custom and (checked.lockfileHash is None or checked.lockfileHash != lockfile_hash))
+            or (custom and checked.commandHash is None)):
         raise ValueError("verification_build_revision_mismatch")
+    if custom:
+        # 没有构建：不许带构建那一套数字冒充（产物指纹、退出码），也不许记「构建失败」。
+        if (checked.installExitCode is not None or checked.buildExitCode is not None or checked.outputHash is not None
+                or checked.outputFileCount or checked.outputBytes or checked.status == "failed"):
+            raise ValueError("verification_build_evidence_incomplete")
+        return checked
     if checked.status == "passed" and (checked.installExitCode != 0 or checked.buildExitCode != 0
             or checked.outputHash is None or checked.outputFileCount < 2 or checked.outputBytes < 1):
         raise ValueError("verification_build_evidence_incomplete")

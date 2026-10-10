@@ -16,7 +16,7 @@ from models.project_runtime import Project
 from models.v5_state import V5SessionState
 from services import persistence
 from services.control_checkpoint import current_checkpoint
-from services.project_acceptance import TASK_ACCEPTANCE_PROFILE, suite_for_template
+from services.project_acceptance import BLANK_TEMPLATE_VERSION as _BLANK_VERSION, TASK_ACCEPTANCE_PROFILE, suite_for_template
 from services.deliverable_kind import (
     OFFICE_FILE,
     WORKSPACE_README,
@@ -54,7 +54,7 @@ TASK_TEMPLATE_FILES = (
 #:   React/TypeScript/Vite」，模型要做 Django 也只能先拿一份 Vite 脚手架再自己铺。沙盒是全家桶镜像
 #:   （workspace_e2b_template），栈该由计划说了算，不该由工具描述说了算。
 BLANK_TEMPLATE_ID = "blank"
-BLANK_TEMPLATE_VERSION = "whybuddy-blank-web-1"
+BLANK_TEMPLATE_VERSION = _BLANK_VERSION
 BLANK_WEB_README = (
     "这是空工作区：没有任何框架或脚手架，按批准的计划自己搭（语言、框架、目录都由计划定）。"
     "写文件用 file_write，装依赖、跑命令用 bash。"

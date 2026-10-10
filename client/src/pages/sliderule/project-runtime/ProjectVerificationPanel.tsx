@@ -199,16 +199,19 @@ export function ProjectVerificationPanel({
   const effectiveSuite = record?.suiteVersion ?? suiteVersion;
   const tasks = effectiveSuite === "react-vite-tasks@1";
   const counter = effectiveSuite === "react-vite-counter@1";
-  const app = effectiveSuite === "react-vite-app@1";
+  const server = effectiveSuite === "web-server@1";
+  const app = effectiveSuite === "react-vite-app@1" || server;
   // A newly created project has no runtime descriptor yet. Unknown capability
   // must not label a tasks project as the counter template before its first run.
   const title = tasks
     ? "任务应用与权限检查"
     : counter
       ? "页面与计数交互检查"
-      : app
-        ? "页面渲染检查"
-        : "浏览器检查";
+      : server
+        ? "页面渲染检查（自己起的服务器）"
+        : app
+          ? "页面渲染检查"
+          : "浏览器检查";
   const build = record?.build;
   const stale = Boolean(
     record &&
@@ -410,9 +413,11 @@ export function ProjectVerificationPanel({
           ? "检查本次固定版本的任务新增、编辑、筛选、刷新持久化和只读权限；结果仅覆盖已执行用例，整体交付仍由服务端另行判定。"
           : counter
             ? "仅检查固定模板的页面与计数交互；业务功能、数据持久化和角色权限仍需另行验收。"
-            : app
-              ? "在独立浏览器里打开本次固定版本：页面要渲染出看得见的内容、刷新后仍在、没有页面错误和失败请求。"
-              : "检查范围尚未确定；工程就绪后将根据支持的检查用例验证当前版本，结果以实际执行记录为准。"}
+            : server
+              ? "在独立浏览器里打开工程自己的命令起的服务器（不构建）：页面要渲染出看得见的内容、刷新后仍在、没有页面错误和失败请求；证明不了服务器已重新加载最新代码。"
+              : app
+                ? "在独立浏览器里打开本次固定版本：页面要渲染出看得见的内容、刷新后仍在、没有页面错误和失败请求。"
+                : "检查范围尚未确定；工程就绪后将根据支持的检查用例验证当前版本，结果以实际执行记录为准。"}
       </p>
       {snapshot?.deliveryEligible && !stale ? (
         <p className="mt-1 text-xs leading-5 text-stone-700">
@@ -463,7 +468,37 @@ export function ProjectVerificationPanel({
           </ul>
         </details>
       ) : null}
-      {build ? (
+      {build && build.serverKind === "custom-command" ? (
+        // 2026-10-10：自己用命令起的服务器——没有构建，证据是「这一版在沙盒里、验收期间没变、同一进程在回话」。
+        //   它证明不了服务器真的加载了最新代码（改了没重启），这句照实写给用户（Python SERVER_REQUIREMENTS 同口径）。
+        <details
+          className="mt-2 text-xs text-stone-600"
+          data-testid="project-server-evidence"
+        >
+          <summary className="cursor-pointer">
+            {stale ? "旧版本运行证据" : "运行证据"}：
+            {
+              {
+                passed: "服务器在回话",
+                failed: "服务器没起来",
+                blocked: "服务器没有回话",
+                cancelled: "已取消",
+              }[build.status]
+            }
+          </summary>
+          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+            <dt>源码版本</dt>
+            <dd className="break-all font-mono">{build.revision}</dd>
+            <dt>启动命令指纹</dt>
+            <dd className="break-all font-mono">{build.commandHash}</dd>
+            <dt>说明</dt>
+            <dd>
+              服务器是用工程自己的命令起的，没有构建产物可核对；验收证明这一版源码在沙盒里、验收期间没变、
+              被检查的是那条命令起的进程，但证明不了它已经重新加载了最新代码。
+            </dd>
+          </dl>
+        </details>
+      ) : build ? (
         <details
           className="mt-2 text-xs text-stone-600"
           data-testid="project-build-evidence"

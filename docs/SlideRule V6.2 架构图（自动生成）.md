@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **375** 个，模块 **375** 个
-- 内部依赖边 **1261** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1166** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1263** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1168** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -54,7 +54,7 @@ flowchart TB
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|174| util
   flow -->|144| core
-  flow -->|180| util
+  flow -->|181| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -94,7 +94,7 @@ flowchart TB
   scripts -->|16 · 其中 10 条边来自函数体 import| sliderule_llm
   scripts -->|2| stdio_utf8
   services -->|19 · 其中 7 条边来自函数体 import| config
-  services -->|43 · 其中 1 条边来自函数体 import| models
+  services -->|44 · 其中 1 条边来自函数体 import| models
   services -->|128 · 其中 90 条边来自函数体 import| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
@@ -269,7 +269,7 @@ flowchart LR
   runtime -->|2| identity
   runtime -->|1| observability
   runtime -->|12| persist
-  runtime -->|12| platform
+  runtime -->|14| platform
   runtime -->|10| workspace
   spec_first -->|3| app_store
   spec_first -->|62| llm_gateway

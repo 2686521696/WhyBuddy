@@ -1,4 +1,4 @@
-"""自定义命令起的开发服务器走真工具：deploy_expose_port 带命令起得来，跑着时改文件不被当成死了，验收照实拒。
+"""自定义命令起的开发服务器走真工具：deploy_expose_port 带命令起得来，跑着时改文件不被当成死了，验收排得上（web-server@1）。
 
 ⚠ 2026-10-09：源码同步（模型在服务器跑着时 file_write / project_patch）之后要等服务器「发出这一版的修订标记」
   才算同步好——那是 Vite 从 public/ 发的。Django / Go 的服务器从来不发它：没改这一处的话，自定义服务器跑着时
@@ -22,8 +22,7 @@ from services.project_authority import approved_reference
 from services.project_manifest import content_hash
 from services.project_runtime_worker import ProjectRuntimeSupervisor
 from services.project_store import ProjectStore
-from services.project_tools import CUSTOM_SERVER_VERIFY_UNSUPPORTED, ProjectTools
-from services.rehearsal_control import bound_tool_result
+from services.project_tools import ProjectTools
 from services.session_blob_store import SqlSessionBlobStore
 from test_project_live_source_sync import SyncProvider
 from test_project_runtime_worker import eventually
@@ -94,13 +93,15 @@ def test_editing_while_the_custom_server_runs_does_not_kill_it(django):
     assert django.provider.contents["shop/views.py"] == "TITLE = '在售商品'\n"
 
 
-def test_verify_on_a_custom_server_is_refused_with_what_to_do(django):
+def test_verify_on_a_custom_server_is_queued_with_the_server_suite(django):
+    """2026-10-10 前这里照实拒（project_verification_custom_server_unsupported）；现在排进验收、派 web-server@1
+    （不构建模板，看它跑着的样子——test_running_server_verification 走完整条）。"""
     op = _started(django)
     result = django.tools.execute("project_verify", {"runtimeOperationId": op().operationId,
         "expectedRevision": op().runtime.revision, "idempotencyKey": "verify-1"}, django.state)
-    assert result["ok"] is False and result["error"] == CUSTOM_SERVER_VERIFY_UNSUPPORTED, result
-    fed = bound_tool_result({"tool": "project_verify", **result}, "project_verify")
-    assert "不是你的代码错了" in fed and "browser_view" in fed, fed
+    assert result["ok"] is True, result
+    queued = django.store.get_operation(result["operationId"], owner_id="alice")
+    assert queued.kind == "runtime.verify" and queued.input["suiteVersion"] == "web-server@1"
 
 
 def test_file_write_on_a_running_custom_server_lands_and_says_reload_depends(django):

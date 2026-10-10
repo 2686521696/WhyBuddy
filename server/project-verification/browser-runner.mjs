@@ -18,7 +18,12 @@ export const TASK_SUITE_VERSION = "react-vite-tasks@1";
 //   跟 project_verification_gate.py 的 SUITE_ASSERTIONS 成对（§4）。
 export const APP_SUITE_VERSION = "react-vite-app@1";
 export const APP_ASSERTION_IDS = ["content_visible", "reload_renders", "no_page_errors", "no_failed_requests"];
-const SUITES = [SUITE_VERSION, TASK_SUITE_VERSION, APP_SUITE_VERSION];
+// ⚠ 2026-10-10 编排正确性第 3 条：模型用自己的命令起的服务器（Django、Go …）原来一律验不了——这里每套都先读
+//   /__whybuddy_revision.json，那是 Vite 模板才出的文件。这套看的是同样四件事，但**不读**版本标记，
+//   收据里 revisionBefore / revisionAfter 留空；版本绑定由宿主做（同步这一版、验收期间不变、同一进程）。
+//   跟 project_verification_gate.SUITE_ASSERTIONS["web-server@1"] / project_browser_provider 成对（§4）。
+export const SERVER_SUITE_VERSION = "web-server@1";
+const SUITES = [SUITE_VERSION, TASK_SUITE_VERSION, APP_SUITE_VERSION, SERVER_SUITE_VERSION];
 export const TASK_ASSERTION_IDS = ["setup_admin", "writer_login", "task_create", "task_edit", "task_filter",
   "task_refresh", "reader_create", "reader_login", "reader_api_session",
   "reader_ui_readonly", "reader_api_forbidden",
@@ -208,7 +213,8 @@ export async function runVerification(input, options = {}) {
         return value.revision;
       } finally { await response.dispose(); }
     };
-    report.revisionBefore = await marker();
+    const readsMarker = input.suiteVersion !== SERVER_SUITE_VERSION;
+    if (readsMarker) report.revisionBefore = await marker();
     page = await context.newPage();
     page.on("pageerror", () => { if (observing) pageErrors++; });
     page.on("console", message => { if (observing && message.type() === "error") consoleErrors++; });
@@ -227,7 +233,7 @@ export async function runVerification(input, options = {}) {
     const increment = page.getByRole("button", { name: "Increment count", exact: true });
     if (input.suiteVersion === TASK_SUITE_VERSION) {
       await runTaskSuite({ page, context, verify, assertion, screenshot, origin });
-    } else if (input.suiteVersion === APP_SUITE_VERSION) {
+    } else if (input.suiteVersion === APP_SUITE_VERSION || input.suiteVersion === SERVER_SUITE_VERSION) {
       await runAppSuite({ page, verify, assertion, screenshot });
     } else {
     await assertion("heading_visible", async () => {
@@ -246,7 +252,7 @@ export async function runVerification(input, options = {}) {
       await verify(count).toHaveText("0");
     }, "0");
     }
-    report.revisionAfter = await marker();
+    if (readsMarker) report.revisionAfter = await marker();
     await assertion("no_page_errors", () => expect(pageErrors + consoleErrors).toBe(0));
     await assertion("no_failed_requests", () => expect(failedRequests).toBe(0));
     if (blockedNavigation) throw failure("project_browser_navigation_blocked");
@@ -266,7 +272,8 @@ export async function runVerification(input, options = {}) {
     //   现在名单补齐，没执行到的显式记 not_run，超时再也装不成一套更短的判据。
     //   （§3：每写一条"应该有 X"，配一条"X 真的被用到了"。）
     const roster = report.suiteVersion === TASK_SUITE_VERSION ? TASK_ASSERTION_IDS
-      : report.suiteVersion === APP_SUITE_VERSION ? APP_ASSERTION_IDS : ASSERTION_IDS;
+      : report.suiteVersion === APP_SUITE_VERSION || report.suiteVersion === SERVER_SUITE_VERSION ? APP_ASSERTION_IDS
+      : ASSERTION_IDS;
     const recorded = new Set(report.assertions.map(item => item.id));
     for (const id of roster) if (!recorded.has(id)) report.assertions.push({ id, status: "not_run" });
     let clean = true;

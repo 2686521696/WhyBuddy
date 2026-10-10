@@ -777,12 +777,26 @@
           "type": "string"
         },
         "lockfileHash": {
-          "title": "Lockfilehash",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lockfilehash"
         },
         "buildHash": {
-          "title": "Buildhash",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Buildhash"
         },
         "createdAt": {
           "title": "Createdat",
@@ -1588,6 +1602,7 @@
     },
     "VerificationBuildEvidence": {
       "additionalProperties": false,
+      "description": "验收那一刻被检查的东西是怎么起来的。\n\nstatic-dist / tasks-node：构建模板的产物（锁文件、构建退出码、产物指纹）。\ncustom-command（2026-10-10 编排正确性第 3 条）：模型自己的启动命令起的服务器（Django、Go …），没有构建这一步：\n  证据是「这一版源码同步进了沙盒、验收期间没变、被检查的就是这条命令（commandHash）起的那个进程、端口有响应」。\n  证明力弱于产物指纹——它证明不了服务器真的加载了最新代码（改了没重启）；这点写在交付档的说明里。\n  锁文件可空（空工作区没有它；整棵树的 treeHash 已经覆盖它）。",
       "properties": {
         "kind": {
           "const": "production",
@@ -1605,9 +1620,17 @@
           "type": "string"
         },
         "lockfileHash": {
-          "pattern": "^[a-f0-9]{64}$",
-          "title": "Lockfilehash",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lockfilehash"
         },
         "status": {
           "enum": [
@@ -1677,10 +1700,24 @@
         "serverKind": {
           "enum": [
             "static-dist",
-            "tasks-node"
+            "tasks-node",
+            "custom-command"
           ],
           "title": "Serverkind",
           "type": "string"
+        },
+        "commandHash": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commandhash"
         },
         "startedAt": {
           "title": "Startedat",
@@ -1694,7 +1731,6 @@
       "required": [
         "revision",
         "treeHash",
-        "lockfileHash",
         "status",
         "serverKind",
         "startedAt",
