@@ -1233,6 +1233,26 @@ export const PASSTHROUGH_RESPONSE_HEADERS = [
   "location",
 ] as const;
 
+/**
+ * 兜底代理要转给 Python 的请求体。
+ *
+ * ⚠ 2026-10-10 用户：线上输入框挂一张 PNG，文件卡「解析失败」；同一张图本地 3 秒认出来。
+ *   原来这里只有一句 `JSON.stringify(req.body ?? {})`。全局只挂了 express.json / urlencoded
+ *   （server/index.ts），application/octet-stream 没有解析器，req.body 是 {}——图片（以及
+ *   /sessions/:id/uploads 的原件）到 Python 只剩两个字节 `{}`，模型网关回「不是有效图片」。
+ *   本地开发 vite 直接代理到 Python、不走这层，所以本地从来没出过事。
+ *
+ * 没有解析器读过的流原样读出来转字节。JSON 的流已经被 express.json 读完，这里读到的是空的，
+ * 退回原来那句转 JSON；什么都没有的 POST 也落到那句，照旧给 "{}"——有的 Python 接口签名要一个
+ * payload，空正文会 422。
+ */
+async function forwardableBody(req: Request): Promise<string | Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const raw = Buffer.concat(chunks);
+  return raw.length > 0 ? raw : JSON.stringify(req.body ?? {});
+}
+
 router.use(async (req: Request, res: Response) => {
   // 生产守卫契约：测试专用助手路径（__clear/__reload 等 __ 前缀段）
   // 不注册也不转发，保持 404（见 sliderule-runtime.test.ts 生产守卫用例）
@@ -1254,12 +1274,12 @@ router.use(async (req: Request, res: Response) => {
     // 各写各的——结果显式路由那边一直没带身份，登录用户的会话列表恒为空。
     // 改成共用同一个函数，杜绝第二次漂移。
     Object.assign(headers, viewerHeadersFrom(req));
-    let body: string | undefined;
+    let body: string | Buffer | undefined;
     if (method !== "GET" && method !== "HEAD") {
       headers["content-type"] = String(
         req.headers["content-type"] || "application/json"
       );
-      body = typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {});
+      body = await forwardableBody(req);
     }
     const upstream = await fetch(url, { method, headers, body });
     res.status(upstream.status);
