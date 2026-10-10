@@ -346,4 +346,5 @@ export type WorkspaceLease = {
   "processRefs"?: {
   [key: string]: unknown;
 };
+  "releasedAt"?: number | null;
 };

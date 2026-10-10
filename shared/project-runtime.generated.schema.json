@@ -1940,6 +1940,18 @@
           "additionalProperties": true,
           "title": "Processrefs",
           "type": "object"
+        },
+        "releasedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Releasedat"
         }
       },
       "required": [
